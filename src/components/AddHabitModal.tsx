@@ -14,7 +14,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   onAddHabit,
 }) => {
   const [name, setName] = useState('');
-  const [tag, setTag] = useState<'Work' | 'Self' | null>('Work');
+  const [category, setCategory] = useState<HabitCategory>('work');
   const [priority, setPriority] = useState<HabitPriority>('mid');
   const [purposeAnchor, setPurposeAnchor] = useState('');
   const [fallbackMicro, setFallbackMicro] = useState('');
@@ -23,19 +23,17 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     e.preventDefault();
     if (!name.trim()) return;
 
-    const selectedCategory: HabitCategory = tag ? (tag.toLowerCase() as HabitCategory) : 'self';
-
     onAddHabit({
       name: name.trim(),
-      category: selectedCategory,
+      category,
       timestamp: 'Daily',
       priority,
       purposeAnchor: purposeAnchor.trim() || `To reinforce my continuous momentum in ${name.trim()}.`,
       identityStatement: `I consistently practice ${name.trim()}.`,
-      fallbackMicroHabit: fallbackMicro.trim(), // typing fallback (can be empty string)
+      fallbackMicroHabit: fallbackMicro.trim(),
       targetDaysPerWeek: 7,
       scheduleType: 'daily',
-      tags: tag ? [tag] : [],
+      tags: [category === 'work' ? 'Work' : 'Self Improvement'],
       archived: false,
     });
 
@@ -43,7 +41,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     setPurposeAnchor('');
     setFallbackMicro('');
     setPriority('mid');
-    setTag('Work');
+    setCategory('work');
     onClose();
   };
 
@@ -73,7 +71,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
             <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
                 <h2 className="text-[17px] font-bold text-slate-900 dark:text-white leading-tight">Create Habit</h2>
-                <p className="text-[11.5px] text-slate-500 dark:text-slate-400">Add purpose, fallback & tags</p>
+                <p className="text-[11.5px] text-slate-500 dark:text-slate-400">Add purpose, fallback & category</p>
               </div>
               <motion.button
                 type="button"
@@ -153,39 +151,34 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                 </div>
               </div>
 
-              {/* Tags (replaces category with Work / Self) */}
+              {/* Category: Work vs Self Improvement */}
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1 text-[12px]">
-                  Tag <span className="text-slate-400 font-normal">(Option: Work / Self)</span>
+                <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1.5 text-[12px]">
+                  Category
                 </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <motion.button
+                <div className="flex rounded-full bg-slate-100 dark:bg-slate-800 p-1">
+                  <button
                     type="button"
-                    whileTap={{ scale: 0.94 }}
-                    onClick={() => setTag(tag === 'Work' ? null : 'Work')}
-                    className={`py-2 px-3 rounded-xl border text-center transition font-semibold text-[12px] flex items-center justify-center space-x-1.5 cursor-pointer ${
-                      tag === 'Work'
-                        ? 'border-emerald-500 dark:border-blue-500 bg-emerald-50 dark:bg-blue-950 text-emerald-900 dark:text-blue-200 font-bold shadow-xs'
-                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                    onClick={() => setCategory('work')}
+                    className={`flex-1 py-2 px-3 rounded-full text-[12px] font-bold transition cursor-pointer ${
+                      category === 'work'
+                        ? 'bg-white dark:bg-slate-700 text-green-700 dark:text-green-300 shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400'
                     }`}
                   >
-                    <span>💼</span>
-                    <span>Work</span>
-                  </motion.button>
-
-                  <motion.button
+                    Work
+                  </button>
+                  <button
                     type="button"
-                    whileTap={{ scale: 0.94 }}
-                    onClick={() => setTag(tag === 'Self' ? null : 'Self')}
-                    className={`py-2 px-3 rounded-xl border text-center transition font-semibold text-[12px] flex items-center justify-center space-x-1.5 cursor-pointer ${
-                      tag === 'Self'
-                        ? 'border-emerald-500 dark:border-blue-500 bg-emerald-50 dark:bg-blue-950 text-emerald-900 dark:text-blue-200 font-bold shadow-xs'
-                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                    onClick={() => setCategory('self_improvement')}
+                    className={`flex-1 py-2 px-3 rounded-full text-[12px] font-bold transition cursor-pointer ${
+                      category === 'self_improvement'
+                        ? 'bg-white dark:bg-slate-700 text-teal-800 dark:text-teal-300 shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400'
                     }`}
                   >
-                    <span>🌱</span>
-                    <span>Self</span>
-                  </motion.button>
+                    Self Improvement
+                  </button>
                 </div>
               </div>
 

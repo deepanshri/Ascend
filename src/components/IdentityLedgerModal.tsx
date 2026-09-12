@@ -29,7 +29,7 @@ export const IdentityLedgerModal: React.FC<IdentityLedgerModalProps> = ({
   const handleAddManualVote = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newIdentity.trim() || !newHabit.trim() || !onAddVote) return;
-    onAddVote(newHabit, newIdentity, 'self');
+    onAddVote(newHabit, newIdentity, 'self_improvement');
     setNewIdentity('');
     setNewHabit('');
     setIsAdding(false);
@@ -74,18 +74,22 @@ export const IdentityLedgerModal: React.FC<IdentityLedgerModalProps> = ({
 
         {/* Filters */}
         <div className="flex items-center space-x-1.5 py-2.5 overflow-x-auto text-[11px] font-medium text-slate-600">
-          {['all', 'work', 'sleep', 'self', 'health'].map((cat) => (
+          {([
+            { id: 'all', label: 'all' },
+            { id: 'work', label: 'Work' },
+            { id: 'self_improvement', label: 'Self Improvement' },
+          ] as const).map((cat) => (
             <button
-              key={cat}
+              key={cat.id}
               type="button"
-              onClick={() => setSelectedFilter(cat)}
-              className={`px-3 py-1 rounded-full transition capitalize whitespace-nowrap cursor-pointer ${
-                selectedFilter === cat
+              onClick={() => setSelectedFilter(cat.id)}
+              className={`px-3 py-1 rounded-full transition whitespace-nowrap cursor-pointer ${
+                selectedFilter === cat.id
                   ? 'bg-emerald-700 dark:bg-blue-600 text-white font-semibold'
                   : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
               }`}
             >
-              {cat}
+              {cat.label}
             </button>
           ))}
         </div>

@@ -12,6 +12,7 @@ import {
 import { INITIAL_HABITS, INITIAL_EVIDENCE, INITIAL_COMPLETION_EVENTS } from './data/initialHabits';
 import { calculateMomentumScore, deriveHabitsFromEventLog, fetchHabitLogsFromTable, mergeCompletionEvents, upsertHabitLog, deleteHabitLog } from './utils/momentum';
 import { formatEvidenceDate, getTodayDayIndex } from './utils/dates';
+import { habitCategoryLabel, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome } from './lib/nativeChrome';
 import {
   getStoredSession,
@@ -152,7 +153,13 @@ export default function App() {
   const [habits, setHabits] = useState<Habit[]>(() => {
     try {
       const saved = localStorage.getItem('habit_tracker_habits');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Habit[];
+        return parsed.map((h) => {
+          const category = normalizeHabitCategory(h.category);
+          return { ...h, category, tags: [habitCategoryLabel(category)] };
+        });
+      }
     } catch {}
     return INITIAL_HABITS;
   });
@@ -229,7 +236,13 @@ export default function App() {
   const [evidenceList, setEvidenceList] = useState<IdentityEvidence[]>(() => {
     try {
       const saved = localStorage.getItem('habit_tracker_evidence');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved) as IdentityEvidence[];
+        return parsed.map((item) => ({
+          ...item,
+          category: normalizeHabitCategory(item.category),
+        }));
+      }
     } catch {}
     return INITIAL_EVIDENCE;
   });
@@ -865,15 +878,15 @@ export default function App() {
     setFrictionAudits((prev) => [newAudit, ...prev]);
   };
 
-  // Scroll Behavior: Shrink when scrolling down, pop up when scrolling up
-  const [isShrunk, setIsShrunk] = useState(false);
+  // Apple-style chrome: hide header/nav on scroll down, reveal on scroll up
+  const [isNavVisible, setIsNavVisible] = useState(true);
   const [scrollDirection, setScrollDirection] = useState<'up' | 'down'>('up');
   const [scrollProgress, setScrollProgress] = useState(0);
   const lastScrollYRef = useRef(0);
+  const isShrunk = !isNavVisible;
 
-  // Reset to full popped-up state when switching tabs
   useEffect(() => {
-    setIsShrunk(false);
+    setIsNavVisible(true);
     setScrollDirection('up');
     setScrollProgress(0);
     lastScrollYRef.current = 0;
@@ -885,27 +898,20 @@ export default function App() {
     const scrollHeight = target.scrollHeight;
     const clientHeight = target.clientHeight;
     const maxScroll = scrollHeight - clientHeight;
-    const scrollDiff = currentScrollY - lastScrollYRef.current;
+    const delta = currentScrollY - lastScrollYRef.current;
 
-    // Track scroll bar progress
     if (maxScroll > 0) {
       setScrollProgress(Math.min(1, Math.max(0, currentScrollY / maxScroll)));
     }
 
-    const isNearTop = currentScrollY <= 15;
-    const isNearBottom = maxScroll - currentScrollY <= 24;
-
-    if (isNearTop || isNearBottom) {
-      // Pop up when at the top or at the end of the list
-      setIsShrunk(false);
+    if (currentScrollY <= 8) {
+      setIsNavVisible(true);
       setScrollDirection('up');
-    } else if (scrollDiff > 5 && currentScrollY > 25) {
-      // Shrink when scrolling down
-      setIsShrunk(true);
+    } else if (delta > 8) {
+      setIsNavVisible(false);
       setScrollDirection('down');
-    } else if (scrollDiff < -4) {
-      // Pop up when scrolling up
-      setIsShrunk(false);
+    } else if (delta < -8) {
+      setIsNavVisible(true);
       setScrollDirection('up');
     }
 
@@ -923,7 +929,7 @@ export default function App() {
       return;
     }
 
-    setIsShrunk(false);
+    setIsNavVisible(true);
     const timer = window.setTimeout(() => {
       if (tutorialLockRef.current || hasCompletedTutorial !== false) return;
       tutorialLockRef.current = true;
@@ -967,7 +973,14 @@ export default function App() {
         id="mobile-viewport"
         className="relative w-full h-full overflow-hidden"
       >
-        <header className={`absolute top-0 left-0 right-0 z-30 px-4 pt-[max(0.25rem,env(safe-area-inset-top))] bg-[#F8FAF9]/95 dark:bg-slate-950/95 backdrop-blur-md transition-all duration-200 ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}>
+        <header
+          className={`absolute top-0 left-0 right-0 z-30 px-4 pt-[max(0.25rem,env(safe-area-inset-top))] bg-[#F8FAF9]/95 dark:bg-slate-950/95 backdrop-blur-md ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
+          style={{
+            transform: isNavVisible ? 'translateY(0)' : 'translateY(-100%)',
+            transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            pointerEvents: isNavVisible && !longPressedHabitId ? 'auto' : 'none',
+          }}
+        >
           <div
             id="top-brand-settings-bar"
             className="flex items-center justify-between px-1 mt-2 mb-2 h-[44px]"
@@ -1224,7 +1237,7 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={setActiveTab}
           pendingRemindersCount={pendingRemindersCount}
-          isShrunk={isShrunk}
+          isNavVisible={isNavVisible}
           isBlurred={Boolean(longPressedHabitId)}
         />
 

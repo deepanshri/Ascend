@@ -41,8 +41,8 @@ export const ReportView: React.FC<ReportViewProps> = ({
   // Category completion rates based on current habits & events
   const categoryStats = useMemo(() => {
     const workHabits = habits.filter((h) => h.category === 'work');
-    const sleepHabits = habits.filter((h) => h.category === 'sleep');
-    const selfHabits = habits.filter((h) => h.category === 'self' || h.category === 'mindset' || h.category === 'health');
+    const selfHabits = habits.filter((h) => h.category === 'self_improvement');
+    const sleepHabits = selfHabits;
 
     const getRate = (list: Habit[]) => {
       if (list.length === 0) return 0.75;
@@ -72,11 +72,9 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
   // Trajectory Multi-Line Graph Data (matches the 3 concentric rings)
   const lineGraphData = useMemo(() => {
-    const sleepHabits = habits.filter((h) => h.category === 'sleep');
     const workHabits = habits.filter((h) => h.category === 'work');
-    const selfHabits = habits.filter(
-      (h) => h.category === 'self' || h.category === 'mindset' || h.category === 'health'
-    );
+    const selfHabits = habits.filter((h) => h.category === 'self_improvement');
+    const sleepHabits = selfHabits;
 
     // X coordinates across 7 days
     const xs = [24, 54, 84, 114, 144, 176, 208];

@@ -1,4 +1,6 @@
-/** Monday-first week helpers. Index 0 = Monday … 6 = Sunday. */
+/** Rolling 7-day window centered on today. Index 0..2 past, 3 today, 4..6 next. */
+
+export const CENTERED_TODAY_INDEX = 3;
 
 export function startOfDay(date: Date = new Date()): Date {
   const d = new Date(date.getTime());
@@ -6,22 +8,15 @@ export function startOfDay(date: Date = new Date()): Date {
   return d;
 }
 
-export function getTodayDayIndex(date: Date = new Date()): number {
-  const jsDay = date.getDay(); // 0 Sunday … 6 Saturday
-  return jsDay === 0 ? 6 : jsDay - 1;
-}
-
-export function getWeekStart(date: Date = new Date()): Date {
-  const start = startOfDay(date);
-  start.setDate(start.getDate() - getTodayDayIndex(date));
-  return start;
+export function getTodayDayIndex(_date: Date = new Date()): number {
+  return CENTERED_TODAY_INDEX;
 }
 
 export function getWeekDates(date: Date = new Date()): Date[] {
-  const start = getWeekStart(date);
+  const origin = startOfDay(date);
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(start.getTime());
-    d.setDate(start.getDate() + i);
+    const d = new Date(origin.getTime());
+    d.setDate(origin.getDate() + (i - CENTERED_TODAY_INDEX));
     return d;
   });
 }

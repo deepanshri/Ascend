@@ -72,6 +72,7 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
 
   const todayIndex = getTodayDayIndex();
   const weekDates = getWeekDates();
+  // Rolling 7-day window: cards 0–2 past, 3 today (center), 4–6 next
 
   const dateCards = cardAngles.map((item) => {
     const rad = (item.angle * Math.PI) / 180;

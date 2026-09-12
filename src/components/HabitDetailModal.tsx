@@ -20,30 +20,24 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
 }) => {
   if (!isOpen || !habit) return null;
 
-  const initialTag = (habit.tags?.includes('Work') || habit.category === 'work')
-    ? 'Work'
-    : (habit.tags?.includes('Self') || habit.category === 'self')
-    ? 'Self'
-    : null;
+  const initialCategory: HabitCategory =
+    habit.category === 'work' ? 'work' : 'self_improvement';
 
   const [name, setName] = useState(habit.name);
   const [priority, setPriority] = useState<HabitPriority>(habit.priority || 'mid');
   const [purpose, setPurpose] = useState(habit.purposeAnchor || '');
   const [fallback, setFallback] = useState(habit.fallbackMicroHabit || '');
-  const [selectedTag, setSelectedTag] = useState<'Work' | 'Self' | null>(initialTag);
+  const [category, setCategory] = useState<HabitCategory>(initialCategory);
 
   const handleSave = () => {
-    const updatedCategory: HabitCategory = selectedTag ? (selectedTag.toLowerCase() as HabitCategory) : habit.category;
-    const updatedTags = selectedTag ? [selectedTag] : [];
-
     onUpdateHabit({
       ...habit,
       name: name.trim() || habit.name,
       priority,
       purposeAnchor: purpose.trim(),
       fallbackMicroHabit: fallback.trim(),
-      tags: updatedTags,
-      category: updatedCategory,
+      tags: [category === 'work' ? 'Work' : 'Self Improvement'],
+      category,
     });
     onClose();
   };
@@ -66,7 +60,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div>
             <h2 className="text-[16.5px] font-bold text-slate-900 dark:text-white leading-tight">Edit Habit</h2>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">Name, purpose, fallback & tags</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">Name, purpose, fallback & category</p>
           </div>
           <button
             type="button"
@@ -171,36 +165,32 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
             />
           </div>
 
-          {/* Tags (options: Work / Self) */}
           <div>
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
-              Tags <span className="text-slate-400 font-normal lowercase">(option: work / self)</span>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+              Category
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="flex rounded-full bg-slate-100 dark:bg-slate-800 p-1">
               <button
                 type="button"
-                onClick={() => setSelectedTag(selectedTag === 'Work' ? null : 'Work')}
-                className={`py-1.5 px-3 rounded-xl border text-center transition font-semibold text-[11.5px] flex items-center justify-center space-x-1.5 cursor-pointer ${
-                  selectedTag === 'Work'
-                    ? 'border-emerald-500 dark:border-blue-500 bg-emerald-50 dark:bg-blue-950 text-emerald-900 dark:text-blue-200 font-bold'
-                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                onClick={() => setCategory('work')}
+                className={`flex-1 py-1.5 px-3 rounded-full text-[11.5px] font-bold transition cursor-pointer ${
+                  category === 'work'
+                    ? 'bg-white dark:bg-slate-700 text-green-700 dark:text-green-300 shadow-sm'
+                    : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
-                <span>💼</span>
-                <span>Work</span>
+                Work
               </button>
-
               <button
                 type="button"
-                onClick={() => setSelectedTag(selectedTag === 'Self' ? null : 'Self')}
-                className={`py-1.5 px-3 rounded-xl border text-center transition font-semibold text-[11.5px] flex items-center justify-center space-x-1.5 cursor-pointer ${
-                  selectedTag === 'Self'
-                    ? 'border-emerald-500 dark:border-blue-500 bg-emerald-50 dark:bg-blue-950 text-emerald-900 dark:text-blue-200 font-bold'
-                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                onClick={() => setCategory('self_improvement')}
+                className={`flex-1 py-1.5 px-3 rounded-full text-[11.5px] font-bold transition cursor-pointer ${
+                  category === 'self_improvement'
+                    ? 'bg-white dark:bg-slate-700 text-teal-800 dark:text-teal-300 shadow-sm'
+                    : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
-                <span>🌱</span>
-                <span>Self</span>
+                Self Improvement
               </button>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
+import { habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
 
 const SWIPE_AXIS_LOCK_PX = 10;
 
@@ -333,13 +334,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     }
   };
 
-  const tag = (habit.tags && habit.tags.length > 0)
-    ? habit.tags[0]
-    : habit.category === 'work'
-    ? 'Work'
-    : habit.category === 'self'
-    ? 'Self'
-    : null;
+  const tagLabel = habitCategoryLabel(habit.category);
+  const tagClass = habitCategoryTagClass(habit.category);
 
   return (
     <div
@@ -623,15 +619,11 @@ export const HabitCard: React.FC<HabitCardProps> = ({
               </div>
             </div>
 
-            {/* Right Tag Badge (Work / Self) */}
+            {/* Right Tag Badge (Work / Self Improvement) */}
             <div className="flex items-center space-x-2 shrink-0">
-              {tag && (
-                <span
-                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition bg-emerald-50 dark:bg-blue-950 text-emerald-800 dark:text-blue-300 border-emerald-200/80 dark:border-blue-800"
-                >
-                  {tag}
-                </span>
-              )}
+              <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${tagClass}`}>
+                {tagLabel}
+              </span>
             </div>
           </div>
         </div>

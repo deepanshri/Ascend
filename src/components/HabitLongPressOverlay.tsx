@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
+import { habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
 
 interface HabitLongPressOverlayProps {
   habit: Habit;
@@ -59,13 +60,8 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
     ? Math.max(68, Math.min(windowHeight - (rect.height || 110) - 70, rect.top))
     : Math.max(80, (windowHeight - 160) / 2);
 
-  const tag = habit.tags && habit.tags.length > 0
-    ? habit.tags[0]
-    : habit.category === 'work'
-    ? 'Work'
-    : habit.category === 'self'
-    ? 'Self'
-    : null;
+  const tagLabel = habitCategoryLabel(habit.category);
+  const tagClass = habitCategoryTagClass(habit.category);
 
   return (
     <div
@@ -250,11 +246,9 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
 
             {/* Tag badge */}
             <div className="flex items-center space-x-2 shrink-0">
-              {tag && (
-                <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold border bg-emerald-50 dark:bg-blue-950 text-emerald-800 dark:text-blue-300 border-emerald-200/80 dark:border-blue-800">
-                  {tag}
-                </span>
-              )}
+              <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${tagClass}`}>
+                {tagLabel}
+              </span>
             </div>
           </div>
         </div>

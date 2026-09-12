@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Habit, IdentityEvidence, ThemeMode, HabitCompletionEvent } from '../types';
+import { habitCategoryLabel } from '../utils/categories';
 
 interface SettingsViewProps {
   habits: Habit[];
@@ -100,7 +101,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       return [
         `"${h.id}"`,
         `"${h.name.replace(/"/g, '""')}"`,
-        `"${h.category}"`,
+        `"${habitCategoryLabel(h.category)}"`,
         `"${h.archived ? 'Archived' : 'Active'}"`,
         `"${h.scheduleType || 'daily'}"`,
         `"${(h.purposeAnchor || '').replace(/"/g, '""')}"`,
@@ -384,7 +385,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 >
                   <div>
                     <span className="font-bold text-slate-800 dark:text-white block">{h.name}</span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 capitalize">{h.category}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">{habitCategoryLabel(h.category)}</span>
                   </div>
                   <div className="flex space-x-1.5">
                     {onRestoreHabit && (

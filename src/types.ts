@@ -1,4 +1,4 @@
-export type HabitCategory = 'work' | 'sleep' | 'self' | 'health' | 'mindset';
+export type HabitCategory = 'work' | 'self_improvement';
 
 export type HabitPriority = 'high' | 'mid' | 'low';
 
