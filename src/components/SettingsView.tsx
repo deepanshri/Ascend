@@ -161,7 +161,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   return (
-    <div id="settings-screen" onScroll={onScroll} className="flex-1 px-4 pt-2 pb-24 space-y-3.5 overflow-y-auto select-none">
+    <div id="settings-screen" onScroll={onScroll} className="absolute inset-0 px-4 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-24 space-y-3.5 overflow-y-auto overscroll-y-contain select-none">
       <section className="pt-1">
         <h1 className="text-[22px] font-bold text-slate-900 dark:text-white tracking-tight leading-tight">Settings</h1>
         <p className="text-slate-500 dark:text-slate-400 text-[11.5px] font-normal">Theme, data controls & account</p>

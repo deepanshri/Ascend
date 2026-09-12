@@ -961,27 +961,16 @@ export default function App() {
   return (
     <div
       id="app-root"
-      className={`w-[100vw] h-[100vh] overflow-x-hidden select-none font-sans transition-colors duration-200 ${themeBgClass}`}
+      className={`w-full h-full overflow-hidden select-none font-sans transition-colors duration-200 ${themeBgClass}`}
     >
       <div
         id="mobile-viewport"
-        className="relative w-full h-full flex flex-col justify-between overflow-hidden"
+        className="relative w-full h-full overflow-hidden"
       >
-        <header className={`relative w-full pt-[max(0.25rem,env(safe-area-inset-top))] px-4 z-20 transition-all duration-200 ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}>
-          {/* Top Bar with Brand and Settings Gear: shrinks on scroll down, pops up on scroll up */}
+        <header className={`absolute top-0 left-0 right-0 z-30 px-4 pt-[max(0.25rem,env(safe-area-inset-top))] bg-[#F8FAF9]/95 dark:bg-slate-950/95 backdrop-blur-md transition-all duration-200 ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}>
           <div
             id="top-brand-settings-bar"
-            style={{
-              maxHeight: isShrunk ? '0px' : '44px',
-              opacity: isShrunk ? 0 : 1,
-              transform: isShrunk ? 'scale(0.85) translateY(-8px)' : 'scale(1) translateY(0)',
-              transformOrigin: 'top center',
-              transition:
-                'max-height 280ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out, transform 280ms cubic-bezier(0.16, 1, 0.3, 1), margin-top 280ms cubic-bezier(0.16, 1, 0.3, 1)',
-              pointerEvents: isShrunk ? 'none' : 'auto',
-              overflow: 'hidden',
-            }}
-            className={`flex items-center justify-between px-1 ${isShrunk ? 'mt-0' : 'mt-2'}`}
+            className="flex items-center justify-between px-1 mt-2 mb-2 h-[44px]"
           >
             <div className="flex items-center space-x-2">
               <h1 className="text-[20px] font-black tracking-tight text-slate-900 dark:text-white flex items-center space-x-1.5">
@@ -1039,7 +1028,7 @@ export default function App() {
           <main
             id="app-main-content"
             onScroll={handleMainScroll}
-            className={`flex-1 px-4 pt-1 pb-24 flex flex-col gap-3 z-10 overflow-y-auto relative transition-all duration-200 ${
+            className={`absolute inset-0 z-10 px-4 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-28 flex flex-col gap-3 overflow-y-auto overscroll-y-contain transition-all duration-200 ${
               scrollDirection === 'down' ? 'is-scrolling-down' : 'is-scrolling-up'
             } ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
           >

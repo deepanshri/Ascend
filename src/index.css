@@ -12,10 +12,32 @@ html, body, #root, button, input, select, textarea, span, p, div, h1, h2, h3, h4
 }
 
 html, body, #root {
-  width: 100vw;
-  height: 100vh;
-  overflow-x: hidden;
+  overscroll-behavior-y: none;
+  touch-action: pan-y;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   background-color: #F8FAF9;
+}
+
+#app-root,
+#mobile-viewport {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#app-main-content,
+#reminders-screen,
+#report-screen,
+#personal-screen,
+#settings-screen {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 @layer utilities {

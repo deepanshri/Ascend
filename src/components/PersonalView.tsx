@@ -226,7 +226,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     <div
       id="personal-screen"
       onScroll={onScroll}
-      className="flex-1 px-4 pt-3 pb-24 space-y-4 overflow-y-auto select-none relative"
+      className="absolute inset-0 px-4 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-24 space-y-4 overflow-y-auto overscroll-y-contain select-none"
     >
       {/* Toast Feedback */}
       {toastMessage && (

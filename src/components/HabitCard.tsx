@@ -1,6 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
+
+const SWIPE_AXIS_LOCK_PX = 10;
 
 interface HabitCardProps {
   habit: Habit;
@@ -41,11 +43,19 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   const [isFlipped, setIsFlipped] = useState(false);
 
   const cardRef = useRef<HTMLDivElement>(null);
+  const swipeSurfaceRef = useRef<HTMLElement>(null);
   const hasMovedRef = useRef(false);
   const longPressTimerRef = useRef<number | null>(null);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const dragStartXRef = useRef<number | null>(null);
+  const swipeOffsetRef = useRef(0);
+  const gestureAxisRef = useRef<'none' | 'horizontal' | 'vertical'>('none');
   const wasLongPressRef = useRef(false);
   const lastTapTimeRef = useRef<number>(0);
+  const isOtherLongPressedRef = useRef(isOtherLongPressed);
+  isOtherLongPressedRef.current = isOtherLongPressed;
 
   const isTodayDone = Boolean(habit.days?.[todayIndex]);
   const isTodayMicro = Boolean(habit.microDays?.[todayIndex]);
@@ -63,10 +73,35 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     }
   };
 
+  const applySwipeOffset = (deltaX: number) => {
+    const next = Math.abs(deltaX) < 120 ? deltaX : swipeOffsetRef.current;
+    swipeOffsetRef.current = next;
+    setSwipeOffset(next);
+  };
+
+  const resolveGestureAxis = (deltaX: number, deltaY: number) => {
+    if (gestureAxisRef.current !== 'none') return gestureAxisRef.current;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+    if (absX > absY && absX > SWIPE_AXIS_LOCK_PX) {
+      gestureAxisRef.current = 'horizontal';
+    } else if (absY > absX && absY > SWIPE_AXIS_LOCK_PX) {
+      gestureAxisRef.current = 'vertical';
+      swipeOffsetRef.current = 0;
+      setSwipeOffset(0);
+    }
+    return gestureAxisRef.current;
+  };
+
   // TOUCH GESTURE HANDLERS
   const handleTouchStart = (e: React.TouchEvent) => {
     if (isOtherLongPressed) return;
     const touch = e.touches[0];
+    if (!touch) return;
+    startXRef.current = touch.clientX;
+    startYRef.current = touch.clientY;
+    dragStartXRef.current = touch.clientX;
+    gestureAxisRef.current = 'none';
     setDragStartX(touch.clientX);
     startPosRef.current = { x: touch.clientX, y: touch.clientY };
     wasLongPressRef.current = false;
@@ -76,6 +111,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     clearLongPressTimer();
     longPressTimerRef.current = window.setTimeout(() => {
       wasLongPressRef.current = true;
+      gestureAxisRef.current = 'none';
       setIsDragging(false);
       setSwipeOffset(0);
       try {
@@ -86,30 +122,45 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     }, 400);
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (isOtherLongPressed || wasLongPressRef.current) return;
-    const touch = e.touches[0];
+  useEffect(() => {
+    const el = swipeSurfaceRef.current;
+    if (!el) return;
 
-    if (startPosRef.current) {
-      const dist = Math.hypot(touch.clientX - startPosRef.current.x, touch.clientY - startPosRef.current.y);
-      if (dist > 8) {
-        clearLongPressTimer();
-        hasMovedRef.current = true;
-      }
-    }
+    const onTouchMove = (e: TouchEvent) => {
+      if (isOtherLongPressedRef.current || wasLongPressRef.current) return;
+      const touch = e.touches[0];
+      if (!touch) return;
 
-    if (dragStartX !== null && !wasLongPressRef.current) {
-      const diff = touch.clientX - dragStartX;
-      if (Math.abs(diff) < 120) {
-        setSwipeOffset(diff);
+      const deltaX = touch.clientX - startXRef.current;
+      const deltaY = touch.clientY - startYRef.current;
+
+      if (startPosRef.current) {
+        const dist = Math.hypot(deltaX, deltaY);
+        if (dist > 8) {
+          clearLongPressTimer();
+          hasMovedRef.current = true;
+        }
       }
-    }
-  };
+
+      const axis = resolveGestureAxis(deltaX, deltaY);
+
+      if (axis === 'horizontal') {
+        e.preventDefault();
+        const originX = dragStartXRef.current ?? startXRef.current;
+        applySwipeOffset(touch.clientX - originX);
+      }
+    };
+
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => el.removeEventListener('touchmove', onTouchMove);
+  }, []);
 
   const handleTouchEnd = () => {
     clearLongPressTimer();
     if (wasLongPressRef.current) {
       wasLongPressRef.current = false;
+      gestureAxisRef.current = 'none';
+      swipeOffsetRef.current = 0;
       return;
     }
 
@@ -120,16 +171,20 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       if (diff > 40 && diff < 350) {
         setIsFlipped((prev) => !prev);
         lastTapTimeRef.current = 0;
+        swipeOffsetRef.current = 0;
         setSwipeOffset(0);
         setIsDragging(false);
+        gestureAxisRef.current = 'none';
         return;
       }
       lastTapTimeRef.current = now;
     }
 
     if (isFlipped) {
+      swipeOffsetRef.current = 0;
       setSwipeOffset(0);
       setIsDragging(false);
+      gestureAxisRef.current = 'none';
       return;
     }
 
@@ -139,6 +194,10 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   // MOUSE DRAG HANDLERS
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0 || isOtherLongPressed) return;
+    startXRef.current = e.clientX;
+    startYRef.current = e.clientY;
+    dragStartXRef.current = e.clientX;
+    gestureAxisRef.current = 'none';
     setDragStartX(e.clientX);
     startPosRef.current = { x: e.clientX, y: e.clientY };
     wasLongPressRef.current = false;
@@ -148,6 +207,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     clearLongPressTimer();
     longPressTimerRef.current = window.setTimeout(() => {
       wasLongPressRef.current = true;
+      gestureAxisRef.current = 'none';
       setIsDragging(false);
       setSwipeOffset(0);
       const rect = cardRef.current?.getBoundingClientRect();
@@ -164,19 +224,21 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging || wasLongPressRef.current) return;
 
+    const deltaX = e.clientX - startXRef.current;
+    const deltaY = e.clientY - startYRef.current;
+
     if (startPosRef.current) {
-      const dist = Math.hypot(e.clientX - startPosRef.current.x, e.clientY - startPosRef.current.y);
+      const dist = Math.hypot(deltaX, deltaY);
       if (dist > 8) {
         clearLongPressTimer();
         hasMovedRef.current = true;
       }
     }
 
-    if (dragStartX !== null && !wasLongPressRef.current) {
-      const diff = e.clientX - dragStartX;
-      if (Math.abs(diff) < 120) {
-        setSwipeOffset(diff);
-      }
+    const axis = resolveGestureAxis(deltaX, deltaY);
+    if (axis === 'horizontal') {
+      const originX = dragStartXRef.current ?? startXRef.current;
+      applySwipeOffset(e.clientX - originX);
     }
   };
 
@@ -226,7 +288,9 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   // EVALUATE SWIPE GESTURE
   const finishSwipe = () => {
     const threshold = 40;
-    if (swipeOffset > threshold) {
+    const axis = gestureAxisRef.current;
+    const offset = swipeOffsetRef.current;
+    if (axis !== 'vertical' && offset > threshold) {
       // Swiped Right
       if (isTodayDone) {
         // Accidental completion -> swiping right again resets it to normal!
@@ -238,7 +302,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
         // Normal -> mark full complete!
         onCompleteToday(habit.id, false);
       }
-    } else if (swipeOffset < -threshold) {
+    } else if (axis !== 'vertical' && offset < -threshold) {
       // Swiped Left
       if (isTodayDone) {
         // Already completed -> swiping left also resets to normal
@@ -253,6 +317,9 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     }
 
     setDragStartX(null);
+    dragStartXRef.current = null;
+    gestureAxisRef.current = 'none';
+    swipeOffsetRef.current = 0;
     setSwipeOffset(0);
     setIsDragging(false);
   };
@@ -362,6 +429,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
 
         {/* FOREGROUND HABIT CARD */}
         <article
+          ref={swipeSurfaceRef}
           id={`habit-card-${habit.id}`}
           role="button"
           tabIndex={0}
@@ -372,8 +440,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
           }}
           onContextMenu={(e) => e.preventDefault()}
           onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}

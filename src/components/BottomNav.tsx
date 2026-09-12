@@ -14,7 +14,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   activeTab,
   onTabChange,
   pendingRemindersCount = 0,
-  isShrunk = false,
+  isShrunk: _isShrunk = false,
   isBlurred = false,
 }) => {
   return (
@@ -23,13 +23,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       data-tour="bottom-nav"
       aria-label="App Navigation"
       style={{
-        transform: isShrunk ? 'scale(0.88) translateY(125%)' : 'scale(1) translateY(0)',
-        opacity: isShrunk ? 0 : 1,
-        pointerEvents: isShrunk || isBlurred ? 'none' : 'auto',
-        transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 240ms ease-out, filter 200ms ease-out',
-        willChange: 'transform, opacity',
+        pointerEvents: isBlurred ? 'none' : 'auto',
       }}
-      className={`absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-4 right-4 h-[68px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-full nav-pill-shadow border border-slate-100/90 dark:border-slate-800 px-2 flex items-center justify-between z-40 ${
+      className={`absolute bottom-0 left-0 right-0 z-40 mx-4 mb-[max(1.25rem,env(safe-area-inset-bottom))] h-[68px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-full nav-pill-shadow border border-slate-100/90 dark:border-slate-800 px-2 flex items-center justify-between ${
         isBlurred ? 'filter blur-[4px]' : ''
       }`}
     >
