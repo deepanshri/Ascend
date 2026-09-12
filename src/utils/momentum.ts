@@ -16,6 +16,8 @@ export interface HabitLogRow {
   type?: string;
   completion_type?: string;
   note?: string;
+  completion?: number;
+  value?: number;
   timestamp?: number | string;
   created_at?: string;
 }
@@ -43,6 +45,11 @@ function resolveDayIndex(row: HabitLogRow): number {
 }
 
 function resolveCompletionType(row: HabitLogRow): CompletionType {
+  const numeric = Number(row.completion ?? row.value);
+  if (Number.isFinite(numeric) && numeric > 0 && numeric < 1) {
+    return 'fallback_micro';
+  }
+
   const raw = String(row.type || row.completion_type || 'full').toLowerCase();
   if (raw.includes('micro') || raw.includes('fallback') || raw === '0.5' || raw === 'partial') {
     return 'fallback_micro';
@@ -136,6 +143,7 @@ export async function upsertHabitLog(
   }
 
   const loggedDate = isoDateForDayIndex(event.dayIndex);
+  const completion = event.type === 'fallback_micro' ? 0.5 : 1;
   const row = {
     id: event.id,
     user_id: userId,
@@ -144,6 +152,8 @@ export async function upsertHabitLog(
     date: event.date,
     day_index: event.dayIndex,
     type: event.type,
+    completion,
+    value: completion,
     note: event.note || null,
     timestamp: event.timestamp,
   };

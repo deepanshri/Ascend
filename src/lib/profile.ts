@@ -55,7 +55,7 @@ export async function fetchUserProfile(
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, interests, has_completed_tutorial')
       .eq('id', session.id)
       .maybeSingle();
 

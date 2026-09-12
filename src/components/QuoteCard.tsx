@@ -317,8 +317,6 @@ const DEFAULT_HABIT_QUOTES: Quote[] = [
   },
 ];
 
-const FALLBACK_CATEGORIES = ['Productivity', 'Atomic Habits'];
-
 const CATEGORY_ICONS: Record<string, string> = {
   Movies: '🎬',
   Books: '📚',
@@ -369,21 +367,56 @@ function mapQuoteRow(row: Record<string, unknown>): Quote | null {
 }
 
 async function fetchQuotesFromSupabase(categories: string[]): Promise<Quote[]> {
-  if (!isSupabaseConfigured || !supabase) return [];
+  if (!isSupabaseConfigured || !supabase || categories.length === 0) return [];
 
   try {
-    const { data, error } = await supabase.from('quotes').select('*');
-    if (error || !data || data.length === 0) return [];
+    const uniqueCategories = Array.from(new Set(categories.map((item) => item.trim()).filter(Boolean)));
+    if (uniqueCategories.length === 0) return [];
 
-    const mapped = (data as Record<string, unknown>[])
+    let { data, error } = await supabase
+      .from('quotes')
+      .select('*')
+      .in('category', uniqueCategories);
+
+    if (error) {
+      console.warn('quotes category filter failed:', error.message);
+      const overlap = uniqueCategories
+        .map((item) => item.replace(/[,()]/g, ''))
+        .filter(Boolean)
+        .map((item) => `category.ilike.%${item}%`)
+        .join(',');
+      const retry = overlap
+        ? await supabase.from('quotes').select('*').or(overlap)
+        : await supabase.from('quotes').select('*');
+      data = retry.data;
+      error = retry.error;
+    }
+
+    if (error) {
+      console.warn('quotes fetch failed:', error.message);
+      return [];
+    }
+
+    const mapped = (data as Record<string, unknown>[] | null || [])
       .map(mapQuoteRow)
       .filter((quote): quote is Quote => quote !== null);
 
-    const matched = mapped.filter((quote) => matchesCategories(quote, categories));
-    return matched;
-  } catch {
+    const matched = mapped.filter((quote) => matchesCategories(quote, uniqueCategories));
+    return matched.length > 0 ? matched : mapped;
+  } catch (err) {
+    console.warn('quotes fetch offline:', err);
     return [];
   }
+}
+
+function dailyStartIndex(length: number): number {
+  if (length <= 1) return 0;
+  const iso = new Date().toISOString().slice(0, 10);
+  let hash = 0;
+  for (let i = 0; i < iso.length; i += 1) {
+    hash = (hash * 31 + iso.charCodeAt(i)) >>> 0;
+  }
+  return hash % length;
 }
 
 interface QuoteCardProps {
@@ -402,26 +435,20 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
     let cancelled = false;
 
     const loadQuotes = async () => {
-      const useFallback = isGuest || selectedInterests.length === 0;
-      const primaryCategories = useFallback ? FALLBACK_CATEGORIES : selectedInterests;
+      if (isGuest || selectedInterests.length === 0) {
+        if (!cancelled) setQuotes(DEFAULT_HABIT_QUOTES);
+        return;
+      }
 
-      const [remotePrimary, remoteFallback] = await Promise.all([
-        fetchQuotesFromSupabase(primaryCategories),
-        useFallback ? Promise.resolve([] as Quote[]) : fetchQuotesFromSupabase(FALLBACK_CATEGORIES),
-      ]);
+      const remoteMatched = await fetchQuotesFromSupabase(selectedInterests);
       if (cancelled) return;
 
-      if (remotePrimary.length > 0) {
-        setQuotes(remotePrimary);
+      if (remoteMatched.length > 0) {
+        setQuotes(remoteMatched);
         return;
       }
 
-      if (remoteFallback.length > 0) {
-        setQuotes(remoteFallback);
-        return;
-      }
-
-      setQuotes(localQuotesFor(selectedInterests, isGuest));
+      setQuotes(localQuotesFor(selectedInterests, false));
     };
 
     setQuotes(localQuotesFor(selectedInterests, isGuest));
@@ -433,7 +460,7 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
   }, [selectedInterests, isGuest]);
 
   useEffect(() => {
-    setQuoteIndex(0);
+    setQuoteIndex(dailyStartIndex(quotes.length));
   }, [quotes]);
 
   const handleNextQuote = () => {
