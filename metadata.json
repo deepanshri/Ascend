@@ -1,0 +1,6 @@
+{
+  "name": "Habit Tracker",
+  "description": "A mindful habit tracker featuring radial calendar arcs, interactive progress rings, and identity evidence logging.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
