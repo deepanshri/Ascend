@@ -1,5 +1,5 @@
-@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -143,4 +143,64 @@ html, body, #root, button, input, select, textarea, span, p, div, h1, h2, h3, h4
 
 #app-main-content.is-scrolling-down::-webkit-scrollbar-thumb {
   background-color: rgba(148, 163, 184, 0.25);
+}
+
+/* Driver.js spotlight: frosted popovers + blurred stage overlay */
+.ascend-driver-popover.driver-popover {
+  background: rgba(255, 255, 255, 0.86) !important;
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  border: 1px solid rgba(255, 255, 255, 0.72) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18) !important;
+  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif !important;
+  color: #0f172a !important;
+  padding: 16px !important;
+}
+
+.dark .ascend-driver-popover.driver-popover {
+  background: rgba(15, 23, 42, 0.88) !important;
+  border-color: rgba(51, 65, 85, 0.9) !important;
+  color: #f8fafc !important;
+}
+
+.ascend-driver-popover .driver-popover-title {
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.02em;
+  color: inherit !important;
+}
+
+.ascend-driver-popover .driver-popover-description {
+  font-size: 12.5px !important;
+  line-height: 1.45 !important;
+  color: #475569 !important;
+}
+
+.dark .ascend-driver-popover .driver-popover-description {
+  color: #cbd5e1 !important;
+}
+
+.ascend-driver-popover .driver-popover-footer-btn {
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+  font-size: 12px !important;
+  padding: 6px 12px !important;
+}
+
+.ascend-driver-popover .driver-popover-navigation-btns button:last-child {
+  background: #23c15d !important;
+  color: #ffffff !important;
+  border-color: #16a34a !important;
+}
+
+.dark .ascend-driver-popover .driver-popover-navigation-btns button:last-child {
+  background: #2563eb !important;
+  border-color: #1d4ed8 !important;
+}
+
+.driver-overlay,
+.driver-overlay-animated {
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
 }

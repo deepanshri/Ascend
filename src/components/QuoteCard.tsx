@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 export interface Quote {
   text: string;
@@ -283,70 +284,169 @@ const DEFAULT_HABIT_QUOTES: Quote[] = [
     text: 'You do not rise to the level of your goals. You fall to the level of your systems.',
     author: 'James Clear',
     source: 'Atomic Habits',
-    category: 'Habits',
+    category: 'Atomic Habits',
     icon: '🌱',
   },
   {
     text: 'Every action you take is a vote for the type of person you wish to become.',
     author: 'James Clear',
     source: 'Atomic Habits',
-    category: 'Habits',
+    category: 'Atomic Habits',
     icon: '🌱',
   },
   {
     text: 'Small habits don’t add up. They compound. That’s the power of atomic habits.',
     author: 'James Clear',
     source: 'Atomic Habits',
-    category: 'Habits',
+    category: 'Atomic Habits',
     icon: '🌱',
   },
   {
     text: 'Consistency is not about perfection. It is about never missing twice.',
     author: 'Atomic Systems',
     source: 'Rule of Two',
-    category: 'Habits',
-    icon: '🌱',
+    category: 'Productivity',
+    icon: '⚡',
   },
   {
     text: 'Be the designer of your world and not merely the consumer of it.',
     author: 'James Clear',
     source: 'Environment Design',
-    category: 'Habits',
-    icon: '🌱',
+    category: 'Productivity',
+    icon: '⚡',
   },
 ];
 
-interface QuoteCardProps {
-  selectedInterests?: string[];
+const FALLBACK_CATEGORIES = ['Productivity', 'Atomic Habits'];
+
+const CATEGORY_ICONS: Record<string, string> = {
+  Movies: '🎬',
+  Books: '📚',
+  Anime: '⚔️',
+  Running: '🏃',
+  Fitness: '💪',
+  Coding: '💻',
+  Music: '🎵',
+  Gaming: '🎮',
+  Productivity: '⚡',
+  'Atomic Habits': '🌱',
+  Habits: '🌱',
+};
+
+function iconForCategory(category: string): string {
+  return CATEGORY_ICONS[category] || '🌱';
 }
 
-export const QuoteCard: React.FC<QuoteCardProps> = ({ selectedInterests = [] }) => {
-  // Filter quotes based on user selected interests
-  const activeQuotes = useMemo(() => {
-    if (selectedInterests.length === 0) {
-      return DEFAULT_HABIT_QUOTES;
-    }
+function normalizeCategory(value: string): string {
+  return value.trim().toLowerCase();
+}
 
-    const filtered = INTEREST_QUOTES.filter((q) => selectedInterests.includes(q.category));
-    return filtered.length > 0 ? filtered : DEFAULT_HABIT_QUOTES;
-  }, [selectedInterests]);
+function matchesCategories(quote: Quote, categories: string[]): boolean {
+  const needles = categories.map(normalizeCategory);
+  const haystacks = [quote.category, quote.source].map(normalizeCategory);
+  return needles.some((needle) => haystacks.some((hay) => hay.includes(needle) || needle.includes(hay)));
+}
 
+function localQuotesFor(interests: string[], isGuest: boolean): Quote[] {
+  if (isGuest || interests.length === 0) {
+    return DEFAULT_HABIT_QUOTES;
+  }
+  const matched = INTEREST_QUOTES.filter((quote) => matchesCategories(quote, interests));
+  return matched.length > 0 ? matched : DEFAULT_HABIT_QUOTES;
+}
+
+function mapQuoteRow(row: Record<string, unknown>): Quote | null {
+  const text = String(row.text || row.quote || row.content || row.body || '').trim();
+  if (!text) return null;
+  const category = String(row.category || row.interest || row.tag || 'Productivity');
+  return {
+    text,
+    author: String(row.author || row.by || 'Unknown'),
+    source: String(row.source || row.book || row.origin || category),
+    category,
+    icon: String(row.icon || iconForCategory(category)),
+  };
+}
+
+async function fetchQuotesFromSupabase(categories: string[]): Promise<Quote[]> {
+  if (!isSupabaseConfigured || !supabase) return [];
+
+  try {
+    const { data, error } = await supabase.from('quotes').select('*');
+    if (error || !data || data.length === 0) return [];
+
+    const mapped = (data as Record<string, unknown>[])
+      .map(mapQuoteRow)
+      .filter((quote): quote is Quote => quote !== null);
+
+    const matched = mapped.filter((quote) => matchesCategories(quote, categories));
+    return matched;
+  } catch {
+    return [];
+  }
+}
+
+interface QuoteCardProps {
+  selectedInterests?: string[];
+  isGuest?: boolean;
+}
+
+export const QuoteCard: React.FC<QuoteCardProps> = ({
+  selectedInterests = [],
+  isGuest = false,
+}) => {
+  const [quotes, setQuotes] = useState<Quote[]>(() => localQuotesFor(selectedInterests, isGuest));
   const [quoteIndex, setQuoteIndex] = useState(0);
 
-  // If activeQuotes changes (e.g. user toggled interests), reset index safely
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadQuotes = async () => {
+      const useFallback = isGuest || selectedInterests.length === 0;
+      const primaryCategories = useFallback ? FALLBACK_CATEGORIES : selectedInterests;
+
+      const [remotePrimary, remoteFallback] = await Promise.all([
+        fetchQuotesFromSupabase(primaryCategories),
+        useFallback ? Promise.resolve([] as Quote[]) : fetchQuotesFromSupabase(FALLBACK_CATEGORIES),
+      ]);
+      if (cancelled) return;
+
+      if (remotePrimary.length > 0) {
+        setQuotes(remotePrimary);
+        return;
+      }
+
+      if (remoteFallback.length > 0) {
+        setQuotes(remoteFallback);
+        return;
+      }
+
+      setQuotes(localQuotesFor(selectedInterests, isGuest));
+    };
+
+    setQuotes(localQuotesFor(selectedInterests, isGuest));
+    void loadQuotes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedInterests, isGuest]);
+
   useEffect(() => {
     setQuoteIndex(0);
-  }, [activeQuotes]);
+  }, [quotes]);
 
   const handleNextQuote = () => {
-    setQuoteIndex((prev) => (prev + 1) % activeQuotes.length);
+    if (quotes.length === 0) return;
+    setQuoteIndex((prev) => (prev + 1) % quotes.length);
   };
 
-  const currentQuote = activeQuotes[quoteIndex % activeQuotes.length] || DEFAULT_HABIT_QUOTES[0];
+  const currentQuote = quotes[quoteIndex % Math.max(quotes.length, 1)] || DEFAULT_HABIT_QUOTES[0];
 
   return (
     <div
       id="atomic-quote-card"
+      data-tour="daily-wisdom"
       onClick={handleNextQuote}
       title="Tap to cycle quote"
       className="w-full rounded-xl py-2 px-3 bg-emerald-50/40 dark:bg-slate-800/40 border border-emerald-200/50 dark:border-slate-700/60 shadow-2xs select-none transition-all cursor-pointer hover:bg-emerald-50/70 dark:hover:bg-slate-800/70 active:scale-[0.99]"

@@ -11,7 +11,7 @@ import {
   TODAY_DAY_INDEX,
 } from './types';
 import { INITIAL_HABITS, INITIAL_EVIDENCE, INITIAL_COMPLETION_EVENTS } from './data/initialHabits';
-import { calculateMomentumScore, deriveHabitsFromEventLog } from './utils/momentum';
+import { calculateMomentumScore, deriveHabitsFromEventLog, fetchHabitLogsFromTable, mergeCompletionEvents, upsertHabitLog, deleteHabitLog } from './utils/momentum';
 import {
   getStoredSession,
   setStoredSession,
@@ -24,6 +24,8 @@ import {
   notificationScheduler,
   remindersSyncService,
 } from './lib/supabase';
+import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted } from './lib/profile';
+import { startAscendSpotlightTutorial, destroyAscendSpotlightTutorial } from './lib/tutorial';
 import { StatusBar } from './components/StatusBar';
 import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
@@ -51,10 +53,27 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => {
     try {
       const saved = localStorage.getItem('ascend_theme') as ThemeMode;
-      if (saved) return saved;
+      if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
     } catch {}
     return 'light';
   });
+
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() => {
+    try {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      const onChange = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    } catch {}
+  }, []);
 
   // Exam Shield / Vacation Mode state
   const [examShieldActive, setExamShieldActive] = useState<boolean>(() => {
@@ -101,9 +120,13 @@ export default function App() {
   }, [selectedInterests]);
 
   const handleToggleInterest = (interest: string) => {
-    setSelectedInterests((prev) =>
-      prev.includes(interest) ? prev.filter((t) => t !== interest) : [...prev, interest]
-    );
+    setSelectedInterests((prev) => {
+      const next = prev.includes(interest) ? prev.filter((t) => t !== interest) : [...prev, interest];
+      if (session && !session.isGuest) {
+        void persistUserProfile(session, { interests: next });
+      }
+      return next;
+    });
   };
 
   // Friction Audit Log state
@@ -149,6 +172,45 @@ export default function App() {
     } catch {}
   }, [completionEvents]);
 
+  // Hydrate profile interests + tutorial flag from Supabase `profiles`
+  useEffect(() => {
+    if (!session) {
+      destroyAscendSpotlightTutorial();
+      setHasCompletedTutorial(getLocalTutorialCompleted() ? true : null);
+      tutorialLockRef.current = false;
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const profile = await fetchUserProfile(session, selectedInterests);
+      if (cancelled) return;
+      if (profile.interests.length > 0) {
+        setSelectedInterests(profile.interests);
+      }
+      setHasCompletedTutorial(Boolean(profile.has_completed_tutorial));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, session?.isGuest]);
+
+  // Hydrate completion logs from Supabase `habit_logs` (ground truth for momentum)
+  useEffect(() => {
+    if (!session || session.isGuest) return;
+    let cancelled = false;
+    void (async () => {
+      const remoteLogs = await fetchHabitLogsFromTable(session.id);
+      if (cancelled || remoteLogs.length === 0) return;
+      setCompletionEvents((prev) => mergeCompletionEvents(prev, remoteLogs));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.id, session?.isGuest]);
+
   // Active fallback mode for habits today (habits switched to fallback micro-task, pending completion)
   const [activeFallbackIds, setActiveFallbackIds] = useState<string[]>(() => {
     try {
@@ -191,6 +253,7 @@ export default function App() {
         notes: 'Take 5 deep breaths & hydrate',
         completed: false,
         createdAt: Date.now(),
+        updatedAt: Date.now(),
       },
       {
         id: 'rem-2',
@@ -200,6 +263,7 @@ export default function App() {
         notes: 'Cast another vote for your chosen identity',
         completed: false,
         createdAt: Date.now() - 3600000,
+        updatedAt: Date.now() - 3600000,
       },
     ];
   });
@@ -220,6 +284,14 @@ export default function App() {
   const [deleteConfirmHabit, setDeleteConfirmHabit] = useState<Habit | null>(null);
   const [toastNotification, setToastNotification] = useState<string | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
+  const tutorialLockRef = useRef(false);
+  const [hasCompletedTutorial, setHasCompletedTutorial] = useState<boolean | null>(() => {
+    try {
+      return getLocalTutorialCompleted() ? true : null;
+    } catch {
+      return null;
+    }
+  });
 
   const showNotification = (message: string) => {
     setToastNotification(message);
@@ -342,10 +414,10 @@ export default function App() {
     return derivedHabits.find((h) => h.id === longPressedHabitId) || null;
   }, [derivedHabits, longPressedHabitId]);
 
-  // Momentum Engine Score (0 to 100) based on active habits & Exam Shield
+  // Momentum Engine Score (0 to 100) based on habit_logs + local completion events
   const momentumScore = useMemo(() => {
-    return calculateMomentumScore(activeHabits, currentDayIndex, examShieldActive);
-  }, [activeHabits, currentDayIndex, examShieldActive]);
+    return calculateMomentumScore(habits, currentDayIndex, examShieldActive, completionEvents);
+  }, [habits, currentDayIndex, examShieldActive, completionEvents]);
 
   // Calculate day completion rates (1-7) using active habits
   const dayCompletionRates = Array.from({ length: 7 }, (_, dayIdx) => {
@@ -393,6 +465,7 @@ export default function App() {
     };
 
     setCompletionEvents((prev) => [...prev, newEvent]);
+    void upsertHabitLog(session?.id, newEvent);
 
     // Clean up previous today's evidence for this habit
     setEvidenceList((prev) =>
@@ -452,6 +525,7 @@ export default function App() {
       setEvidenceList((prev) =>
         prev.filter((e) => !(e.habitId === habitId && e.dayNumber === TODAY_DAY_INDEX + 1))
       );
+      void deleteHabitLog(session?.id, habitId, TODAY_DAY_INDEX);
     }
 
     // Activate fallback mode (not complete yet!)
@@ -465,6 +539,7 @@ export default function App() {
     setCompletionEvents((prev) =>
       prev.filter((e) => !(e.habitId === habitId && e.dayIndex === TODAY_DAY_INDEX))
     );
+    void deleteHabitLog(session?.id, habitId, TODAY_DAY_INDEX);
 
     // Remove evidence for today
     setEvidenceList((prev) =>
@@ -581,6 +656,9 @@ export default function App() {
     if (isNewUser) {
       setIsOnboarded(false);
       setOnboardingCompleted(false);
+      setHasCompletedTutorial(false);
+      setLocalTutorialCompleted(false);
+      tutorialLockRef.current = false;
     } else {
       setIsOnboarded(true);
       setOnboardingCompleted(true);
@@ -828,6 +906,36 @@ export default function App() {
     lastScrollYRef.current = currentScrollY;
   };
 
+  // Spotlight tutorial: only after onboarding, and only if the profile flag is false
+  useEffect(() => {
+    if (!session || !isOnboarded) return;
+    if (hasCompletedTutorial !== false) return;
+    if (tutorialLockRef.current) return;
+
+    if (activeTab !== 'home') {
+      setActiveTab('home');
+      return;
+    }
+
+    setIsShrunk(false);
+    const timer = window.setTimeout(() => {
+      if (tutorialLockRef.current || hasCompletedTutorial !== false) return;
+      tutorialLockRef.current = true;
+      startAscendSpotlightTutorial(() => {
+        setHasCompletedTutorial(true);
+        setLocalTutorialCompleted(true);
+        if (!session.isGuest) {
+          void persistUserProfile(session, {
+            has_completed_tutorial: true,
+            interests: selectedInterests,
+          });
+        }
+      });
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [session, isOnboarded, hasCompletedTutorial, activeTab, selectedInterests]);
+
   // ROUTING: Unauthenticated users -> Auth Screen
   if (!session) {
     return <AuthView onAuthSuccess={handleAuthSuccess} />;
@@ -838,10 +946,10 @@ export default function App() {
     return <OnboardingView onComplete={handleOnboardingComplete} />;
   }
 
-  // Theme styling classes
-  const isDark = theme === 'dark';
+  // Theme styling classes (system follows OS preference)
+  const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
   const themeBgClass = isDark
-    ? 'bg-slate-950 text-slate-100'
+    ? 'dark bg-slate-950 text-slate-100'
     : 'bg-[#F8FAFC] text-slate-900';
 
   return (
@@ -967,7 +1075,7 @@ export default function App() {
             />
 
             {/* Atomic Wisdom Quote Card Curated by Personal Interests */}
-            <QuoteCard selectedInterests={selectedInterests} />
+            <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
 
             {/* Habit List Header: "+" Button positioned directly above the habit list */}
             <div className="flex items-center justify-end pt-1 pb-0.5 px-0.5">
@@ -998,7 +1106,7 @@ export default function App() {
                   No habits active yet. Tap &quot;+&quot; above to create one!
                 </div>
               ) : (
-                activeHabits.map((habit) => (
+                activeHabits.map((habit, habitIndex) => (
                   <HabitCard
                     key={habit.id}
                     habit={habit}
@@ -1006,6 +1114,7 @@ export default function App() {
                     isLongPressed={longPressedHabitId === habit.id}
                     isOtherLongPressed={Boolean(longPressedHabitId && longPressedHabitId !== habit.id)}
                     isFallbackActive={activeFallbackIds.includes(habit.id)}
+                    isTourTarget={habitIndex === 0}
                     onCompleteToday={handleCompleteToday}
                     onToggleFallbackMode={handleToggleFallbackMode}
                     onResetToday={handleResetToday}
@@ -1097,7 +1206,7 @@ export default function App() {
             onChangePassword={() => setIsPasswordModalOpen(true)}
             onLogout={handleDeleteAccount}
             onUpdateName={(newName) => {
-              setSession((prev) => ({ ...prev, name: newName }));
+              setSession((prev) => (prev ? { ...prev, name: newName } : prev));
             }}
             onScroll={handleMainScroll}
           />

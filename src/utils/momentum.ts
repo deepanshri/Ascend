@@ -1,8 +1,177 @@
-import { Habit, HabitCompletionEvent, TODAY_DAY_INDEX } from '../types';
+import { Habit, HabitCompletionEvent, TODAY_DAY_INDEX, CompletionType } from '../types';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
+
+export interface HabitLogRow {
+  id?: string;
+  user_id?: string;
+  habit_id?: string;
+  habitId?: string;
+  day_index?: number;
+  dayIndex?: number;
+  date?: string;
+  logged_on?: string;
+  completed_at?: string;
+  type?: string;
+  completion_type?: string;
+  note?: string;
+  timestamp?: number | string;
+  created_at?: string;
+}
+
+function resolveDayIndex(row: HabitLogRow): number {
+  const explicit = row.day_index ?? row.dayIndex;
+  if (explicit !== undefined && explicit !== null && Number.isFinite(Number(explicit))) {
+    return Number(explicit);
+  }
+
+  const dateStr = row.date || row.logged_on || row.completed_at;
+  if (dateStr) {
+    const logged = new Date(dateStr);
+    if (!Number.isNaN(logged.getTime())) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      logged.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((logged.getTime() - today.getTime()) / 86400000);
+      const mapped = TODAY_DAY_INDEX + diffDays;
+      if (mapped >= 0 && mapped < 7) return mapped;
+    }
+  }
+
+  return TODAY_DAY_INDEX;
+}
+
+function resolveCompletionType(row: HabitLogRow): CompletionType {
+  const raw = String(row.type || row.completion_type || 'full').toLowerCase();
+  if (raw.includes('micro') || raw.includes('fallback') || raw === '0.5' || raw === 'partial') {
+    return 'fallback_micro';
+  }
+  return 'full';
+}
+
+export function mapHabitLogRowToEvent(row: HabitLogRow): HabitCompletionEvent | null {
+  const habitId = row.habit_id || row.habitId;
+  if (!habitId) return null;
+
+  const dayIndex = resolveDayIndex(row);
+  const timestampRaw = row.timestamp ?? row.created_at ?? row.completed_at;
+  let timestamp = Date.now();
+  if (typeof timestampRaw === 'number') {
+    timestamp = timestampRaw;
+  } else if (typeof timestampRaw === 'string') {
+    const parsed = Date.parse(timestampRaw);
+    if (!Number.isNaN(parsed)) timestamp = parsed;
+  }
+
+  return {
+    id: String(row.id || `log-${habitId}-${dayIndex}`),
+    habitId: String(habitId),
+    dayIndex,
+    date: String(row.date || row.logged_on || row.completed_at || ''),
+    type: resolveCompletionType(row),
+    note: row.note || undefined,
+    timestamp,
+  };
+}
+
+export function mergeCompletionEvents(
+  local: HabitCompletionEvent[],
+  remote: HabitCompletionEvent[]
+): HabitCompletionEvent[] {
+  const byKey = new Map<string, HabitCompletionEvent>();
+
+  const put = (event: HabitCompletionEvent) => {
+    const key = `${event.habitId}:${event.dayIndex}`;
+    const existing = byKey.get(key);
+    if (!existing || event.timestamp >= existing.timestamp) {
+      byKey.set(key, event);
+    }
+  };
+
+  local.forEach(put);
+  remote.forEach(put);
+  return Array.from(byKey.values()).sort((a, b) => a.timestamp - b.timestamp);
+}
 
 /**
- * Replays the immutable append-only event log to reconstruct the habit's
- * weekly projection (days, microDays).
+ * Reads the append-only `habit_logs` table and maps rows into completion events.
+ * Guest / offline sessions return an empty list so local logs remain ground truth.
+ */
+export async function fetchHabitLogsFromTable(userId?: string | null): Promise<HabitCompletionEvent[]> {
+  if (!isSupabaseConfigured || !supabase || !userId || userId.startsWith('guest_')) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('habit_logs')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (error || !data) {
+      return [];
+    }
+
+    return (data as HabitLogRow[])
+      .map(mapHabitLogRowToEvent)
+      .filter((event): event is HabitCompletionEvent => event !== null);
+  } catch {
+    return [];
+  }
+}
+
+export async function upsertHabitLog(
+  userId: string | null | undefined,
+  event: HabitCompletionEvent
+): Promise<void> {
+  if (!isSupabaseConfigured || !supabase || !userId || userId.startsWith('guest_')) {
+    return;
+  }
+
+  try {
+    await supabase
+      .from('habit_logs')
+      .delete()
+      .eq('user_id', userId)
+      .eq('habit_id', event.habitId)
+      .eq('day_index', event.dayIndex);
+
+    await supabase.from('habit_logs').insert({
+      id: event.id,
+      user_id: userId,
+      habit_id: event.habitId,
+      day_index: event.dayIndex,
+      date: event.date,
+      type: event.type,
+      note: event.note || null,
+      timestamp: event.timestamp,
+    });
+  } catch {
+    // Completions still persist locally if the remote table is unavailable.
+  }
+}
+
+export async function deleteHabitLog(
+  userId: string | null | undefined,
+  habitId: string,
+  dayIndex: number = TODAY_DAY_INDEX
+): Promise<void> {
+  if (!isSupabaseConfigured || !supabase || !userId || userId.startsWith('guest_')) {
+    return;
+  }
+
+  try {
+    await supabase
+      .from('habit_logs')
+      .delete()
+      .eq('user_id', userId)
+      .eq('habit_id', habitId)
+      .eq('day_index', dayIndex);
+  } catch {}
+}
+
+/**
+ * Replays the immutable append-only event log (local + habit_logs) to reconstruct
+ * the habit's weekly projection (days, microDays).
  * This guarantees that past days cannot be retroactively modified or gamed.
  */
 export function deriveHabitsFromEventLog(
@@ -38,14 +207,17 @@ export function deriveHabitsFromEventLog(
  * - 100% credit for full completions (1.0)
  * - 50% credit for micro-habit fallbacks (0.5)
  * - Decay mechanism: Missed days gently decay momentum (e.g. 10-15%) rather than zero-reset drop
- * - Preserves baseline identity momentum without fragile all-or-nothing mechanics
+ * - Ground truth is the completion log (habit_logs + local events), replayed onto habits
  */
 export function calculateMomentumScore(
   habits: Habit[],
   dayIndex: number = 3,
-  examShield: boolean = false
+  examShield: boolean = false,
+  logs?: HabitCompletionEvent[]
 ): number {
-  const activeHabits = habits.filter((h) => !h.archived);
+  const scoredHabits =
+    logs && logs.length > 0 ? deriveHabitsFromEventLog(habits, logs, dayIndex) : habits;
+  const activeHabits = scoredHabits.filter((h) => !h.archived);
   if (!activeHabits || activeHabits.length === 0) return 0;
 
   // 1. Today's execution rate (50% for fallback micro-habits, 100% for full)

@@ -148,6 +148,7 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
   return (
     <section
       id="radial-calendar-widget"
+      data-tour="momentum-card"
       className="relative w-full max-w-[360px] mx-auto h-[215px] pt-1 pb-1 overflow-visible select-none cursor-default"
     >
       {/* Ambient background soft radial glow centered on momentum */}

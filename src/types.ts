@@ -82,6 +82,12 @@ export interface UserSession {
   syncStatus: 'local' | 'synced' | 'syncing';
 }
 
+export interface UserProfile {
+  id: string;
+  interests: string[];
+  has_completed_tutorial: boolean;
+}
+
 export interface FrictionAudit {
   id: string;
   date: string;

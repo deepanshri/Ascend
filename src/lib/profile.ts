@@ -1,0 +1,98 @@
+import { UserProfile, UserSession } from '../types';
+import { isSupabaseConfigured, supabase } from './supabase';
+
+const TUTORIAL_STORAGE_KEY = 'ascend_has_completed_tutorial';
+
+export function getLocalTutorialCompleted(): boolean {
+  try {
+    return localStorage.getItem(TUTORIAL_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function setLocalTutorialCompleted(completed: boolean) {
+  try {
+    localStorage.setItem(TUTORIAL_STORAGE_KEY, completed ? 'true' : 'false');
+  } catch {}
+}
+
+function parseInterests(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      return parseInterests(parsed);
+    } catch {
+      return raw
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function localProfile(session: UserSession, interests: string[] = []): UserProfile {
+  return {
+    id: session.id,
+    interests,
+    has_completed_tutorial: getLocalTutorialCompleted(),
+  };
+}
+
+export async function fetchUserProfile(
+  session: UserSession,
+  fallbackInterests: string[] = []
+): Promise<UserProfile> {
+  const fallback = localProfile(session, fallbackInterests);
+  if (!isSupabaseConfigured || !supabase || session.isGuest) {
+    return fallback;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', session.id)
+      .maybeSingle();
+
+    if (error || !data) {
+      return fallback;
+    }
+
+    const interests = parseInterests(data.interests);
+    return {
+      id: String(data.id || session.id),
+      interests: interests.length > 0 ? interests : fallbackInterests,
+      has_completed_tutorial: Boolean(data.has_completed_tutorial) || fallback.has_completed_tutorial,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+export async function persistUserProfile(
+  session: UserSession,
+  patch: Partial<Pick<UserProfile, 'interests' | 'has_completed_tutorial'>>
+): Promise<void> {
+  if (typeof patch.has_completed_tutorial === 'boolean') {
+    setLocalTutorialCompleted(patch.has_completed_tutorial);
+  }
+
+  if (!isSupabaseConfigured || !supabase || session.isGuest) {
+    return;
+  }
+
+  try {
+    await supabase.from('profiles').upsert({
+      id: session.id,
+      ...patch,
+      updated_at: new Date().toISOString(),
+    });
+  } catch {
+    // Local state remains the source of truth if the profiles row is unavailable.
+  }
+}

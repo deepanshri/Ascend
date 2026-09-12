@@ -20,6 +20,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   return (
     <nav
       id="floating-bottom-nav"
+      data-tour="bottom-nav"
       aria-label="App Navigation"
       style={{
         transform: isShrunk ? 'scale(0.88) translateY(125%)' : 'scale(1) translateY(0)',

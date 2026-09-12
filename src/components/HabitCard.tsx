@@ -7,6 +7,7 @@ interface HabitCardProps {
   isLongPressed?: boolean;
   isOtherLongPressed?: boolean;
   isFallbackActive?: boolean;
+  isTourTarget?: boolean;
   onCompleteToday: (habitId: string, isFallback?: boolean) => void;
   onToggleFallbackMode: (habitId: string) => void;
   onResetToday: (habitId: string) => void;
@@ -23,6 +24,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   isLongPressed = false,
   isOtherLongPressed = false,
   isFallbackActive = false,
+  isTourTarget = false,
   onCompleteToday,
   onToggleFallbackMode,
   onResetToday,
@@ -274,6 +276,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   return (
     <div
       ref={cardRef}
+      data-tour={isTourTarget ? 'habit-card' : undefined}
       onContextMenu={handleContextMenu}
       className={`relative select-none touch-pan-y transition-all duration-200 ${
         isLongPressed
