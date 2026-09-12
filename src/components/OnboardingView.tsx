@@ -56,7 +56,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete }) =>
   return (
     <div
       id="onboarding-screen"
-      className="relative flex flex-col justify-between min-h-screen px-6 py-8 text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-950 select-none overflow-y-auto"
+      className="relative flex flex-col justify-between min-h-screen px-6 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] text-slate-900 dark:text-white bg-[#F8FAF9] dark:bg-slate-950 select-none overflow-y-auto"
     >
       {/* Background ambient accents */}
       <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-100/60 dark:bg-blue-900/20 rounded-full blur-3xl pointer-events-none" />

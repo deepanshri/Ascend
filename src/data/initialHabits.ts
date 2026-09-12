@@ -1,4 +1,48 @@
 import { Habit, IdentityEvidence, HabitCompletionEvent } from '../types';
+import { formatEvidenceDate, getWeekDates, seedCompletedDays } from '../utils/dates';
+
+const seededDays = seedCompletedDays(3);
+const weekDates = getWeekDates();
+
+function seedEventsForHabit(habitId: string): HabitCompletionEvent[] {
+  const events: HabitCompletionEvent[] = [];
+  seededDays.forEach((done, dayIndex) => {
+    if (!done) return;
+    const date = weekDates[dayIndex] ?? new Date();
+    events.push({
+      id: `evt-init-${habitId}-${dayIndex}`,
+      habitId,
+      dayIndex,
+      date: formatEvidenceDate(date),
+      type: 'full',
+      timestamp: date.getTime() + 9 * 3600000,
+    });
+  });
+  return events;
+}
+
+function seedEvidenceForHabit(
+  habitId: string,
+  habitName: string,
+  identityStatement: string,
+  category: Habit['category']
+): IdentityEvidence[] {
+  const evidence: IdentityEvidence[] = [];
+  seededDays.forEach((done, dayIndex) => {
+    if (!done) return;
+    const date = weekDates[dayIndex] ?? new Date();
+    evidence.push({
+      id: `ev-${habitId}-${dayIndex}`,
+      habitId,
+      habitName,
+      identityStatement,
+      category,
+      date: `${formatEvidenceDate(date)} • Completed 09:12 AM`,
+      dayNumber: dayIndex + 1,
+    });
+  });
+  return evidence;
+}
 
 export const INITIAL_HABITS: Habit[] = [
   {
@@ -6,7 +50,7 @@ export const INITIAL_HABITS: Habit[] = [
     name: 'Deep Work & Coding',
     category: 'work',
     timestamp: '09:00 AM',
-    days: [true, true, true, false, false, false, false],
+    days: seededDays,
     microDays: [false, false, false, false, false, false, false],
     fallbackMicroHabit: '5 min code review or outline task',
     purposeAnchor: 'To compound technical mastery and bring novel ideas into reality.',
@@ -85,61 +129,11 @@ export const INITIAL_HABITS: Habit[] = [
   },
 ];
 
-export const INITIAL_EVIDENCE: IdentityEvidence[] = [
-  {
-    id: 'ev-1',
-    habitId: 'habit-1',
-    habitName: 'Deep Work & Coding',
-    identityStatement: 'I am a focused creator who builds meaningful software.',
-    category: 'work',
-    date: 'Day 1 • Completed 09:12 AM',
-    dayNumber: 1,
-  },
-  {
-    id: 'ev-2',
-    habitId: 'habit-1',
-    habitName: 'Deep Work & Coding',
-    identityStatement: 'I am a focused creator who builds meaningful software.',
-    category: 'work',
-    date: 'Day 2 • Completed 09:05 AM',
-    dayNumber: 2,
-  },
-  {
-    id: 'ev-3',
-    habitId: 'habit-1',
-    habitName: 'Deep Work & Coding',
-    identityStatement: 'I am a focused creator who builds meaningful software.',
-    category: 'work',
-    date: 'Day 3 • Completed 09:20 AM',
-    dayNumber: 3,
-  },
-];
+export const INITIAL_EVIDENCE: IdentityEvidence[] = seedEvidenceForHabit(
+  'habit-1',
+  'Deep Work & Coding',
+  'I am a focused creator who builds meaningful software.',
+  'work'
+);
 
-// Append-only completion event log seed for permanent history
-export const INITIAL_COMPLETION_EVENTS: HabitCompletionEvent[] = [
-  {
-    id: 'evt-init-1',
-    habitId: 'habit-1',
-    dayIndex: 0,
-    date: 'Day 1',
-    type: 'full',
-    timestamp: Date.now() - 3 * 86400000,
-  },
-  {
-    id: 'evt-init-2',
-    habitId: 'habit-1',
-    dayIndex: 1,
-    date: 'Day 2',
-    type: 'full',
-    timestamp: Date.now() - 2 * 86400000,
-  },
-  {
-    id: 'evt-init-3',
-    habitId: 'habit-1',
-    dayIndex: 2,
-    date: 'Day 3',
-    type: 'full',
-    timestamp: Date.now() - 1 * 86400000,
-  },
-];
-
+export const INITIAL_COMPLETION_EVENTS: HabitCompletionEvent[] = seedEventsForHabit('habit-1');

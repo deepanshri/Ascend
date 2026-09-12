@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Habit, TODAY_DAY_INDEX } from '../types';
+import { Habit } from '../types';
+import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 
 interface HabitCardProps {
   habit: Habit;
@@ -20,7 +21,7 @@ interface HabitCardProps {
 
 export const HabitCard: React.FC<HabitCardProps> = ({
   habit,
-  todayIndex = TODAY_DAY_INDEX,
+  todayIndex = getTodayDayIndex(),
   isLongPressed = false,
   isOtherLongPressed = false,
   isFallbackActive = false,
@@ -532,7 +533,9 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                         title="Today: Swipe right to complete, swipe left for fallback"
                         className="w-6 h-6 rounded-md flex items-center justify-center select-none bg-emerald-50/90 dark:bg-blue-950/90 border-2 border-emerald-500 dark:border-blue-500 text-emerald-700 dark:text-blue-300 shadow-xs"
                       >
-                        <span className="text-[9px] font-black text-emerald-700 dark:text-blue-300">D4</span>
+                        <span className="text-[9px] font-black text-emerald-700 dark:text-blue-300">
+                          {getWeekDateNumber(todayIndex)}
+                        </span>
                       </div>
                     );
                   }

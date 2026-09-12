@@ -8,10 +8,11 @@ import {
   ThemeMode,
   FrictionAudit,
   HabitCompletionEvent,
-  TODAY_DAY_INDEX,
 } from './types';
 import { INITIAL_HABITS, INITIAL_EVIDENCE, INITIAL_COMPLETION_EVENTS } from './data/initialHabits';
 import { calculateMomentumScore, deriveHabitsFromEventLog, fetchHabitLogsFromTable, mergeCompletionEvents, upsertHabitLog, deleteHabitLog } from './utils/momentum';
+import { formatEvidenceDate, getTodayDayIndex } from './utils/dates';
+import { applyNativeChrome } from './lib/nativeChrome';
 import {
   getStoredSession,
   setStoredSession,
@@ -26,7 +27,6 @@ import {
 } from './lib/supabase';
 import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted } from './lib/profile';
 import { startAscendSpotlightTutorial, destroyAscendSpotlightTutorial } from './lib/tutorial';
-import { StatusBar } from './components/StatusBar';
 import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
 import { RadialFanCalendar } from './components/RadialFanCalendar';
@@ -275,7 +275,7 @@ export default function App() {
   }, [reminders]);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
-  const [selectedDay, setSelectedDay] = useState<number>(4); // Day 4 is centered
+  const [selectedDay, setSelectedDay] = useState<number>(() => getTodayDayIndex() + 1);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
   const [detailHabit, setDetailHabit] = useState<Habit | null>(null);
@@ -387,6 +387,11 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    const dark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
+    void applyNativeChrome(dark);
+  }, [theme, systemPrefersDark]);
+
+  useEffect(() => {
     try {
       localStorage.setItem('ascend_exam_shield', examShieldActive ? 'true' : 'false');
     } catch {}
@@ -398,12 +403,13 @@ export default function App() {
     } catch {}
   }, [frictionAudits]);
 
+  const todayDayIndex = getTodayDayIndex();
   const currentDayIndex = selectedDay - 1;
 
   // Derive habit states (days, microDays) by replaying the append-only event log
   const derivedHabits = useMemo(() => {
-    return deriveHabitsFromEventLog(habits, completionEvents, TODAY_DAY_INDEX);
-  }, [habits, completionEvents]);
+    return deriveHabitsFromEventLog(habits, completionEvents, todayDayIndex);
+  }, [habits, completionEvents, todayDayIndex]);
 
   // Non-archived habits for core active calculations
   const activeHabits = useMemo(() => {
@@ -444,7 +450,7 @@ export default function App() {
 
     // Clear any previous today completion event for this habit to allow switching / updating cleanly
     setCompletionEvents((prev) =>
-      prev.filter((e) => !(e.habitId === habitId && e.dayIndex === TODAY_DAY_INDEX))
+      prev.filter((e) => !(e.habitId === habitId && e.dayIndex === todayDayIndex))
     );
 
     // Remove from active fallback state
@@ -453,7 +459,7 @@ export default function App() {
     const newEvent: HabitCompletionEvent = {
       id: `evt-${isMicro ? 'micro-' : ''}${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       habitId,
-      dayIndex: TODAY_DAY_INDEX,
+      dayIndex: todayDayIndex,
       date: new Date().toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -469,7 +475,7 @@ export default function App() {
 
     // Clean up previous today's evidence for this habit
     setEvidenceList((prev) =>
-      prev.filter((e) => !(e.habitId === habitId && e.dayNumber === TODAY_DAY_INDEX + 1))
+      prev.filter((e) => !(e.habitId === habitId && e.dayNumber === todayDayIndex + 1))
     );
 
     const newEvidence: IdentityEvidence = {
@@ -480,8 +486,8 @@ export default function App() {
         ? `Micro-Habit vote: ${targetHabit.identityStatement || 'Non-zero progress'}`
         : (targetHabit.identityStatement || 'I am consistent and disciplined'),
       category: targetHabit.category || 'work',
-      date: `Day ${TODAY_DAY_INDEX + 1} • ${isMicro ? 'Fallback micro (50%)' : 'Completed (100%)'}`,
-      dayNumber: TODAY_DAY_INDEX + 1,
+      date: `${formatEvidenceDate()} • ${isMicro ? 'Fallback micro (50%)' : 'Completed (100%)'}`,
+      dayNumber: todayDayIndex + 1,
     };
     setEvidenceList((evPrev) => [newEvidence, ...evPrev]);
 
@@ -489,7 +495,7 @@ export default function App() {
       const newAudit: FrictionAudit = {
         id: `fa-${Date.now()}`,
         date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        dayNumber: TODAY_DAY_INDEX + 1,
+        dayNumber: todayDayIndex + 1,
         habitName: targetHabit.name,
         type: 'fallback_used',
         note: `Protected momentum with fallback: "${targetHabit.fallbackMicroHabit || '2-min minimum'}"`,
@@ -516,16 +522,16 @@ export default function App() {
 
     // If habit was already completed today, unmark it so it can transition to fallback
     const alreadyLogged = completionEvents.some(
-      (e) => e.habitId === habitId && e.dayIndex === TODAY_DAY_INDEX
+      (e) => e.habitId === habitId && e.dayIndex === todayDayIndex
     );
     if (alreadyLogged) {
       setCompletionEvents((prev) =>
-        prev.filter((e) => !(e.habitId === habitId && e.dayIndex === TODAY_DAY_INDEX))
+        prev.filter((e) => !(e.habitId === habitId && e.dayIndex === todayDayIndex))
       );
       setEvidenceList((prev) =>
-        prev.filter((e) => !(e.habitId === habitId && e.dayNumber === TODAY_DAY_INDEX + 1))
+        prev.filter((e) => !(e.habitId === habitId && e.dayNumber === todayDayIndex + 1))
       );
-      void deleteHabitLog(session?.id, habitId, TODAY_DAY_INDEX);
+      void deleteHabitLog(session?.id, habitId, todayDayIndex);
     }
 
     // Activate fallback mode (not complete yet!)
@@ -537,20 +543,20 @@ export default function App() {
   const handleResetToday = (habitId: string) => {
     // Remove completion event for today
     setCompletionEvents((prev) =>
-      prev.filter((e) => !(e.habitId === habitId && e.dayIndex === TODAY_DAY_INDEX))
+      prev.filter((e) => !(e.habitId === habitId && e.dayIndex === todayDayIndex))
     );
-    void deleteHabitLog(session?.id, habitId, TODAY_DAY_INDEX);
+    void deleteHabitLog(session?.id, habitId, todayDayIndex);
 
     // Remove evidence for today
     setEvidenceList((prev) =>
-      prev.filter((e) => !(e.habitId === habitId && e.dayNumber === TODAY_DAY_INDEX + 1))
+      prev.filter((e) => !(e.habitId === habitId && e.dayNumber === todayDayIndex + 1))
     );
 
     // Remove friction audit for today
     const habitName = habits.find((h) => h.id === habitId)?.name;
     if (habitName) {
       setFrictionAudits((prev) =>
-        prev.filter((a) => !(a.habitName === habitName && a.dayNumber === TODAY_DAY_INDEX + 1))
+        prev.filter((a) => !(a.habitName === habitName && a.dayNumber === todayDayIndex + 1))
       );
     }
 
@@ -950,24 +956,18 @@ export default function App() {
   const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
   const themeBgClass = isDark
     ? 'dark bg-slate-950 text-slate-100'
-    : 'bg-[#F8FAFC] text-slate-900';
+    : 'bg-[#F8FAF9] text-slate-900';
 
   return (
     <div
       id="app-root"
-      className={`min-h-screen flex justify-center items-center select-none font-sans transition-colors duration-200 ${
-        isDark ? 'bg-slate-900' : 'bg-slate-100'
-      }`}
+      className={`w-[100vw] h-[100vh] overflow-x-hidden select-none font-sans transition-colors duration-200 ${themeBgClass}`}
     >
-      {/* Mobile Shell Container (Strictly styled glass design) */}
       <div
         id="mobile-viewport"
-        className={`relative w-full max-w-[420px] h-[100dvh] max-h-[890px] shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex flex-col justify-between overflow-hidden sm:rounded-[44px] border border-slate-200/90 transition-colors duration-200 ${themeBgClass}`}
+        className="relative w-full h-full flex flex-col justify-between overflow-hidden"
       >
-        {/* iOS / Phone Status Bar */}
-        <header className={`relative w-full pt-1 px-4 z-20 transition-all duration-200 ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}>
-          <StatusBar />
-
+        <header className={`relative w-full pt-[max(0.25rem,env(safe-area-inset-top))] px-4 z-20 transition-all duration-200 ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}>
           {/* Top Bar with Brand and Settings Gear: shrinks on scroll down, pops up on scroll up */}
           <div
             id="top-brand-settings-bar"
@@ -1110,7 +1110,7 @@ export default function App() {
                   <HabitCard
                     key={habit.id}
                     habit={habit}
-                    todayIndex={TODAY_DAY_INDEX}
+                    todayIndex={todayDayIndex}
                     isLongPressed={longPressedHabitId === habit.id}
                     isOtherLongPressed={Boolean(longPressedHabitId && longPressedHabitId !== habit.id)}
                     isFallbackActive={activeFallbackIds.includes(habit.id)}
@@ -1243,7 +1243,7 @@ export default function App() {
         {toastNotification && (
           <div
             id="ascend-toast-notification"
-            className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[12px] font-bold px-4 py-2 rounded-full shadow-2xl flex items-center space-x-2 border-2 border-[#23C15D] dark:border-blue-500 animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none"
+            className="fixed top-[max(1.25rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[12px] font-bold px-4 py-2 rounded-full shadow-2xl flex items-center space-x-2 border-2 border-[#23C15D] dark:border-blue-500 animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none"
           >
             <div className="w-4 h-4 rounded-full bg-emerald-50 dark:bg-blue-950 flex items-center justify-center text-[#23C15D] dark:text-blue-400 shrink-0">
               <svg className="w-2.5 h-2.5 stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1259,7 +1259,7 @@ export default function App() {
           <HabitLongPressOverlay
             habit={longPressedHabit}
             rect={longPressedRect}
-            todayIndex={TODAY_DAY_INDEX}
+            todayIndex={todayDayIndex}
             isFallbackActive={activeFallbackIds.includes(longPressedHabit.id)}
             onToggleFallbackMode={handleToggleFallbackMode}
             onClose={() => {
@@ -1296,7 +1296,7 @@ export default function App() {
           onDeleteHabit={handleDeleteHabit}
           onUpdateHabit={handleUpdateHabit}
           onArchiveHabit={handleArchiveHabit}
-          todayIndex={TODAY_DAY_INDEX}
+          todayIndex={todayDayIndex}
         />
 
         <DeleteHabitConfirmModal

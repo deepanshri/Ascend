@@ -1,5 +1,6 @@
 import React from 'react';
-import { Habit, TODAY_DAY_INDEX } from '../types';
+import { Habit } from '../types';
+import { getTodayDayIndex, getWeekDates, getWeekdayNarrow } from '../utils/dates';
 
 interface RadialFanCalendarProps {
   selectedDay: number; // 1 to 7 (for reference/current active day indicator)
@@ -69,22 +70,26 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
     { day: 7, angle: 26, rot: 64 },
   ];
 
+  const todayIndex = getTodayDayIndex();
+  const weekDates = getWeekDates();
+
   const dateCards = cardAngles.map((item) => {
     const rad = (item.angle * Math.PI) / 180;
     const x = cx + cardRadius * Math.cos(rad);
     const y = cy - cardRadius * Math.sin(rad);
     const dayIdx = item.day - 1;
     const completion = dayCompletionRates[dayIdx] ?? 0;
+    const cardDate = weekDates[dayIdx];
 
-    // Dot color rules explicitly specified:
-    // 1. If date hasn't arrived yet (dayIdx > TODAY_DAY_INDEX) -> Grey
+    // Dot color rules:
+    // 1. If date hasn't arrived yet (dayIdx > today) -> Grey
     // 2. If done habits > 70% -> Green
     // 3. If done habits between 40% - 70% -> Light Green
     // 4. If done habits < 40% -> Orange
     let dotBg = '#94A3B8';
     let statusLabel = 'Upcoming';
 
-    if (dayIdx > TODAY_DAY_INDEX) {
+    if (dayIdx > todayIndex) {
       dotBg = isDark ? '#64748B' : '#94A3B8';
       statusLabel = 'Upcoming';
     } else if (completion > 0.70) {
@@ -104,7 +109,9 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
       y,
       dotBg,
       statusLabel,
-      isToday: item.day === TODAY_DAY_INDEX + 1,
+      dateLabel: cardDate?.getDate() ?? item.day,
+      weekdayLabel: getWeekdayNarrow(dayIdx),
+      isToday: dayIdx === todayIndex,
     };
   });
 
@@ -225,16 +232,26 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
                   filter="url(#cleanCardShadow)"
                 />
 
-                {/* Day Number */}
+                {/* Weekday + calendar date */}
                 <text
                   textAnchor="middle"
-                  y="-1"
+                  y="-8"
+                  fontSize="7"
+                  fontWeight="800"
+                  fill={card.isToday ? (isDark ? '#93C5FD' : '#059669') : (isDark ? '#94A3B8' : '#94A3B8')}
+                  fontFamily="system-ui, -apple-system, sans-serif"
+                >
+                  {card.weekdayLabel}
+                </text>
+                <text
+                  textAnchor="middle"
+                  y="5"
                   fontSize="13"
                   fontWeight={card.isToday ? '900' : '700'}
                   fill={card.isToday ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#E2E8F0' : '#334155')}
                   fontFamily="system-ui, -apple-system, sans-serif"
                 >
-                  {card.day}
+                  {card.dateLabel}
                 </text>
 
                 {/* Status indicator dot with explicit completion colors */}

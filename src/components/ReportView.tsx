@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Habit, IdentityEvidence, FrictionAudit, TODAY_DAY_INDEX } from '../types';
+import { Habit, IdentityEvidence, FrictionAudit } from '../types';
+import { getTodayDayIndex, getWeekdayShort } from '../utils/dates';
 
 interface ReportViewProps {
   habits: Habit[];
@@ -61,10 +62,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
     };
   }, [habits]);
 
+  const todayIndex = getTodayDayIndex();
+
   // Habits accomplished vs total habits
   const accomplishedHabitsCount = useMemo(() => {
-    return habits.filter((h) => Boolean(h.days?.[TODAY_DAY_INDEX])).length;
-  }, [habits]);
+    return habits.filter((h) => Boolean(h.days?.[todayIndex])).length;
+  }, [habits, todayIndex]);
   const totalHabitsCount = habits.length;
 
   // Trajectory Multi-Line Graph Data (matches the 3 concentric rings)
@@ -673,7 +676,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
             <div className="grid grid-cols-7 gap-1.5 text-center">
               {Array.from({ length: 7 }, (_, i) => {
                 const dayNum = i + 1;
-                const isPastOrToday = i <= TODAY_DAY_INDEX;
+                const isPastOrToday = i <= todayIndex;
                 const completedCount = habits.filter((h) => h.days?.[i]).length;
                 const rate = habits.length > 0 ? completedCount / habits.length : 0;
                 const color =
@@ -688,7 +691,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                 return (
                   <div key={dayNum} className="flex flex-col items-center">
                     <span className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1">
-                      D{dayNum}
+                      {getWeekdayShort(i)}
                     </span>
                     <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-[11px] font-extrabold shadow-2xs ${color}`}>
                       {isPastOrToday ? Math.round(rate * 100) + '%' : '—'}

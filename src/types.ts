@@ -17,8 +17,6 @@ export interface HabitCompletionEvent {
   timestamp: number;
 }
 
-export const TODAY_DAY_INDEX = 3; // Day 4 is the current active day (0-indexed: 0, 1, 2, 3)
-
 export interface Habit {
   id: string;
   name: string;

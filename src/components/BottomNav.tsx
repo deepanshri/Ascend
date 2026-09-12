@@ -29,7 +29,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 240ms ease-out, filter 200ms ease-out',
         willChange: 'transform, opacity',
       }}
-      className={`absolute bottom-5 left-4 right-4 h-[68px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-full nav-pill-shadow border border-slate-100/90 dark:border-slate-800 px-2 flex items-center justify-between z-40 ${
+      className={`absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-4 right-4 h-[68px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-full nav-pill-shadow border border-slate-100/90 dark:border-slate-800 px-2 flex items-center justify-between z-40 ${
         isBlurred ? 'filter blur-[4px]' : ''
       }`}
     >

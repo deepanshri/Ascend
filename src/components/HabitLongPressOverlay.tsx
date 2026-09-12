@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { Habit, TODAY_DAY_INDEX } from '../types';
+import { Habit } from '../types';
+import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 
 interface HabitLongPressOverlayProps {
   habit: Habit;
@@ -15,7 +16,7 @@ interface HabitLongPressOverlayProps {
 export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
   habit,
   rect,
-  todayIndex = TODAY_DAY_INDEX,
+  todayIndex = getTodayDayIndex(),
   isFallbackActive = false,
   onToggleFallbackMode,
   onClose,
@@ -238,7 +239,7 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
                         </svg>
                       )
                     ) : isToday ? (
-                      <span className="text-[9px] font-black leading-none">D4</span>
+                      <span className="text-[9px] font-black leading-none">{getWeekDateNumber(todayIndex)}</span>
                     ) : (
                       <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
                     )}

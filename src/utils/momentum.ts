@@ -1,5 +1,6 @@
-import { Habit, HabitCompletionEvent, TODAY_DAY_INDEX, CompletionType } from '../types';
+import { Habit, HabitCompletionEvent, CompletionType } from '../types';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { getTodayDayIndex } from './dates';
 
 export interface HabitLogRow {
   id?: string;
@@ -32,12 +33,12 @@ function resolveDayIndex(row: HabitLogRow): number {
       today.setHours(0, 0, 0, 0);
       logged.setHours(0, 0, 0, 0);
       const diffDays = Math.round((logged.getTime() - today.getTime()) / 86400000);
-      const mapped = TODAY_DAY_INDEX + diffDays;
+      const mapped = getTodayDayIndex() + diffDays;
       if (mapped >= 0 && mapped < 7) return mapped;
     }
   }
 
-  return TODAY_DAY_INDEX;
+  return getTodayDayIndex();
 }
 
 function resolveCompletionType(row: HabitLogRow): CompletionType {
@@ -153,7 +154,7 @@ export async function upsertHabitLog(
 export async function deleteHabitLog(
   userId: string | null | undefined,
   habitId: string,
-  dayIndex: number = TODAY_DAY_INDEX
+  dayIndex: number = getTodayDayIndex()
 ): Promise<void> {
   if (!isSupabaseConfigured || !supabase || !userId || userId.startsWith('guest_')) {
     return;
@@ -177,7 +178,7 @@ export async function deleteHabitLog(
 export function deriveHabitsFromEventLog(
   habits: Habit[],
   events: HabitCompletionEvent[],
-  todayIndex: number = TODAY_DAY_INDEX
+  todayIndex: number = getTodayDayIndex()
 ): Habit[] {
   return habits.map((habit) => {
     const days = [false, false, false, false, false, false, false];
