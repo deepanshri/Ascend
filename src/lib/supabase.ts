@@ -181,12 +181,15 @@ export const authService = {
     };
 
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { full_name: updated.name } },
+        options: { data: { full_name: updated.name, avatar_url: updated.avatarUrl } },
       });
       if (error) throw new Error(error.message);
+      if (data.user?.id) {
+        updated.id = data.user.id;
+      }
     } else {
       await new Promise((r) => setTimeout(r, 450));
     }

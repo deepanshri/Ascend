@@ -10,7 +10,7 @@ import {
   HabitCompletionEvent,
 } from './types';
 import { INITIAL_HABITS, INITIAL_EVIDENCE, INITIAL_COMPLETION_EVENTS } from './data/initialHabits';
-import { calculateMomentumScore, deriveHabitsFromEventLog, fetchHabitLogsFromTable, mergeCompletionEvents, upsertHabitLog, deleteHabitLog } from './utils/momentum';
+import { calculateMomentumScore, deriveHabitsFromEventLog, upsertHabitLog, deleteHabitLog } from './utils/momentum';
 import { formatEvidenceDate, getTodayDayIndex } from './utils/dates';
 import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome } from './lib/nativeChrome';
@@ -27,6 +27,7 @@ import {
   remindersSyncService,
 } from './lib/supabase';
 import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted } from './lib/profile';
+import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
 import { startAscendSpotlightTutorial, destroyAscendSpotlightTutorial } from './lib/tutorial';
 import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
@@ -202,20 +203,6 @@ export default function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, session?.isGuest]);
-
-  // Hydrate completion logs from Supabase `habit_logs` (ground truth for momentum)
-  useEffect(() => {
-    if (!session || session.isGuest) return;
-    let cancelled = false;
-    void (async () => {
-      const remoteLogs = await fetchHabitLogsFromTable(session.id);
-      if (cancelled || remoteLogs.length === 0) return;
-      setCompletionEvents((prev) => mergeCompletionEvents(prev, remoteLogs));
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, [session?.id, session?.isGuest]);
 
   // Active fallback mode for habits today (habits switched to fallback micro-task, pending completion)
@@ -437,6 +424,64 @@ export default function App() {
   const momentumScore = useMemo(() => {
     return calculateMomentumScore(habits, currentDayIndex, examShieldActive, completionEvents);
   }, [habits, currentDayIndex, examShieldActive, completionEvents]);
+
+  const habitsRef = useRef(habits);
+  const completionEventsRef = useRef(completionEvents);
+  const selectedInterestsRef = useRef(selectedInterests);
+  const hasCompletedTutorialRef = useRef(hasCompletedTutorial);
+  const momentumScoreRef = useRef(momentumScore);
+  const hydratedUserIdRef = useRef<string | null>(null);
+  habitsRef.current = habits;
+  completionEventsRef.current = completionEvents;
+  selectedInterestsRef.current = selectedInterests;
+  hasCompletedTutorialRef.current = hasCompletedTutorial;
+  momentumScoreRef.current = momentumScore;
+
+  const runAuthenticatedSync = async (targetSession: UserSession) => {
+    if (targetSession.isGuest) return;
+    const result = await syncAuthenticatedAccount({
+      session: targetSession,
+      habits: habitsRef.current,
+      completionEvents: completionEventsRef.current,
+      interests: selectedInterestsRef.current,
+      hasCompletedTutorial: Boolean(hasCompletedTutorialRef.current),
+      momentumScore: momentumScoreRef.current,
+    });
+    setHabits(result.habits);
+    setCompletionEvents(result.completionEvents);
+    hydratedUserIdRef.current = targetSession.id;
+  };
+
+  // Guest → auth: hydrate profiles, habits, habit_logs, and momentum_history
+  useEffect(() => {
+    if (!session || session.isGuest) {
+      hydratedUserIdRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      setSession((prev) => (prev ? { ...prev, syncStatus: 'syncing' } : prev));
+      await runAuthenticatedSync(session);
+      if (cancelled) return;
+      setSession((prev) => (prev ? { ...prev, syncStatus: 'synced' } : prev));
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, session?.isGuest]);
+
+  useEffect(() => {
+    if (!session || session.isGuest) return;
+    if (hydratedUserIdRef.current !== session.id) return;
+    void persistHabitsToTable(session.id, habits);
+  }, [habits, session?.id, session?.isGuest]);
+
+  useEffect(() => {
+    if (!session || session.isGuest) return;
+    if (hydratedUserIdRef.current !== session.id) return;
+    void persistMomentumHistory(session.id, momentumScore, currentDayIndex);
+  }, [momentumScore, currentDayIndex, session?.id, session?.isGuest]);
 
   // Calculate day completion rates (1-7) using active habits
   const dayCompletionRates = Array.from({ length: 7 }, (_, dayIdx) => {
@@ -1160,12 +1205,10 @@ export default function App() {
             onOpenLedger={() => setIsLedgerModalOpen(true)}
             onUpgradeGuest={() => setIsUpgradeModalOpen(true)}
             onSyncNow={async () => {
-              if (isSupabaseConfigured && supabase && !session.isGuest) {
-                try {
-                  await supabase.auth.getUser();
-                } catch {}
-              }
-              await new Promise<void>((r) => setTimeout(r, 600));
+              if (!session || session.isGuest) return;
+              try {
+                await runAuthenticatedSync(session);
+              } catch {}
             }}
             onChangePassword={() => setIsPasswordModalOpen(true)}
             onLogout={handleDeleteAccount}

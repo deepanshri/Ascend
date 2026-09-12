@@ -4,6 +4,8 @@ import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
 
 const SWIPE_AXIS_LOCK_PX = 10;
+const DOUBLE_TAP_MS = 250;
+const GHOST_MOUSE_MS = 700;
 
 interface HabitCardProps {
   habit: Habit;
@@ -55,6 +57,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   const gestureAxisRef = useRef<'none' | 'horizontal' | 'vertical'>('none');
   const wasLongPressRef = useRef(false);
   const lastTapTimeRef = useRef<number>(0);
+  const singleTapTimerRef = useRef<number | null>(null);
+  const lastTouchAtRef = useRef<number>(0);
   const isOtherLongPressedRef = useRef(isOtherLongPressed);
   isOtherLongPressedRef.current = isOtherLongPressed;
 
@@ -72,6 +76,34 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+  };
+
+  const clearSingleTapTimer = () => {
+    if (singleTapTimerRef.current !== null) {
+      clearTimeout(singleTapTimerRef.current);
+      singleTapTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => clearSingleTapTimer(), []);
+
+  /** Returns true when this tap completed a double-tap (exactly two taps < 250ms). */
+  const registerTap = (): boolean => {
+    const now = Date.now();
+    if (now - lastTapTimeRef.current < DOUBLE_TAP_MS) {
+      clearSingleTapTimer();
+      lastTapTimeRef.current = 0;
+      setIsFlipped((prev) => !prev);
+      return true;
+    }
+
+    lastTapTimeRef.current = now;
+    clearSingleTapTimer();
+    singleTapTimerRef.current = window.setTimeout(() => {
+      singleTapTimerRef.current = null;
+      lastTapTimeRef.current = 0;
+    }, DOUBLE_TAP_MS);
+    return false;
   };
 
   const applySwipeOffset = (deltaX: number) => {
@@ -165,20 +197,16 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       return;
     }
 
-    // Double tap detection on touch
+    // Double tap: second touch within 250ms flips the card
     if (!hasMovedRef.current) {
-      const now = Date.now();
-      const diff = now - lastTapTimeRef.current;
-      if (diff > 40 && diff < 350) {
-        setIsFlipped((prev) => !prev);
-        lastTapTimeRef.current = 0;
+      lastTouchAtRef.current = Date.now();
+      if (registerTap()) {
         swipeOffsetRef.current = 0;
         setSwipeOffset(0);
         setIsDragging(false);
         gestureAxisRef.current = 'none';
         return;
       }
-      lastTapTimeRef.current = now;
     }
 
     if (isFlipped) {
@@ -250,18 +278,21 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       return;
     }
 
-    // Double tap/click detection on mouse
+    // Ignore the synthetic mouseup that follows a touch tap
+    if (Date.now() - lastTouchAtRef.current < GHOST_MOUSE_MS) {
+      setIsDragging(false);
+      return;
+    }
+
+    // Double click: second mouseup within 250ms flips the card
     if (!hasMovedRef.current) {
-      const now = Date.now();
-      const diff = now - lastTapTimeRef.current;
-      if (diff > 40 && diff < 350) {
-        setIsFlipped((prev) => !prev);
-        lastTapTimeRef.current = 0;
+      if (registerTap()) {
+        swipeOffsetRef.current = 0;
         setSwipeOffset(0);
         setIsDragging(false);
+        gestureAxisRef.current = 'none';
         return;
       }
-      lastTapTimeRef.current = now;
     }
 
     if (isFlipped) {
@@ -431,10 +462,6 @@ export const HabitCard: React.FC<HabitCardProps> = ({
           role="button"
           tabIndex={0}
           onClick={handleCardClick}
-          onDoubleClick={(e) => {
-            e.stopPropagation();
-            setIsFlipped((prev) => !prev);
-          }}
           onContextMenu={(e) => e.preventDefault()}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}

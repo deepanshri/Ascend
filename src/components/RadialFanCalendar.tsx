@@ -15,6 +15,7 @@ interface RadialFanCalendarProps {
 
 export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
   selectedDay,
+  onSelectDay,
   dayCompletionRates,
   habits,
   momentumScore,
@@ -114,6 +115,7 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
       dateLabel: cardDate?.getDate() ?? item.day,
       weekdayLabel: getWeekdayNarrow(dayIdx),
       isToday: dayIdx === todayIndex,
+      isSelected: item.day === selectedDay,
     };
   });
 
@@ -153,6 +155,19 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
   const layer3Dots = generateArcDots(78, 13);
   const layer4Dots = generateArcDots(94, 15);
   const layer5Dots = generateArcDots(110, 17);
+
+  // 7 fixed mascot slots on the outer momentum-dot arc (Dot 1 … Dot 7).
+  // Index 3 is today's centered card. Coordinates are % of the 360×215 canvas.
+  const mascotArcSlots = cardAngles.map((item) => {
+    const rad = (item.angle * Math.PI) / 180;
+    const x = cx + 110 * Math.cos(rad);
+    const y = cy - 110 * Math.sin(rad);
+    return {
+      left: `${(x / 360) * 100}%`,
+      top: `${(y / 215) * 100}%`,
+    };
+  });
+  const mascotSlot = mascotArcSlots[currentDayIndex] ?? mascotArcSlots[3];
 
   return (
     <section
@@ -199,16 +214,32 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
         </defs>
 
         {/* ========================================================================= */}
-        {/* SEMICIRCLE ARCH OF DATE CARDS (Day 1 to Day 7) - NON-CLICKABLE            */}
-        {/* Clean, perfectly rounded cards with no weird shadows or pills underneath  */}
+        {/* SEMICIRCLE ARCH OF DATE CARDS (Day 1 to Day 7)                            */}
+        {/* Tap a card to select that day; the mascot glides along the outer dot arc  */}
         {/* ========================================================================= */}
-        <g id="fan-date-cards">
+        <g id="fan-date-cards" className="pointer-events-auto">
           {dateCards.map((card) => {
+            const isActive = card.isSelected || card.isToday;
             return (
               <g
                 key={card.day}
                 id={`fan-day-card-${card.day}`}
                 transform={`translate(${card.x}, ${card.y}) rotate(${card.rot})`}
+                className="cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectDay?.(card.day);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectDay?.(card.day);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label={`Select day ${card.day}`}
+                aria-pressed={card.isSelected}
               >
                 {/* Crisp card background */}
                 <rect
@@ -218,9 +249,9 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
                   height="44"
                   rx="13"
                   ry="13"
-                  fill={card.isToday ? (isDark ? '#1E293B' : '#FFFFFF') : (isDark ? '#0F172A' : '#FFFFFF')}
-                  stroke={card.isToday ? (isDark ? '#3B82F6' : '#94A3B8') : (isDark ? '#334155' : '#E2E8F0')}
-                  strokeWidth={card.isToday ? '1.6' : '1'}
+                  fill={isActive ? (isDark ? '#1E293B' : '#FFFFFF') : (isDark ? '#0F172A' : '#FFFFFF')}
+                  stroke={card.isSelected ? (isDark ? '#3B82F6' : '#10B981') : card.isToday ? (isDark ? '#3B82F6' : '#94A3B8') : (isDark ? '#334155' : '#E2E8F0')}
+                  strokeWidth={card.isSelected ? '2' : card.isToday ? '1.6' : '1'}
                   filter="url(#cleanCardShadow)"
                 />
 
@@ -230,7 +261,7 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
                   y="-8"
                   fontSize="7"
                   fontWeight="800"
-                  fill={card.isToday ? (isDark ? '#93C5FD' : '#059669') : (isDark ? '#94A3B8' : '#94A3B8')}
+                  fill={isActive ? (isDark ? '#93C5FD' : '#059669') : (isDark ? '#94A3B8' : '#94A3B8')}
                   fontFamily="system-ui, -apple-system, sans-serif"
                 >
                   {card.weekdayLabel}
@@ -239,8 +270,8 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
                   textAnchor="middle"
                   y="5"
                   fontSize="13"
-                  fontWeight={card.isToday ? '900' : '700'}
-                  fill={card.isToday ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#E2E8F0' : '#334155')}
+                  fontWeight={isActive ? '900' : '700'}
+                  fill={isActive ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#E2E8F0' : '#334155')}
                   fontFamily="system-ui, -apple-system, sans-serif"
                 >
                   {card.dateLabel}
@@ -429,16 +460,19 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
             MOMENTUM
           </text>
         </g>
-
-        {/* Mascot on the right flank; angle follows the 0–100 momentum score */}
-        <g id="mascot-companion" className="pointer-events-none" transform="translate(248, 88)">
-          <Mascot
-            size={72}
-            angle={mascotAngleFromMomentum(momentumScore)}
-            animate
-          />
-        </g>
       </svg>
+
+      <div
+        id="mascot-companion"
+        className="mascot-arc-slot"
+        style={{ top: mascotSlot.top, left: mascotSlot.left }}
+      >
+        <Mascot
+          size={56}
+          angle={mascotAngleFromMomentum(momentumScore)}
+          animate
+        />
+      </div>
     </section>
   );
 };

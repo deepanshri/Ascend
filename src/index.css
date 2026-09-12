@@ -107,6 +107,14 @@ html, body, #root {
   transform-box: fill-box;
 }
 
+.mascot-arc-slot {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  transform: translate(-50%, -55%);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 @keyframes subtlePulse {
   0%, 100% {
     transform: scale(1);
