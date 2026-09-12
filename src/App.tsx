@@ -12,7 +12,7 @@ import {
 import { INITIAL_HABITS, INITIAL_EVIDENCE, INITIAL_COMPLETION_EVENTS } from './data/initialHabits';
 import { calculateMomentumScore, deriveHabitsFromEventLog, fetchHabitLogsFromTable, mergeCompletionEvents, upsertHabitLog, deleteHabitLog } from './utils/momentum';
 import { formatEvidenceDate, getTodayDayIndex } from './utils/dates';
-import { habitCategoryLabel, normalizeHabitCategory } from './utils/categories';
+import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome } from './lib/nativeChrome';
 import {
   getStoredSession,
@@ -157,7 +157,7 @@ export default function App() {
         const parsed = JSON.parse(saved) as Habit[];
         return parsed.map((h) => {
           const category = normalizeHabitCategory(h.category);
-          return { ...h, category, tags: [habitCategoryLabel(category)] };
+          return { ...h, category, tags: [habitCategoryBadge(category)] };
         });
       }
     } catch {}
@@ -880,39 +880,23 @@ export default function App() {
 
   // Apple-style chrome: hide header/nav on scroll down, reveal on scroll up
   const [isNavVisible, setIsNavVisible] = useState(true);
-  const [scrollDirection, setScrollDirection] = useState<'up' | 'down'>('up');
-  const [scrollProgress, setScrollProgress] = useState(0);
   const lastScrollYRef = useRef(0);
-  const isShrunk = !isNavVisible;
 
   useEffect(() => {
     setIsNavVisible(true);
-    setScrollDirection('up');
-    setScrollProgress(0);
     lastScrollYRef.current = 0;
   }, [activeTab]);
 
   const handleMainScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.currentTarget;
-    const currentScrollY = target.scrollTop;
-    const scrollHeight = target.scrollHeight;
-    const clientHeight = target.clientHeight;
-    const maxScroll = scrollHeight - clientHeight;
+    const currentScrollY = e.currentTarget.scrollTop;
     const delta = currentScrollY - lastScrollYRef.current;
-
-    if (maxScroll > 0) {
-      setScrollProgress(Math.min(1, Math.max(0, currentScrollY / maxScroll)));
-    }
 
     if (currentScrollY <= 8) {
       setIsNavVisible(true);
-      setScrollDirection('up');
     } else if (delta > 8) {
       setIsNavVisible(false);
-      setScrollDirection('down');
     } else if (delta < -8) {
       setIsNavVisible(true);
-      setScrollDirection('up');
     }
 
     lastScrollYRef.current = currentScrollY;
@@ -1041,30 +1025,8 @@ export default function App() {
           <main
             id="app-main-content"
             onScroll={handleMainScroll}
-            className={`absolute inset-0 z-10 px-4 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-28 flex flex-col gap-3 overflow-y-auto overscroll-y-contain transition-all duration-200 ${
-              scrollDirection === 'down' ? 'is-scrolling-down' : 'is-scrolling-up'
-            } ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
+            className={`absolute inset-0 z-10 px-4 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-28 flex flex-col gap-3 overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
           >
-            {/* iOS Floating Scroll Bar Indicator: shrinks on scroll down, pops up on scroll up */}
-            <div
-              id="ios-scroll-indicator"
-              className="absolute right-1 top-2 bottom-2 w-1.5 pointer-events-none z-30"
-              aria-hidden="true"
-            >
-              <div
-                style={{
-                  top: `${Math.min(90, Math.max(0, scrollProgress * 88))}%`,
-                  height: isShrunk ? '18px' : '36px',
-                  transform: isShrunk ? 'scaleX(0.7)' : 'scaleX(1.2)',
-                  opacity: 0.8,
-                  backgroundColor: isShrunk ? '#94a3b8' : (isDark ? '#3b82f6' : '#10b981'),
-                  boxShadow: isShrunk ? 'none' : (isDark ? '0 0 8px rgba(59, 130, 246, 0.4)' : '0 0 8px rgba(16, 185, 129, 0.4)'),
-                  transition:
-                    'height 220ms ease-out, transform 220ms ease-out, background-color 220ms ease-out, box-shadow 220ms ease-out',
-                }}
-                className="absolute right-0 w-1 rounded-full"
-              />
-            </div>
             {/* Radial Fan Calendar: Dots and numbers part of back design with mascot Pip */}
             <RadialFanCalendar
               selectedDay={selectedDay}

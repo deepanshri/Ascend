@@ -33,7 +33,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
       fallbackMicroHabit: fallbackMicro.trim(),
       targetDaysPerWeek: 7,
       scheduleType: 'daily',
-      tags: [category === 'work' ? 'Work' : 'Self Improvement'],
+      tags: [category === 'work' ? 'W' : 'SI'],
       archived: false,
     });
 

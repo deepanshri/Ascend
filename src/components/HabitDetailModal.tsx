@@ -36,7 +36,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
       priority,
       purposeAnchor: purpose.trim(),
       fallbackMicroHabit: fallback.trim(),
-      tags: [category === 'work' ? 'Work' : 'Self Improvement'],
+      tags: [category === 'work' ? 'W' : 'SI'],
       category,
     });
     onClose();

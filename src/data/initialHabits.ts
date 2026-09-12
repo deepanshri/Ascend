@@ -60,7 +60,7 @@ export const INITIAL_HABITS: Habit[] = [
     scheduleType: 'specific_days',
     scheduledDays: [0, 1, 2, 3, 4],
     color: '#15803d',
-    tags: ['Work'],
+    tags: ['W'],
   },
   {
     id: 'habit-2',
@@ -76,7 +76,7 @@ export const INITIAL_HABITS: Habit[] = [
     priority: 'high',
     scheduleType: 'daily',
     color: '#166534',
-    tags: ['Self Improvement'],
+    tags: ['SI'],
   },
   {
     id: 'habit-3',
@@ -93,7 +93,7 @@ export const INITIAL_HABITS: Habit[] = [
     scheduleType: 'weekly_target',
     weeklyTargetCount: 5,
     color: '#7c3aed',
-    tags: ['Self Improvement'],
+    tags: ['SI'],
   },
   {
     id: 'habit-4',
@@ -109,7 +109,7 @@ export const INITIAL_HABITS: Habit[] = [
     priority: 'mid',
     scheduleType: 'daily',
     color: '#22c55e',
-    tags: ['Self Improvement'],
+    tags: ['SI'],
   },
   {
     id: 'habit-5',
@@ -125,7 +125,7 @@ export const INITIAL_HABITS: Habit[] = [
     priority: 'low',
     scheduleType: 'daily',
     color: '#10b981',
-    tags: ['Self Improvement'],
+    tags: ['SI'],
   },
 ];
 

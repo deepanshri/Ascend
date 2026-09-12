@@ -213,7 +213,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
   const innerArc = getArc(innerR, 0.65);
 
   return (
-    <div id="report-screen" onScroll={onScroll} className="absolute inset-0 px-4.5 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-28 space-y-4 overflow-y-auto overscroll-y-contain select-none max-w-md mx-auto">
+    <div id="report-screen" onScroll={onScroll} className="absolute inset-0 px-4.5 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-28 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none max-w-md mx-auto">
       {/* Top Header Section */}
       <section className="flex items-start justify-between pt-1">
         <div>

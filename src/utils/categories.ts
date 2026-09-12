@@ -8,6 +8,10 @@ export function habitCategoryLabel(category: HabitCategory): string {
   return category === 'work' ? 'Work' : 'Self Improvement';
 }
 
+export function habitCategoryBadge(category: HabitCategory): string {
+  return category === 'work' ? 'W' : 'SI';
+}
+
 export function habitCategoryTagClass(category: HabitCategory): string {
   if (category === 'work') {
     return 'bg-green-50 text-green-700 border-green-200/90 dark:bg-green-950/50 dark:text-green-300 dark:border-green-800';
