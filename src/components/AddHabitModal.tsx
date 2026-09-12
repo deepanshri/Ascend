@@ -1,17 +1,22 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Habit, HabitCategory, HabitPriority } from '../types';
+import { insertHabitToSupabase, toDbCategory } from '../lib/habitsApi';
 
 interface AddHabitModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddHabit: (habit: Omit<Habit, 'id' | 'days'>) => void;
+  onAddHabit: (habit: Omit<Habit, 'id' | 'days'>) => Habit;
+  userId?: string | null;
+  isGuest?: boolean;
 }
 
 export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   isOpen,
   onClose,
   onAddHabit,
+  userId = null,
+  isGuest = true,
 }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<HabitCategory>('work');
@@ -23,7 +28,8 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     e.preventDefault();
     if (!name.trim()) return;
 
-    onAddHabit({
+    const dbCategory = toDbCategory(category);
+    const created = onAddHabit({
       name: name.trim(),
       category,
       timestamp: 'Daily',
@@ -33,9 +39,13 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
       fallbackMicroHabit: fallbackMicro.trim(),
       targetDaysPerWeek: 7,
       scheduleType: 'daily',
-      tags: [category === 'work' ? 'W' : 'SI'],
+      tags: [dbCategory],
       archived: false,
     });
+
+    if (!isGuest) {
+      void insertHabitToSupabase(userId, created);
+    }
 
     setName('');
     setPurposeAnchor('');

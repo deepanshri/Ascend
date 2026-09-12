@@ -93,7 +93,12 @@ export const authService = {
     return session;
   },
 
-  async signUpWithEmail(email: string, password: string, name: string): Promise<UserSession> {
+  async signUpWithEmail(
+    email: string,
+    password: string,
+    name: string,
+    interests: string[] = []
+  ): Promise<UserSession> {
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -102,6 +107,7 @@ export const authService = {
           data: {
             full_name: name,
             avatar_url: generateAvatarUrl(name),
+            interests,
           },
         },
       });

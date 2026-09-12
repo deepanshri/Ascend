@@ -41,6 +41,18 @@ export function formatEvidenceDate(date: Date = new Date()): string {
   });
 }
 
+export function toISODate(date: Date = new Date()): string {
+  const d = startOfDay(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function isoDateForDayIndex(dayIndex: number, date: Date = new Date()): string {
+  return toISODate(getWeekDates(date)[dayIndex] ?? date);
+}
+
 export function seedCompletedDays(completedPastDays = 3, date: Date = new Date()): boolean[] {
   const today = getTodayDayIndex(date);
   const first = Math.max(0, today - completedPastDays);

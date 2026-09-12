@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { authService, isSupabaseConfigured } from '../lib/supabase';
 import { UserSession } from '../types';
 
+const SIGNUP_INTERESTS = ['Movies', 'Books', 'Anime', 'Running', 'Fitness', 'Coding', 'Music', 'Gaming'];
+
 interface AuthViewProps {
-  onAuthSuccess: (session: UserSession, isNewUser?: boolean) => void;
+  onAuthSuccess: (session: UserSession, isNewUser?: boolean, interests?: string[]) => void;
 }
 
 export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
@@ -11,6 +13,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [signupInterests, setSignupInterests] = useState<string[]>(['Movies', 'Books', 'Anime', 'Running']);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -41,8 +44,13 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
         const session = await authService.signInWithEmail(email.trim(), password);
         onAuthSuccess(session, false);
       } else {
-        const session = await authService.signUpWithEmail(email.trim(), password, name.trim());
-        onAuthSuccess(session, true);
+        const session = await authService.signUpWithEmail(
+          email.trim(),
+          password,
+          name.trim(),
+          signupInterests
+        );
+        onAuthSuccess(session, true, signupInterests);
       }
     } catch (err: any) {
       setErrorMsg(err?.message || 'Authentication failed. Please check your credentials.');
@@ -233,6 +241,37 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                 </button>
               </div>
             </div>
+
+            {mode === 'signup' && (
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                  Interests
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {SIGNUP_INTERESTS.map((tag) => {
+                    const selected = signupInterests.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          setSignupInterests((prev) =>
+                            prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]
+                          );
+                        }}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer ${
+                          selected
+                            ? 'bg-emerald-50 dark:bg-blue-950 border-emerald-400 dark:border-blue-500 text-emerald-800 dark:text-blue-200'
+                            : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <button
               id="auth-submit-btn"

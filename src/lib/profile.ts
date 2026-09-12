@@ -60,6 +60,7 @@ export async function fetchUserProfile(
       .maybeSingle();
 
     if (error || !data) {
+      if (error) console.warn('Profile fetch failed:', error.message);
       return fallback;
     }
 
@@ -87,12 +88,13 @@ export async function persistUserProfile(
   }
 
   try {
-    await supabase.from('profiles').upsert({
+    const { error } = await supabase.from('profiles').upsert({
       id: session.id,
       ...patch,
       updated_at: new Date().toISOString(),
     });
-  } catch {
-    // Local state remains the source of truth if the profiles row is unavailable.
+    if (error) console.warn('Profile persist failed:', error.message);
+  } catch (err) {
+    console.warn('Profile persist offline:', err);
   }
 }

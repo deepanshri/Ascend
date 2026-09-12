@@ -10,7 +10,7 @@ import {
   HabitCompletionEvent,
 } from './types';
 import { INITIAL_HABITS, INITIAL_EVIDENCE, INITIAL_COMPLETION_EVENTS } from './data/initialHabits';
-import { calculateMomentumScore, deriveHabitsFromEventLog, upsertHabitLog, deleteHabitLog } from './utils/momentum';
+import { calculateMomentumScore, deriveHabitsFromEventLog, mergeCompletionEvents, upsertHabitLog, deleteHabitLog } from './utils/momentum';
 import { formatEvidenceDate, getTodayDayIndex } from './utils/dates';
 import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome } from './lib/nativeChrome';
@@ -28,6 +28,7 @@ import {
 } from './lib/supabase';
 import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted } from './lib/profile';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
+import { fetchActiveHabits, fetchTodayHabitLogs, insertHabitToSupabase, deleteHabitCascade } from './lib/habitsApi';
 import { startAscendSpotlightTutorial, destroyAscendSpotlightTutorial } from './lib/tutorial';
 import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
@@ -49,6 +50,8 @@ import { OnboardingView } from './components/OnboardingView';
 export default function App() {
   // Authentication & Session State
   const [session, setSession] = useState<UserSession | null>(() => getStoredSession());
+  const sessionRef = useRef<UserSession | null>(session);
+  sessionRef.current = session;
   const [isOnboarded, setIsOnboarded] = useState<boolean>(() => isOnboardingCompleted());
 
   // Theme state ('light' | 'dark' | 'system')
@@ -314,51 +317,58 @@ export default function App() {
 
   // Listen to Supabase auth state and restore session
   useEffect(() => {
-    if (isSupabaseConfigured && supabase) {
-      supabase.auth.getSession().then(({ data }) => {
-        if (data?.session?.user) {
-          const user = data.session.user;
-          const restoredSession: UserSession = {
-            id: user.id,
-            email: user.email || '',
-            name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Ascender',
-            avatarUrl: user.user_metadata?.avatar_url || generateAvatarUrl(user.email || 'User'),
-            isGuest: false,
-            memberSince: new Date(user.created_at || Date.now()).toLocaleDateString('en-US', {
-              month: 'short',
-              year: 'numeric',
-            }),
-            syncStatus: 'synced',
-          };
-          setSession(restoredSession);
-          setStoredSession(restoredSession);
-        }
-      }).catch(() => {});
+    if (!isSupabaseConfigured || !supabase) return;
 
-      const { data: authListener } = supabase.auth.onAuthStateChange((_event, supabaseSession) => {
-        if (supabaseSession?.user) {
-          const user = supabaseSession.user;
-          const updatedSession: UserSession = {
-            id: user.id,
-            email: user.email || '',
-            name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Ascender',
-            avatarUrl: user.user_metadata?.avatar_url || generateAvatarUrl(user.email || 'User'),
-            isGuest: false,
-            memberSince: new Date(user.created_at || Date.now()).toLocaleDateString('en-US', {
-              month: 'short',
-              year: 'numeric',
-            }),
-            syncStatus: 'synced',
-          };
-          setSession(updatedSession);
-          setStoredSession(updatedSession);
-        }
-      });
-
-      return () => {
-        authListener?.subscription?.unsubscribe();
+    const applyAuthUser = (user: {
+      id: string;
+      email?: string | null;
+      created_at?: string;
+      user_metadata?: Record<string, unknown>;
+    }) => {
+      const restoredSession: UserSession = {
+        id: user.id,
+        email: user.email || '',
+        name: String(user.user_metadata?.full_name || user.email?.split('@')[0] || 'Ascender'),
+        avatarUrl: String(user.user_metadata?.avatar_url || generateAvatarUrl(user.email || 'User')),
+        isGuest: false,
+        memberSince: new Date(user.created_at || Date.now()).toLocaleDateString('en-US', {
+          month: 'short',
+          year: 'numeric',
+        }),
+        syncStatus: 'synced',
       };
-    }
+      setSession(restoredSession);
+      setStoredSession(restoredSession);
+    };
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) console.warn('Auth getSession failed:', error.message);
+      if (data?.session?.user) {
+        applyAuthUser(data.session.user);
+        return;
+      }
+      const stored = getStoredSession();
+      if (stored?.isGuest) return;
+      if (stored && !stored.isGuest) {
+        setSession(null);
+        setStoredSession(null);
+      }
+    }).catch((err) => console.warn('Auth restore offline:', err));
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, supabaseSession) => {
+      if (supabaseSession?.user) {
+        applyAuthUser(supabaseSession.user);
+        return;
+      }
+      if (event === 'SIGNED_OUT' && !sessionRef.current?.isGuest) {
+        setSession(null);
+        setStoredSession(null);
+      }
+    });
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
   }, []);
 
   // Sync state to localStorage
@@ -482,6 +492,33 @@ export default function App() {
     if (hydratedUserIdRef.current !== session.id) return;
     void persistMomentumHistory(session.id, momentumScore, currentDayIndex);
   }, [momentumScore, currentDayIndex, session?.id, session?.isGuest]);
+
+  // Home mount: fetch active habits + today's logs (optimistic local UI stays in place)
+  useEffect(() => {
+    if (activeTab !== 'home') return;
+    if (!session || session.isGuest) return;
+    let cancelled = false;
+    void (async () => {
+      const [remoteHabits, todayLogs] = await Promise.all([
+        fetchActiveHabits(session.id),
+        fetchTodayHabitLogs(session.id, todayDayIndex),
+      ]);
+      if (cancelled) return;
+      if (remoteHabits.length > 0) {
+        setHabits((prev) => {
+          const byId = new Map(prev.map((habit) => [habit.id, habit]));
+          remoteHabits.forEach((habit) => byId.set(habit.id, habit));
+          return Array.from(byId.values());
+        });
+      }
+      if (todayLogs.length > 0) {
+        setCompletionEvents((prev) => mergeCompletionEvents(prev, todayLogs));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, session?.id, session?.isGuest, todayDayIndex]);
 
   // Calculate day completion rates (1-7) using active habits
   const dayCompletionRates = Array.from({ length: 7 }, (_, dayIdx) => {
@@ -624,15 +661,16 @@ export default function App() {
     showNotification('Habit reset to normal');
   };
 
-  // Add new habit
-  const handleAddHabit = (newHabitData: Omit<Habit, 'id' | 'days' | 'microDays'>) => {
+  // Add new habit (optimistic). Remote insert is performed by AddHabitModal.
+  const handleAddHabit = (newHabitData: Omit<Habit, 'id' | 'days' | 'microDays'>): Habit => {
     const newHabit: Habit = {
       ...newHabitData,
-      id: 'habit-' + Date.now(),
+      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'habit-' + Date.now(),
       days: [false, false, false, false, false, false, false],
       microDays: [false, false, false, false, false, false, false],
     };
     setHabits((prev) => [newHabit, ...prev]);
+    return newHabit;
   };
 
   // Archive habit
@@ -652,11 +690,15 @@ export default function App() {
     );
   };
 
-  // Delete habit
+  // Delete habit (optimistic) + cascade remote logs/row
   const handleDeleteHabit = (habitId: string) => {
     setHabits((prev) => prev.filter((h) => h.id !== habitId));
+    setCompletionEvents((prev) => prev.filter((e) => e.habitId !== habitId));
     if (detailHabit && detailHabit.id === habitId) {
       setDetailHabit(null);
+    }
+    if (session && !session.isGuest) {
+      void deleteHabitCascade(session.id, habitId);
     }
   };
 
@@ -714,9 +756,18 @@ export default function App() {
   };
 
   // Auth Success handler
-  const handleAuthSuccess = (newSession: UserSession, isNewUser?: boolean) => {
+  const handleAuthSuccess = (newSession: UserSession, isNewUser?: boolean, interests?: string[]) => {
     setSession(newSession);
     setStoredSession(newSession);
+    if (interests && interests.length > 0) {
+      setSelectedInterests(interests);
+      if (!newSession.isGuest) {
+        void persistUserProfile(newSession, {
+          interests,
+          has_completed_tutorial: false,
+        });
+      }
+    }
     if (isNewUser) {
       setIsOnboarded(false);
       setOnboardingCompleted(false);
@@ -733,6 +784,9 @@ export default function App() {
   const handleOnboardingComplete = (firstHabit?: Habit) => {
     if (firstHabit) {
       setHabits((prev) => [firstHabit, ...prev]);
+      if (session && !session.isGuest) {
+        void insertHabitToSupabase(session.id, firstHabit);
+      }
     }
     setIsOnboarded(true);
     setOnboardingCompleted(true);
@@ -1294,6 +1348,8 @@ export default function App() {
           isOpen={isAddModalOpen}
           onClose={() => setIsAddModalOpen(false)}
           onAddHabit={handleAddHabit}
+          userId={session.id}
+          isGuest={session.isGuest}
         />
 
         <HabitDetailModal
@@ -1310,6 +1366,8 @@ export default function App() {
           habit={deleteConfirmHabit}
           isOpen={Boolean(deleteConfirmHabit)}
           onClose={() => setDeleteConfirmHabit(null)}
+          userId={session.id}
+          isGuest={session.isGuest}
           onConfirm={() => {
             if (deleteConfirmHabit) {
               handleDeleteHabit(deleteConfirmHabit.id);
