@@ -1027,7 +1027,7 @@ export default function App() {
             onScroll={handleMainScroll}
             className={`absolute inset-0 z-10 px-4 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-28 flex flex-col gap-3 overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
           >
-            {/* Radial Fan Calendar: Dots and numbers part of back design with mascot Pip */}
+            {/* Radial Fan Calendar: date fan, momentum orb, and mascot */}
             <RadialFanCalendar
               selectedDay={selectedDay}
               onSelectDay={setSelectedDay}

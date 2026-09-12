@@ -1,6 +1,7 @@
 import React from 'react';
 import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDates, getWeekdayNarrow } from '../utils/dates';
+import { Mascot, mascotAngleFromMomentum } from './Mascot';
 
 interface RadialFanCalendarProps {
   selectedDay: number; // 1 to 7 (for reference/current active day indicator)
@@ -184,22 +185,12 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
             <stop offset="100%" stopColor={isDark ? '#1E293B' : '#E8F5E9'} />
           </radialGradient>
 
-          <radialGradient id="mascotBodyGrad" cx="35%" cy="30%" r="70%">
-            <stop offset="0%" stopColor="#FFFFFF" />
-            <stop offset="65%" stopColor="#F8FAFC" />
-            <stop offset="100%" stopColor="#E2E8F0" />
-          </radialGradient>
-
           <filter id="cleanCardShadow" x="-25%" y="-25%" width="150%" height="150%">
             <feDropShadow dx="0" dy="2" stdDeviation="2.5" floodColor="#0F172A" floodOpacity="0.07" />
           </filter>
 
           <filter id="orbShadow" x="-30%" y="-30%" width="160%" height="160%">
             <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor={isDark ? '#3B82F6' : '#10B981'} floodOpacity="0.22" />
-          </filter>
-
-          <filter id="mascotGlow" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="2" stdDeviation="2.5" floodColor="#0F172A" floodOpacity="0.12" />
           </filter>
 
           <filter id="glowAccent" x="-30%" y="-30%" width="160%" height="160%">
@@ -439,68 +430,13 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
           </text>
         </g>
 
-        {/* ========================================================================= */}
-        {/* THE MASCOT (Pip): CLEARLY VISIBLE ON THE RIGHT FLANK OUTSIDE THE DOTS     */}
-        {/* Placed safely at (274, 142) with gentle floating bobbing animation       */}
-        {/* ========================================================================= */}
-        <g id="mascot-companion" transform="translate(274, 142)">
-          <g className="animate-mascot pointer-events-none" filter="url(#mascotGlow)">
-            {/* Superhero Cape: Flowing navy/royal-blue cape behind body */}
-            <path
-              d="M 10 0 C 16 -4, 25 -5, 32 -2 C 34 5, 35 12, 29 16 C 22 13, 15 9, 9 6 Z"
-              fill="#1E3A8A"
-              stroke="#172554"
-              strokeWidth="0.8"
-            />
-            <path
-              d="M 11 2 C 17 0, 24 0, 29 4 C 24 6, 17 6, 11 5 Z"
-              fill="#3B82F6"
-              opacity="0.85"
-            />
-            {/* Cape bottom fold */}
-            <path
-              d="M 7 8 C 11 12, 17 15, 15 19 C 11 17, 7 13, 5 10 Z"
-              fill="#1E3A8A"
-            />
-
-            {/* Left little waving hand pointing towards the dots/momentum */}
-            <path
-              d="M -12 2 C -16 0, -18 3, -15 5 C -12 6, -11 4, -12 2 Z"
-              fill="#FFFFFF"
-              stroke="#CBD5E1"
-              strokeWidth="0.8"
-            />
-
-            {/* White spherical cute body with soft specular gradient */}
-            <circle
-              cx="0"
-              cy="0"
-              r="14"
-              fill="url(#mascotBodyGrad)"
-              stroke="#CBD5E1"
-              strokeWidth="0.9"
-            />
-
-            {/* Soft rosy pink blushing cheeks */}
-            <ellipse cx="-6" cy="3" rx="2.4" ry="1.5" fill="#FDA4AF" opacity="0.85" />
-            <ellipse cx="6" cy="3" rx="2.4" ry="1.5" fill="#FDA4AF" opacity="0.85" />
-
-            {/* Glossy cute eyes with white specular catchlights */}
-            <circle cx="-4" cy="-1.5" r="1.8" fill="#0F172A" />
-            <circle cx="-3.3" cy="-2.2" r="0.65" fill="#FFFFFF" />
-
-            <circle cx="4" cy="-1.5" r="1.8" fill="#0F172A" />
-            <circle cx="4.7" cy="-2.2" r="0.65" fill="#FFFFFF" />
-
-            {/* Happy curved mouth */}
-            <path
-              d="M -2.2 3 Q 0 5.8 2.2 3"
-              fill="none"
-              stroke="#0F172A"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-            />
-          </g>
+        {/* Mascot on the right flank; angle follows the 0–100 momentum score */}
+        <g id="mascot-companion" className="pointer-events-none" transform="translate(248, 88)">
+          <Mascot
+            size={72}
+            angle={mascotAngleFromMomentum(momentumScore)}
+            animate
+          />
         </g>
       </svg>
     </section>
