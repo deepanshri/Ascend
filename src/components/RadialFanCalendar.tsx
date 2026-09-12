@@ -1,6 +1,6 @@
 import React from 'react';
 import { Habit } from '../types';
-import { getTodayDayIndex, getWeekDates, getWeekdayNarrow } from '../utils/dates';
+import { getTodayDayIndex, getWeekDates, getWeekdayNarrow, toISODate } from '../utils/dates';
 import { Mascot, mascotAngleFromMomentum } from './Mascot';
 
 interface RadialFanCalendarProps {
@@ -11,6 +11,7 @@ interface RadialFanCalendarProps {
   momentumScore: number; // 0 to 100
   isCelebrating?: boolean;
   isDark?: boolean;
+  originDate?: Date;
 }
 
 export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
@@ -20,6 +21,7 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
   habits,
   momentumScore,
   isDark = false,
+  originDate,
 }) => {
   // Theme-aware palette
   const dotColor = isDark ? '#3B82F6' : '#22C55E';
@@ -73,7 +75,8 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
   ];
 
   const todayIndex = getTodayDayIndex();
-  const weekDates = getWeekDates();
+  const weekOrigin = originDate ?? new Date();
+  const weekDates = getWeekDates(weekOrigin);
   // Rolling 7-day window: cards 0–2 past, 3 today (center), 4–6 next
 
   const dateCards = cardAngles.map((item) => {
@@ -113,9 +116,11 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
       dotBg,
       statusLabel,
       dateLabel: cardDate?.getDate() ?? item.day,
-      weekdayLabel: getWeekdayNarrow(dayIdx),
+      weekdayLabel: getWeekdayNarrow(dayIdx, weekOrigin),
       isToday: dayIdx === todayIndex,
       isSelected: item.day === selectedDay,
+      isPast: dayIdx < todayIndex,
+      isoDate: cardDate ? toISODate(cardDate) : '',
     };
   });
 
@@ -238,7 +243,7 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
                 }}
                 role="button"
                 tabIndex={0}
-                aria-label={`Select day ${card.day}`}
+                aria-label={`Select ${card.isoDate || `day ${card.day}`}${card.isToday ? ', today' : card.isPast ? ', historical' : ', upcoming'}`}
                 aria-pressed={card.isSelected}
               >
                 {/* Crisp card background */}

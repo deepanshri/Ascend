@@ -1,7 +1,7 @@
 import { Habit, HabitCategory, HabitCompletionEvent } from '../types';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { habitCategoryBadge } from '../utils/categories';
-import { getTodayDayIndex, isoDateForDayIndex } from '../utils/dates';
+import { getTodayDayIndex, isoDateForDayIndex, toISODate } from '../utils/dates';
 import { HabitLogRow, mapHabitLogRowToEvent } from '../utils/momentum';
 
 function canSync(userId?: string | null): boolean {
@@ -148,40 +148,46 @@ export async function deleteHabitCascade(
   }
 }
 
-export async function fetchTodayHabitLogs(
+export async function fetchHabitLogsForDate(
   userId?: string | null,
-  dayIndex: number = getTodayDayIndex()
+  loggedDate: string = toISODate()
 ): Promise<HabitCompletionEvent[]> {
   if (!canSync(userId) || !supabase) return [];
-  const loggedDate = isoDateForDayIndex(dayIndex);
   try {
-    let query = supabase
+    let { data, error } = await supabase
       .from('habit_logs')
       .select('*')
       .eq('user_id', userId as string)
       .eq('logged_date', loggedDate);
 
-    let { data, error } = await query;
     if (error) {
       const fallback = await supabase
         .from('habit_logs')
         .select('*')
         .eq('user_id', userId as string)
-        .eq('day_index', dayIndex);
+        .eq('date', loggedDate);
       data = fallback.data;
       error = fallback.error;
     }
 
     if (error) {
-      console.warn('Today habit_logs fetch failed:', error.message);
+      console.warn('habit_logs date fetch failed:', error.message);
       return [];
     }
 
     return (data as HabitLogRow[] | null || [])
-      .map(mapHabitLogRowToEvent)
+      .map((row) => mapHabitLogRowToEvent(row))
       .filter((event): event is HabitCompletionEvent => event !== null);
   } catch (err) {
-    console.warn('Today habit_logs fetch offline:', err);
+    console.warn('habit_logs date fetch offline:', err);
     return [];
   }
+}
+
+export async function fetchTodayHabitLogs(
+  userId?: string | null,
+  dayIndex: number = getTodayDayIndex(),
+  origin: Date = new Date()
+): Promise<HabitCompletionEvent[]> {
+  return fetchHabitLogsForDate(userId, isoDateForDayIndex(dayIndex, origin));
 }

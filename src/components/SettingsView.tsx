@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { Habit, IdentityEvidence, ThemeMode, HabitCompletionEvent } from '../types';
 import { habitCategoryLabel } from '../utils/categories';
+import { NotificationWindowToggles } from './NotificationWindowToggles';
+import type { NotificationWindowKey, PsychologyNotificationWindows } from '../lib/notifications';
 
 interface SettingsViewProps {
   habits: Habit[];
@@ -8,6 +10,8 @@ interface SettingsViewProps {
   completionEvents?: HabitCompletionEvent[];
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
+  notificationWindows: PsychologyNotificationWindows;
+  onToggleNotificationWindow: (key: NotificationWindowKey) => void;
   onResetData: () => void;
   onRestoreHabit?: (habitId: string) => void;
   onDeleteHabit?: (habitId: string) => void;
@@ -27,6 +31,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   completionEvents = [],
   theme,
   onThemeChange,
+  notificationWindows,
+  onToggleNotificationWindow,
   onResetData,
   onRestoreHabit,
   onDeleteHabit,
@@ -35,7 +41,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onClearCache,
   onScroll,
 }) => {
-  const [notifications, setNotifications] = useState(true);
   const [startMonday, setStartMonday] = useState(true);
   const [resetFeedback, setResetFeedback] = useState(false);
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
@@ -237,25 +242,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           App Preferences
         </h2>
 
-        {/* Notifications */}
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col">
-            <span className="text-[12.5px] font-medium text-slate-900 dark:text-white">Dual-Alert Reminders</span>
-            <span className="text-[10.5px] text-slate-400">10m preparation + exact time nudges</span>
+        {/* Daily reminder windows */}
+        <div className="space-y-1">
+          <div className="flex flex-col mb-1">
+            <span className="text-[12.5px] font-medium text-slate-900 dark:text-white">Daily reminder windows</span>
+            <span className="text-[10.5px] text-slate-400">Time-psychology nudges aligned to momentum</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setNotifications(!notifications)}
-            className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition duration-200 cursor-pointer ${
-              notifications ? 'bg-emerald-600 dark:bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
-            }`}
-          >
-            <div
-              className={`bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition duration-200 ${
-                notifications ? 'translate-x-4.5' : 'translate-x-0'
-              }`}
-            />
-          </button>
+          <NotificationWindowToggles
+            windows={notificationWindows}
+            onToggle={onToggleNotificationWindow}
+          />
         </div>
 
         {/* Start day of week */}

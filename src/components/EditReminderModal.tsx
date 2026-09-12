@@ -66,18 +66,18 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.18, ease: 'easeOut' }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs"
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45 dark:bg-slate-950/60 backdrop-blur-[8px]"
           onClick={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
         >
           <motion.div
             id="edit-reminder-modal-card"
-            initial={{ scale: 0.92, opacity: 0, y: 12 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.92, opacity: 0, y: 12 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             className="relative w-full max-w-[390px] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col space-y-4"
           >
         <div className="flex items-center justify-between">

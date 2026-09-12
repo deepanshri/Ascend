@@ -1,3 +1,4 @@
+/// <reference types="@capacitor/local-notifications" />
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
@@ -21,6 +22,9 @@ const config: CapacitorConfig = {
       showSpinner: false,
       splashFullScreen: true,
       splashImmersive: true,
+    },
+    LocalNotifications: {
+      iconColor: '#23C15D',
     },
     SystemBars: {
       insetsHandling: 'css',

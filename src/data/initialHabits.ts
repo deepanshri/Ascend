@@ -1,5 +1,5 @@
 import { Habit, IdentityEvidence, HabitCompletionEvent } from '../types';
-import { formatEvidenceDate, getWeekDates, seedCompletedDays } from '../utils/dates';
+import { formatEvidenceDate, getWeekDates, seedCompletedDays, toISODate } from '../utils/dates';
 
 const seededDays = seedCompletedDays(3);
 const weekDates = getWeekDates();
@@ -13,7 +13,7 @@ function seedEventsForHabit(habitId: string): HabitCompletionEvent[] {
       id: `evt-init-${habitId}-${dayIndex}`,
       habitId,
       dayIndex,
-      date: formatEvidenceDate(date),
+      date: toISODate(date),
       type: 'full',
       timestamp: date.getTime() + 9 * 3600000,
     });

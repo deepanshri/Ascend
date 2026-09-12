@@ -11,7 +11,7 @@ export interface HabitCompletionEvent {
   id: string;
   habitId: string;
   dayIndex: number; // 0 to 6 (0 = Day 1 ... 6 = Day 7)
-  date: string;
+  date: string; // YYYY-MM-DD preferred; legacy display strings remap via timestamp
   type: CompletionType; // 'full' (1.0 weight) | 'fallback_micro' (0.5 weight)
   note?: string;
   timestamp: number;

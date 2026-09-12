@@ -1,7 +1,20 @@
 import { Habit, HabitCompletionEvent, CompletionType } from '../types';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
-import { getTodayDayIndex } from './dates';
+import {
+  dayIndexForIso,
+  getTodayDayIndex,
+  getWeekDates,
+  parseToIsoDate,
+  resolveEventIsoDate,
+  toISODate,
+} from './dates';
 import { syncHabitLogDelete, syncHabitLogUpsert } from '../lib/offlineSync';
+
+export const WORK_HABIT_WEIGHT = 1.5;
+export const SELF_IMPROVEMENT_HABIT_WEIGHT = 1.0;
+export const FULL_COMPLETION_VALUE = 1.0;
+export const FALLBACK_COMPLETION_VALUE = 0.5;
+export const MISSED_COMPLETION_VALUE = 0.0;
 
 export interface HabitLogRow {
   id?: string;
@@ -23,23 +36,28 @@ export interface HabitLogRow {
   created_at?: string;
 }
 
-function resolveDayIndex(row: HabitLogRow): number {
+/** Category priority weights: Work (W) = 1.5, Self Improvement (SI) = 1.0. */
+export function habitWeight(habit: Habit): number {
+  return habit.category === 'work' ? WORK_HABIT_WEIGHT : SELF_IMPROVEMENT_HABIT_WEIGHT;
+}
+
+/** Full swipe = 1.0, fallback swipe = 0.5, unlogged/missed = 0.0. */
+export function completionValueForHabit(habit: Habit, dayIndex: number): number {
+  if (!habit.days?.[dayIndex]) return MISSED_COMPLETION_VALUE;
+  if (habit.microDays?.[dayIndex]) return FALLBACK_COMPLETION_VALUE;
+  return FULL_COMPLETION_VALUE;
+}
+
+function resolveDayIndex(row: HabitLogRow, origin: Date = new Date()): number {
+  const iso = parseToIsoDate(row.logged_date || row.date || row.logged_on || row.completed_at);
+  if (iso) {
+    const mapped = dayIndexForIso(iso, origin);
+    if (mapped >= 0) return mapped;
+  }
+
   const explicit = row.day_index ?? row.dayIndex;
   if (explicit !== undefined && explicit !== null && Number.isFinite(Number(explicit))) {
     return Number(explicit);
-  }
-
-  const dateStr = row.logged_date || row.date || row.logged_on || row.completed_at;
-  if (dateStr) {
-    const logged = new Date(dateStr);
-    if (!Number.isNaN(logged.getTime())) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      logged.setHours(0, 0, 0, 0);
-      const diffDays = Math.round((logged.getTime() - today.getTime()) / 86400000);
-      const mapped = getTodayDayIndex() + diffDays;
-      if (mapped >= 0 && mapped < 7) return mapped;
-    }
   }
 
   return getTodayDayIndex();
@@ -58,11 +76,14 @@ function resolveCompletionType(row: HabitLogRow): CompletionType {
   return 'full';
 }
 
-export function mapHabitLogRowToEvent(row: HabitLogRow): HabitCompletionEvent | null {
+export function mapHabitLogRowToEvent(row: HabitLogRow, origin: Date = new Date()): HabitCompletionEvent | null {
   const habitId = row.habit_id || row.habitId;
   if (!habitId) return null;
 
-  const dayIndex = resolveDayIndex(row);
+  const dayIndex = resolveDayIndex(row, origin);
+  const isoDate =
+    parseToIsoDate(row.logged_date || row.date || row.logged_on || row.completed_at) ||
+    toISODate(getWeekDates(origin)[dayIndex] ?? origin);
   const timestampRaw = row.timestamp ?? row.created_at ?? row.completed_at;
   let timestamp = Date.now();
   if (typeof timestampRaw === 'number') {
@@ -73,10 +94,10 @@ export function mapHabitLogRowToEvent(row: HabitLogRow): HabitCompletionEvent | 
   }
 
   return {
-    id: String(row.id || `log-${habitId}-${dayIndex}`),
+    id: String(row.id || `log-${habitId}-${isoDate}`),
     habitId: String(habitId),
     dayIndex,
-    date: String(row.date || row.logged_on || row.completed_at || ''),
+    date: isoDate,
     type: resolveCompletionType(row),
     note: row.note || undefined,
     timestamp,
@@ -85,12 +106,13 @@ export function mapHabitLogRowToEvent(row: HabitLogRow): HabitCompletionEvent | 
 
 export function mergeCompletionEvents(
   local: HabitCompletionEvent[],
-  remote: HabitCompletionEvent[]
+  remote: HabitCompletionEvent[],
+  origin: Date = new Date()
 ): HabitCompletionEvent[] {
   const byKey = new Map<string, HabitCompletionEvent>();
 
   const put = (event: HabitCompletionEvent) => {
-    const key = `${event.habitId}:${event.dayIndex}`;
+    const key = `${event.habitId}:${resolveEventIsoDate(event, origin)}`;
     const existing = byKey.get(key);
     if (!existing || event.timestamp >= existing.timestamp) {
       byKey.set(key, event);
@@ -127,7 +149,7 @@ export async function fetchHabitLogsFromTable(userId?: string | null): Promise<H
     }
 
     return (data as HabitLogRow[])
-      .map(mapHabitLogRowToEvent)
+      .map((row) => mapHabitLogRowToEvent(row))
       .filter((event): event is HabitCompletionEvent => event !== null);
   } catch (err) {
     console.warn('habit_logs fetch offline:', err);
@@ -152,26 +174,28 @@ export async function deleteHabitLog(
 
 /**
  * Replays the immutable append-only event log (local + habit_logs) to reconstruct
- * the habit's weekly projection (days, microDays).
- * This guarantees that past days cannot be retroactively modified or gamed.
+ * the habit's weekly projection (days, microDays) against the rolling 7-day window.
+ * Events are placed by logged ISO date so midnight rollover cannot rewrite today.
  */
 export function deriveHabitsFromEventLog(
   habits: Habit[],
   events: HabitCompletionEvent[],
-  todayIndex: number = getTodayDayIndex()
+  origin: Date = new Date()
 ): Habit[] {
+  const weekIso = getWeekDates(origin).map((date) => toISODate(date));
+
   return habits.map((habit) => {
     const days = [false, false, false, false, false, false, false];
     const microDays = [false, false, false, false, false, false, false];
 
-    // Replay all events recorded for this habit
     const habitEvents = events.filter((e) => e.habitId === habit.id);
     for (const ev of habitEvents) {
-      if (ev.dayIndex >= 0 && ev.dayIndex < 7) {
-        days[ev.dayIndex] = true;
-        if (ev.type === 'fallback_micro') {
-          microDays[ev.dayIndex] = true;
-        }
+      const iso = resolveEventIsoDate(ev, origin);
+      const dayIndex = weekIso.indexOf(iso);
+      if (dayIndex < 0) continue;
+      days[dayIndex] = true;
+      if (ev.type === 'fallback_micro') {
+        microDays[dayIndex] = true;
       }
     }
 
@@ -184,78 +208,40 @@ export function deriveHabitsFromEventLog(
 }
 
 /**
- * Ascend Momentum Formula:
- * - 100% credit for full completions (1.0)
- * - 50% credit for micro-habit fallbacks (0.5)
- * - Decay mechanism: Missed days gently decay momentum (e.g. 10-15%) rather than zero-reset drop
- * - Ground truth is the completion log (habit_logs + local events), replayed onto habits
+ * Priority-weighted momentum (0–100):
+ * Work (W) weight 1.5, Self Improvement (SI) weight 1.0.
+ * Completion: full swipe = 1.0, fallback swipe = 0.5, unlogged/missed = 0.0.
+ * Score = (Σ(habit_weight × completion_value) / Σ habit_weights) × 100.
+ * Exam Shield omits missed habits from the denominator so momentum does not decay.
  */
 export function calculateMomentumScore(
   habits: Habit[],
   dayIndex: number = 3,
   examShield: boolean = false,
-  logs?: HabitCompletionEvent[]
+  logs?: HabitCompletionEvent[],
+  origin: Date = new Date()
 ): number {
   const scoredHabits =
-    logs && logs.length > 0 ? deriveHabitsFromEventLog(habits, logs, dayIndex) : habits;
+    logs && logs.length > 0 ? deriveHabitsFromEventLog(habits, logs, origin) : habits;
   const activeHabits = scoredHabits.filter((h) => !h.archived);
-  if (!activeHabits || activeHabits.length === 0) return 0;
+  if (activeHabits.length === 0) return 0;
 
-  // 1. Today's execution rate (50% for fallback micro-habits, 100% for full)
-  let todayPoints = 0;
-  let scheduledTodayCount = 0;
+  const scheduled = activeHabits.filter(
+    (h) => !h.scheduledDays || h.scheduledDays.includes(dayIndex)
+  );
+  const pool = scheduled.length > 0 ? scheduled : activeHabits;
 
-  activeHabits.forEach((h) => {
-    // Check if habit is scheduled for this day
-    const isScheduled = !h.scheduledDays || h.scheduledDays.includes(dayIndex);
-    if (isScheduled) {
-      scheduledTodayCount += 1;
-    }
+  let weightedSum = 0;
+  let weightTotal = 0;
 
-    const isDone = h.days?.[dayIndex] ?? false;
-    const isMicro = h.microDays?.[dayIndex] ?? false;
-    if (isDone) {
-      // 50% partial credit for fallback micro-habit, 100% for full completion
-      todayPoints += isMicro ? 0.5 : 1.0;
-    }
+  pool.forEach((habit) => {
+    const weight = habitWeight(habit);
+    const value = completionValueForHabit(habit, dayIndex);
+    if (examShield && value === MISSED_COMPLETION_VALUE) return;
+    weightedSum += weight * value;
+    weightTotal += weight;
   });
 
-  const effectiveTodayTotal = scheduledTodayCount > 0 ? scheduledTodayCount : activeHabits.length;
-  const todayRatio = Math.min(1, todayPoints / effectiveTodayTotal);
-
-  // 2. Recent 7-day consistency with gentle decay for missed days
-  let totalCompletions = 0;
-  let totalPossible = 0;
-  let consecutiveMisses = 0;
-
-  activeHabits.forEach((h) => {
-    h.days.forEach((done, dIdx) => {
-      totalPossible += 1;
-      if (done) {
-        const isMicro = h.microDays?.[dIdx] ?? false;
-        totalCompletions += isMicro ? 0.5 : 1.0;
-      }
-    });
-
-    // Check if today was missed to compute decay
-    if (!h.days?.[dayIndex]) {
-      consecutiveMisses += 1;
-    }
-  });
-
-  const weeklyRatio = totalPossible > 0 ? totalCompletions / totalPossible : 0;
-
-  // 3. Gentle decay factor: each missed habit today applies a tiny 2% decay factor (max 15% decay)
-  // Ensures momentum never drops to 0 immediately
-  // If Exam Shield / Vacation Mode is active, decay is frozen (decayFactor = 1.0)
-  const missRatio = activeHabits.length > 0 ? consecutiveMisses / activeHabits.length : 0;
-  const decayFactor = examShield ? 1.0 : 1 - Math.min(0.15, missRatio * 0.15);
-
-  // 4. Consistency momentum & identity foundation
-  const consistencyBonus = weeklyRatio * 15;
-  const baseFoundation = todayRatio > 0 ? 20 : 10;
-
-  const rawScore = (baseFoundation + todayRatio * 45 + weeklyRatio * 20 + consistencyBonus) * decayFactor;
-
-  return Math.min(100, Math.max(0, Math.round(rawScore)));
+  if (weightTotal <= 0) return examShield ? 100 : 0;
+  return Math.min(100, Math.max(0, Math.round((weightedSum / weightTotal) * 100)));
 }

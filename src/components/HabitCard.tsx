@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
@@ -10,6 +11,8 @@ const GHOST_MOUSE_MS = 700;
 interface HabitCardProps {
   habit: Habit;
   todayIndex?: number;
+  viewIndex?: number;
+  gesturesLocked?: boolean;
   isLongPressed?: boolean;
   isOtherLongPressed?: boolean;
   isFallbackActive?: boolean;
@@ -27,6 +30,8 @@ interface HabitCardProps {
 export const HabitCard: React.FC<HabitCardProps> = ({
   habit,
   todayIndex = getTodayDayIndex(),
+  viewIndex,
+  gesturesLocked = false,
   isLongPressed = false,
   isOtherLongPressed = false,
   isFallbackActive = false,
@@ -44,6 +49,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [celebration, setCelebration] = useState<'none' | 'full' | 'fallback'>('none');
+  const [fullPopSeq, setFullPopSeq] = useState(0);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const swipeSurfaceRef = useRef<HTMLElement>(null);
@@ -61,15 +68,24 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   const lastTouchAtRef = useRef<number>(0);
   const isOtherLongPressedRef = useRef(isOtherLongPressed);
   isOtherLongPressedRef.current = isOtherLongPressed;
+  const gesturesLockedRef = useRef(gesturesLocked);
+  gesturesLockedRef.current = gesturesLocked;
 
-  const isTodayDone = Boolean(habit.days?.[todayIndex]);
-  const isTodayMicro = Boolean(habit.microDays?.[todayIndex]);
+  const activeIndex = viewIndex ?? todayIndex;
+  const isTodayDone = Boolean(habit.days?.[activeIndex]);
+  const isTodayMicro = Boolean(habit.microDays?.[activeIndex]);
   const isFallbackActiveToday = isFallbackActive && !isTodayDone;
   const isMicroCompletedToday = isTodayDone && isTodayMicro;
   const isShowingFallback = isFallbackActiveToday || isMicroCompletedToday;
   const habitDisplayName = isShowingFallback
     ? (habit.fallbackMicroHabit?.trim() || habit.name)
     : habit.name;
+
+  useEffect(() => {
+    if (celebration === 'none') return;
+    const timer = window.setTimeout(() => setCelebration('none'), 700);
+    return () => window.clearTimeout(timer);
+  }, [celebration]);
 
   const clearLongPressTimer = () => {
     if (longPressTimerRef.current !== null) {
@@ -107,6 +123,11 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   };
 
   const applySwipeOffset = (deltaX: number) => {
+    if (gesturesLockedRef.current) {
+      swipeOffsetRef.current = 0;
+      setSwipeOffset(0);
+      return;
+    }
     const next = Math.abs(deltaX) < 120 ? deltaX : swipeOffsetRef.current;
     swipeOffsetRef.current = next;
     setSwipeOffset(next);
@@ -178,6 +199,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       const axis = resolveGestureAxis(deltaX, deltaY);
 
       if (axis === 'horizontal') {
+        if (gesturesLockedRef.current) return;
         e.preventDefault();
         const originX = dragStartXRef.current ?? startXRef.current;
         applySwipeOffset(touch.clientX - originX);
@@ -319,6 +341,15 @@ export const HabitCard: React.FC<HabitCardProps> = ({
 
   // EVALUATE SWIPE GESTURE
   const finishSwipe = () => {
+    if (gesturesLockedRef.current) {
+      setDragStartX(null);
+      dragStartXRef.current = null;
+      gestureAxisRef.current = 'none';
+      swipeOffsetRef.current = 0;
+      setSwipeOffset(0);
+      setIsDragging(false);
+      return;
+    }
     const threshold = 40;
     const axis = gestureAxisRef.current;
     const offset = swipeOffsetRef.current;
@@ -329,9 +360,12 @@ export const HabitCard: React.FC<HabitCardProps> = ({
         onResetToday(habit.id);
       } else if (isFallbackActive) {
         // In fallback mode -> swiping right marks it complete with fallback micro-habit!
+        setCelebration('fallback');
         onCompleteToday(habit.id, true);
       } else {
         // Normal -> mark full complete!
+        setCelebration('full');
+        setFullPopSeq((seq) => seq + 1);
         onCompleteToday(habit.id, false);
       }
     } else if (axis !== 'vertical' && offset < -threshold) {
@@ -344,6 +378,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
         onToggleFallbackMode(habit.id);
       } else {
         // Normal -> switch to fallback mode (does NOT mark complete!)
+        setCelebration('fallback');
         onToggleFallbackMode(habit.id);
       }
     }
@@ -374,16 +409,22 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       ref={cardRef}
       data-tour={isTourTarget ? 'habit-card' : undefined}
       onContextMenu={handleContextMenu}
-      className={`relative select-none touch-pan-y transition-all duration-200 ${
+      className={`relative select-none ${gesturesLocked ? 'touch-pan-y' : 'touch-pan-y'} transition-all duration-200 ${
         isLongPressed
           ? 'opacity-0 pointer-events-none'
           : isOtherLongPressed
           ? 'opacity-30 pointer-events-none'
           : 'z-10'
+      } ${celebration === 'full' ? 'habit-complete-glow' : ''} ${
+        celebration === 'fallback' ? 'habit-fallback-ripple' : ''
       }`}
     >
       {/* Swipe layer and Foreground container */}
-      <div className="relative overflow-hidden rounded-2xl">
+      <div
+        className={`relative rounded-2xl ${
+          isDragging || Math.abs(swipeOffset) > 2 ? 'overflow-hidden' : 'overflow-visible'
+        }`}
+      >
         {/* BACKGROUND SWIPE REVEAL LAYERS */}
         {/* Right swipe reveal */}
         <div
@@ -456,7 +497,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
         </div>
 
         {/* FOREGROUND HABIT CARD */}
-        <article
+        <motion.article
           ref={swipeSurfaceRef}
           id={`habit-card-${habit.id}`}
           role="button"
@@ -470,13 +511,21 @@ export const HabitCard: React.FC<HabitCardProps> = ({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseLeave}
-          style={{
-            transform: isLongPressed ? 'none' : `translateX(${swipeOffset}px)`,
-            transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1)',
-            perspective: 1000,
+          style={{ perspective: 1000 }}
+          animate={{
+            x: isLongPressed ? 0 : swipeOffset,
           }}
+          transition={
+            isDragging ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 26, mass: 0.7 }
+          }
           className="relative w-full cursor-pointer select-none"
         >
+          <motion.div
+            key={celebration === 'full' ? `full-${fullPopSeq}` : 'idle'}
+            initial={{ scale: 1 }}
+            animate={celebration === 'full' ? { scale: [1, 1.03, 1] } : { scale: 1 }}
+            transition={{ duration: 0.38, times: [0, 0.4, 1], ease: [0.34, 1.56, 0.64, 1] }}
+          >
           <div
             style={{
               transformStyle: 'preserve-3d',
@@ -494,6 +543,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
               className={`relative bg-white dark:bg-slate-900 rounded-2xl p-4 border flex flex-col justify-between transition-all duration-200 ${
                 isLongPressed
                   ? 'scale-[1.025] shadow-2xl ring-2 ring-emerald-500/60 dark:ring-blue-500/60 border-emerald-300 dark:border-blue-400'
+                  : celebration === 'fallback'
+                  ? 'shadow-sm border-amber-400 dark:border-amber-400 ring-1 ring-amber-400/50 dark:ring-amber-400/40 bg-amber-50/30 dark:bg-amber-950/20'
                   : isFallbackActive && !isTodayDone
                   ? 'shadow-sm border-emerald-400/80 dark:border-blue-400/80 ring-1 ring-emerald-400/40 dark:ring-blue-400/40 bg-emerald-50/20 dark:bg-blue-950/20 active:scale-[0.995]'
                   : 'shadow-sm border-slate-100/90 dark:border-slate-800 active:scale-[0.995]'
@@ -534,7 +585,9 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                 {habit.days.map((isDone, dayIdx) => {
                   const isPast = dayIdx < todayIndex;
                   const isToday = dayIdx === todayIndex;
+                  const isViewed = dayIdx === activeIndex;
                   const isMicro = habit.microDays?.[dayIdx];
+                  const viewedRing = isViewed && !isToday ? 'ring-2 ring-amber-400/70 dark:ring-amber-400/50' : '';
 
                   // 1. PAST DAYS (Locked history)
                   if (isPast) {
@@ -543,7 +596,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                         key={dayIdx}
                         id={`habit-${habit.id}-day-${dayIdx + 1}`}
                         title={`Day ${dayIdx + 1}: ${isDone ? (isMicro ? 'Micro fallback (50%)' : 'Completed (100%)') : 'Missed'}`}
-                        className={`w-6 h-6 rounded-md flex items-center justify-center select-none cursor-default ${
+                        className={`w-6 h-6 rounded-md flex items-center justify-center select-none cursor-default ${viewedRing} ${
                           isDone
                             ? isMicro
                               ? 'bg-[#86efac] dark:bg-blue-400 text-emerald-950 dark:text-slate-950 border border-emerald-300 dark:border-blue-500'
@@ -707,7 +760,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
           </div>
         </div>
       </div>
-    </article>
+          </motion.div>
+    </motion.article>
       </div>
     </div>
   );

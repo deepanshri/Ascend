@@ -53,6 +53,36 @@ export function isoDateForDayIndex(dayIndex: number, date: Date = new Date()): s
   return toISODate(getWeekDates(date)[dayIndex] ?? date);
 }
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function isIsoDate(value: string | undefined | null): value is string {
+  return Boolean(value && ISO_DATE_RE.test(value));
+}
+
+export function parseToIsoDate(value: string | undefined | null): string | null {
+  if (!value) return null;
+  if (isIsoDate(value)) return value;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return toISODate(parsed);
+}
+
+export function dayIndexForIso(iso: string, origin: Date = new Date()): number {
+  return getWeekDates(origin).map(toISODate).indexOf(iso);
+}
+
+export function resolveEventIsoDate(
+  event: { date?: string; dayIndex: number; timestamp?: number },
+  origin: Date = new Date()
+): string {
+  const fromDate = parseToIsoDate(event.date);
+  if (fromDate) return fromDate;
+  if (typeof event.timestamp === 'number' && Number.isFinite(event.timestamp)) {
+    return toISODate(new Date(event.timestamp));
+  }
+  return isoDateForDayIndex(event.dayIndex, origin);
+}
+
 export function seedCompletedDays(completedPastDays = 3, date: Date = new Date()): boolean[] {
   const today = getTodayDayIndex(date);
   const first = Math.max(0, today - completedPastDays);

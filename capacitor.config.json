@@ -20,6 +20,9 @@
       "splashFullScreen": true,
       "splashImmersive": true
     },
+    "LocalNotifications": {
+      "iconColor": "#23C15D"
+    },
     "SystemBars": {
       "insetsHandling": "css",
       "style": "LIGHT"

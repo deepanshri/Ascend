@@ -11,7 +11,7 @@ import {
 } from './types';
 import { INITIAL_HABITS, INITIAL_EVIDENCE, INITIAL_COMPLETION_EVENTS } from './data/initialHabits';
 import { calculateMomentumScore, deriveHabitsFromEventLog, mergeCompletionEvents, upsertHabitLog, deleteHabitLog } from './utils/momentum';
-import { formatEvidenceDate, getTodayDayIndex } from './utils/dates';
+import { formatEvidenceDate, getTodayDayIndex, getWeekDates, resolveEventIsoDate, startOfDay, toISODate } from './utils/dates';
 import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome, hideNativeSplash } from './lib/nativeChrome';
 import {
@@ -28,8 +28,17 @@ import {
 } from './lib/supabase';
 import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted } from './lib/profile';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
-import { fetchActiveHabits, fetchTodayHabitLogs, insertHabitToSupabase, deleteHabitCascade } from './lib/habitsApi';
+import { fetchActiveHabits, fetchHabitLogsForDate, insertHabitToSupabase, deleteHabitCascade } from './lib/habitsApi';
 import { startAscendSpotlightTutorial, destroyAscendSpotlightTutorial } from './lib/tutorial';
+import {
+  hydrateNotificationWindows,
+  loadNotificationWindows,
+  persistNotificationWindows,
+  schedulePsychologyNotifications,
+  type NotificationWindowKey,
+  type PsychologyNotificationWindows,
+} from './lib/notifications';
+import { syncWidgetData } from './lib/widgetSync';
 import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
 import { RadialFanCalendar } from './components/RadialFanCalendar';
@@ -108,6 +117,28 @@ export default function App() {
       localStorage.setItem('ascend_vacation_mode', vacationModeActive ? 'true' : 'false');
     } catch {}
   }, [vacationModeActive]);
+
+  const [notificationWindows, setNotificationWindows] = useState<PsychologyNotificationWindows>(
+    () => loadNotificationWindows()
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void hydrateNotificationWindows().then((windows) => {
+      if (!cancelled) setNotificationWindows(windows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleToggleNotificationWindow = (key: NotificationWindowKey) => {
+    setNotificationWindows((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      void persistNotificationWindows(next);
+      return next;
+    });
+  };
 
   // Selected personal interests state (presets) - powers Home quotes
   const [selectedInterests, setSelectedInterests] = useState<string[]>(() => {
@@ -278,8 +309,43 @@ export default function App() {
   }, [reminders]);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
-  const [selectedDay, setSelectedDay] = useState<number>(() => getTodayDayIndex() + 1);
+  const [calendarOrigin, setCalendarOrigin] = useState<Date>(() => startOfDay(new Date()));
+  const [currentSelectedDate, setCurrentSelectedDate] = useState<string>(() => toISODate());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  useEffect(() => {
+    const rollForwardIfMidnightPassed = () => {
+      const nowIso = toISODate();
+      const originIso = toISODate(calendarOrigin);
+      if (nowIso === originIso) return;
+
+      const nextOrigin = startOfDay(new Date());
+      const week = getWeekDates(nextOrigin).map((date) => toISODate(date));
+      setCalendarOrigin(nextOrigin);
+      setCurrentSelectedDate((prev) => {
+        if (prev === originIso) return nowIso;
+        return week.includes(prev) ? prev : nowIso;
+      });
+      setActiveFallbackIds([]);
+    };
+
+    const intervalId = window.setInterval(rollForwardIfMidnightPassed, 60_000);
+    const onResume = () => rollForwardIfMidnightPassed();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') rollForwardIfMidnightPassed();
+    };
+
+    window.addEventListener('focus', onResume);
+    document.addEventListener('visibilitychange', onVisibility);
+    rollForwardIfMidnightPassed();
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onResume);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [calendarOrigin]);
+
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
   const [detailHabit, setDetailHabit] = useState<Habit | null>(null);
   const [longPressedHabitId, setLongPressedHabitId] = useState<string | null>(null);
@@ -420,13 +486,24 @@ export default function App() {
     } catch {}
   }, [frictionAudits]);
 
+  const weekIsoDates = useMemo(() => getWeekDates(calendarOrigin).map((date) => toISODate(date)), [calendarOrigin]);
   const todayDayIndex = getTodayDayIndex();
-  const currentDayIndex = selectedDay - 1;
+  const currentDayIndex = useMemo(() => {
+    const idx = weekIsoDates.indexOf(currentSelectedDate);
+    return idx >= 0 ? idx : todayDayIndex;
+  }, [weekIsoDates, currentSelectedDate, todayDayIndex]);
+  const selectedDay = currentDayIndex + 1;
+  const isViewingToday = currentSelectedDate === weekIsoDates[todayDayIndex];
+
+  const handleSelectDay = (day: number) => {
+    const iso = weekIsoDates[day - 1];
+    if (iso) setCurrentSelectedDate(iso);
+  };
 
   // Derive habit states (days, microDays) by replaying the append-only event log
   const derivedHabits = useMemo(() => {
-    return deriveHabitsFromEventLog(habits, completionEvents, todayDayIndex);
-  }, [habits, completionEvents, todayDayIndex]);
+    return deriveHabitsFromEventLog(habits, completionEvents, calendarOrigin);
+  }, [habits, completionEvents, calendarOrigin]);
 
   // Non-archived habits for core active calculations
   const activeHabits = useMemo(() => {
@@ -437,10 +514,14 @@ export default function App() {
     return derivedHabits.find((h) => h.id === longPressedHabitId) || null;
   }, [derivedHabits, longPressedHabitId]);
 
-  // Momentum Engine Score (0 to 100) based on habit_logs + local completion events
+  // Weighted momentum for the selected date (drives RadialFanCalendar + mascot)
   const momentumScore = useMemo(() => {
-    return calculateMomentumScore(habits, currentDayIndex, examShieldActive, completionEvents);
-  }, [habits, currentDayIndex, examShieldActive, completionEvents]);
+    return calculateMomentumScore(habits, currentDayIndex, examShieldActive, completionEvents, calendarOrigin);
+  }, [habits, currentDayIndex, examShieldActive, completionEvents, calendarOrigin]);
+
+  const todayMomentumScore = useMemo(() => {
+    return calculateMomentumScore(habits, todayDayIndex, examShieldActive, completionEvents, calendarOrigin);
+  }, [habits, todayDayIndex, examShieldActive, completionEvents, calendarOrigin]);
 
   const habitsRef = useRef(habits);
   const completionEventsRef = useRef(completionEvents);
@@ -452,7 +533,7 @@ export default function App() {
   completionEventsRef.current = completionEvents;
   selectedInterestsRef.current = selectedInterests;
   hasCompletedTutorialRef.current = hasCompletedTutorial;
-  momentumScoreRef.current = momentumScore;
+  momentumScoreRef.current = todayMomentumScore;
 
   const runAuthenticatedSync = async (targetSession: UserSession) => {
     if (targetSession.isGuest) return;
@@ -497,8 +578,28 @@ export default function App() {
   useEffect(() => {
     if (!session || session.isGuest) return;
     if (hydratedUserIdRef.current !== session.id) return;
-    void persistMomentumHistory(session.id, momentumScore, currentDayIndex).catch(() => {});
-  }, [momentumScore, currentDayIndex, session?.id, session?.isGuest]);
+    void persistMomentumHistory(session.id, todayMomentumScore, todayDayIndex).catch(() => {});
+  }, [todayMomentumScore, todayDayIndex, session?.id, session?.isGuest]);
+
+  useEffect(() => {
+    const totalHabits = activeHabits.length;
+    const habitsCompleted = activeHabits.filter((habit) => Boolean(habit.days?.[todayDayIndex])).length;
+    void syncWidgetData({
+      score: todayMomentumScore,
+      habitsCompleted,
+      totalHabits,
+      lastUpdated: new Date().toISOString(),
+    });
+  }, [todayMomentumScore, activeHabits, todayDayIndex, completionEvents]);
+
+  useEffect(() => {
+    void schedulePsychologyNotifications({
+      windows: notificationWindows,
+      habits: activeHabits,
+      todayIndex: todayDayIndex,
+      momentumScore: todayMomentumScore,
+    });
+  }, [notificationWindows, activeHabits, todayDayIndex, todayMomentumScore, completionEvents]);
 
   // Home mount: fetch active habits + today's logs (optimistic local UI stays in place)
   useEffect(() => {
@@ -506,9 +607,9 @@ export default function App() {
     if (!session || session.isGuest) return;
     let cancelled = false;
     void (async () => {
-      const [remoteHabits, todayLogs] = await Promise.all([
+      const [remoteHabits, dateLogs] = await Promise.all([
         fetchActiveHabits(session.id),
-        fetchTodayHabitLogs(session.id, todayDayIndex),
+        fetchHabitLogsForDate(session.id, currentSelectedDate),
       ]);
       if (cancelled) return;
       if (remoteHabits.length > 0) {
@@ -518,21 +619,22 @@ export default function App() {
           return Array.from(byId.values());
         });
       }
-      if (todayLogs.length > 0) {
-        setCompletionEvents((prev) => mergeCompletionEvents(prev, todayLogs));
+      if (dateLogs.length > 0) {
+        setCompletionEvents((prev) => mergeCompletionEvents(prev, dateLogs, calendarOrigin));
       }
     })().catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [activeTab, session?.id, session?.isGuest, todayDayIndex]);
+  }, [activeTab, session?.id, session?.isGuest, currentSelectedDate, calendarOrigin]);
 
   // Calculate day completion rates (1-7) using active habits
-  const dayCompletionRates = Array.from({ length: 7 }, (_, dayIdx) => {
-    if (activeHabits.length === 0) return 0;
-    const completedCount = activeHabits.filter((h) => h.days[dayIdx]).length;
-    return completedCount / activeHabits.length;
-  });
+  const dayCompletionRates = useMemo(() => {
+    return Array.from({ length: 7 }, (_, dayIdx) => {
+      if (activeHabits.length === 0) return 0;
+      return calculateMomentumScore(derivedHabits, dayIdx, examShieldActive, undefined, calendarOrigin) / 100;
+    });
+  }, [activeHabits.length, derivedHabits, examShieldActive, calendarOrigin]);
 
   const selectedDayCompletedCount = activeHabits.filter(
     (h) => h.days[currentDayIndex]
@@ -545,14 +647,16 @@ export default function App() {
 
   // GESTURE / TAP ACTION: Complete Today (Full 100% or Fallback Micro 50%)
   const handleCompleteToday = (habitId: string, isFallback: boolean = false) => {
+    if (!isViewingToday) return;
     const targetHabit = habits.find((h) => h.id === habitId);
     if (!targetHabit) return;
 
     const isMicro = isFallback || activeFallbackIds.includes(habitId);
+    const loggedDate = toISODate(calendarOrigin);
 
     // Clear any previous today completion event for this habit to allow switching / updating cleanly
     setCompletionEvents((prev) =>
-      prev.filter((e) => !(e.habitId === habitId && e.dayIndex === todayDayIndex))
+      prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
     );
 
     // Remove from active fallback state
@@ -562,11 +666,7 @@ export default function App() {
       id: `evt-${isMicro ? 'micro-' : ''}${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       habitId,
       dayIndex: todayDayIndex,
-      date: new Date().toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      }),
+      date: loggedDate,
       type: isMicro ? 'fallback_micro' : 'full',
       note: isMicro ? (targetHabit.fallbackMicroHabit || 'Fallback micro-habit completed') : undefined,
       timestamp: Date.now(),
@@ -612,6 +712,7 @@ export default function App() {
 
   // GESTURE / TAP ACTION: Toggle Fallback Mode for Today (Does NOT mark complete; allows cancel / revert)
   const handleToggleFallbackMode = (habitId: string) => {
+    if (!isViewingToday) return;
     const targetHabit = habits.find((h) => h.id === habitId);
     if (!targetHabit) return;
 
@@ -623,12 +724,13 @@ export default function App() {
     }
 
     // If habit was already completed today, unmark it so it can transition to fallback
+    const loggedDate = toISODate(calendarOrigin);
     const alreadyLogged = completionEvents.some(
-      (e) => e.habitId === habitId && e.dayIndex === todayDayIndex
+      (e) => e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate
     );
     if (alreadyLogged) {
       setCompletionEvents((prev) =>
-        prev.filter((e) => !(e.habitId === habitId && e.dayIndex === todayDayIndex))
+        prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
       );
       setEvidenceList((prev) =>
         prev.filter((e) => !(e.habitId === habitId && e.dayNumber === todayDayIndex + 1))
@@ -643,9 +745,11 @@ export default function App() {
 
   // GESTURE / TAP ACTION: Cancel / Reset Today's completion or fallback back to normal
   const handleResetToday = (habitId: string) => {
+    if (!isViewingToday) return;
+    const loggedDate = toISODate(calendarOrigin);
     // Remove completion event for today
     setCompletionEvents((prev) =>
-      prev.filter((e) => !(e.habitId === habitId && e.dayIndex === todayDayIndex))
+      prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
     );
     void deleteHabitLog(session?.id, habitId, todayDayIndex).catch(() => {});
 
@@ -1136,12 +1240,13 @@ export default function App() {
             {/* Radial Fan Calendar: date fan, momentum orb, and mascot */}
             <RadialFanCalendar
               selectedDay={selectedDay}
-              onSelectDay={setSelectedDay}
+              onSelectDay={handleSelectDay}
               dayCompletionRates={dayCompletionRates}
               habits={activeHabits}
               momentumScore={momentumScore}
               isCelebrating={false}
               isDark={isDark}
+              originDate={calendarOrigin}
             />
 
             {/* Atomic Wisdom Quote Card Curated by Personal Interests */}
@@ -1181,9 +1286,11 @@ export default function App() {
                     key={habit.id}
                     habit={habit}
                     todayIndex={todayDayIndex}
+                    viewIndex={currentDayIndex}
+                    gesturesLocked={!isViewingToday}
                     isLongPressed={longPressedHabitId === habit.id}
                     isOtherLongPressed={Boolean(longPressedHabitId && longPressedHabitId !== habit.id)}
-                    isFallbackActive={activeFallbackIds.includes(habit.id)}
+                    isFallbackActive={isViewingToday && activeFallbackIds.includes(habit.id)}
                     isTourTarget={habitIndex === 0}
                     onCompleteToday={handleCompleteToday}
                     onToggleFallbackMode={handleToggleFallbackMode}
@@ -1248,7 +1355,7 @@ export default function App() {
             onAddFrictionNote={handleAddFrictionNote}
             onScroll={handleMainScroll}
             isDark={isDark}
-            momentumScore={momentumScore}
+            momentumScore={todayMomentumScore}
           />
         )}
 
@@ -1263,6 +1370,8 @@ export default function App() {
             onToggleExamShield={() => setExamShieldActive(!examShieldActive)}
             vacationModeActive={vacationModeActive}
             onToggleVacationMode={() => setVacationModeActive(!vacationModeActive)}
+            notificationWindows={notificationWindows}
+            onToggleNotificationWindow={handleToggleNotificationWindow}
             onOpenLedger={() => setIsLedgerModalOpen(true)}
             onUpgradeGuest={() => setIsUpgradeModalOpen(true)}
             onSyncNow={async () => {
@@ -1288,6 +1397,8 @@ export default function App() {
             completionEvents={completionEvents}
             theme={theme}
             onThemeChange={setTheme}
+            notificationWindows={notificationWindows}
+            onToggleNotificationWindow={handleToggleNotificationWindow}
             onResetData={handleResetData}
             onRestoreHabit={handleRestoreHabit}
             onDeleteHabit={handleDeleteHabit}
@@ -1328,7 +1439,7 @@ export default function App() {
             habit={longPressedHabit}
             rect={longPressedRect}
             todayIndex={todayDayIndex}
-            isFallbackActive={activeFallbackIds.includes(longPressedHabit.id)}
+            isFallbackActive={isViewingToday && activeFallbackIds.includes(longPressedHabit.id)}
             onToggleFallbackMode={handleToggleFallbackMode}
             onClose={() => {
               setLongPressedHabitId(null);

@@ -1,6 +1,6 @@
 import { HabitCompletionEvent, UserProfile } from '../types';
 import { isSupabaseConfigured, supabase } from './supabase';
-import { isoDateForDayIndex } from '../utils/dates';
+import { isoDateForDayIndex, isIsoDate } from '../utils/dates';
 
 const LOG_QUEUE_KEY = 'ascend_offline_habit_log_queue';
 const PROFILE_QUEUE_KEY = 'ascend_offline_profile_queue';
@@ -88,7 +88,7 @@ export async function pushHabitLogRemote(
   event: HabitCompletionEvent
 ): Promise<boolean> {
   if (!canSync(userId) || !supabase) return false;
-  const loggedDate = isoDateForDayIndex(event.dayIndex);
+  const loggedDate = isIsoDate(event.date) ? event.date : isoDateForDayIndex(event.dayIndex);
   const completion = event.type === 'fallback_micro' ? 0.5 : 1;
   const row = {
     id: event.id,

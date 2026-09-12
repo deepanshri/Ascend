@@ -17,8 +17,15 @@ import {
   Send,
   HelpCircle,
   Shield,
+  Bell,
 } from 'lucide-react';
 import { IdentityEvidence, UserSession } from '../types';
+import { NotificationWindowToggles } from './NotificationWindowToggles';
+import {
+  DEFAULT_NOTIFICATION_WINDOWS,
+  type NotificationWindowKey,
+  type PsychologyNotificationWindows,
+} from '../lib/notifications';
 
 interface PersonalViewProps {
   userSession: UserSession;
@@ -29,6 +36,8 @@ interface PersonalViewProps {
   onToggleExamShield?: () => void;
   vacationModeActive?: boolean;
   onToggleVacationMode?: () => void;
+  notificationWindows?: PsychologyNotificationWindows;
+  onToggleNotificationWindow?: (key: NotificationWindowKey) => void;
   onOpenLedger: () => void;
   onUpgradeGuest: () => void;
   onSyncNow: () => void;
@@ -47,6 +56,8 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
   onToggleExamShield,
   vacationModeActive = false,
   onToggleVacationMode,
+  notificationWindows = DEFAULT_NOTIFICATION_WINDOWS,
+  onToggleNotificationWindow,
   onOpenLedger,
   onUpgradeGuest,
   onSyncNow,
@@ -477,6 +488,25 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
             </span>
           </div>
         )}
+      </section>
+
+      {/* DAILY REMINDER WINDOWS */}
+      <section className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm space-y-3.5">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center">
+            <Bell className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-[16px] font-bold text-slate-900 dark:text-white">Daily Reminders</h2>
+            <p className="text-[11.5px] text-slate-400 dark:text-slate-500">
+              Morning, afternoon, and night psychology windows
+            </p>
+          </div>
+        </div>
+        <NotificationWindowToggles
+          windows={notificationWindows}
+          onToggle={(key) => onToggleNotificationWindow?.(key)}
+        />
       </section>
 
       {/* CARD 3: WHAT DO YOU WANT TO BECOME? */}
