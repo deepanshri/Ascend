@@ -44,7 +44,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     });
 
     if (!isGuest) {
-      void insertHabitToSupabase(userId, created);
+      void insertHabitToSupabase(userId, created).catch(() => {});
     }
 
     setName('');

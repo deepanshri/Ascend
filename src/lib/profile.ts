@@ -1,5 +1,6 @@
 import { UserProfile, UserSession } from '../types';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { cacheProfileLocally, readCachedProfile, syncProfilePatch } from './offlineSync';
 
 const TUTORIAL_STORAGE_KEY = 'ascend_has_completed_tutorial';
 
@@ -48,8 +49,11 @@ export async function fetchUserProfile(
   fallbackInterests: string[] = []
 ): Promise<UserProfile> {
   const fallback = localProfile(session, fallbackInterests);
+  const cached = readCachedProfile(session.id);
   if (!isSupabaseConfigured || !supabase || session.isGuest) {
-    return fallback;
+    return cached
+      ? { ...fallback, ...cached, interests: cached.interests.length > 0 ? cached.interests : fallback.interests }
+      : fallback;
   }
 
   try {
@@ -60,18 +64,19 @@ export async function fetchUserProfile(
       .maybeSingle();
 
     if (error || !data) {
-      if (error) console.warn('Profile fetch failed:', error.message);
-      return fallback;
+      return cached || fallback;
     }
 
     const interests = parseInterests(data.interests);
-    return {
+    const profile: UserProfile = {
       id: String(data.id || session.id),
       interests: interests.length > 0 ? interests : fallbackInterests,
       has_completed_tutorial: Boolean(data.has_completed_tutorial) || fallback.has_completed_tutorial,
     };
+    cacheProfileLocally(profile);
+    return profile;
   } catch {
-    return fallback;
+    return cached || fallback;
   }
 }
 
@@ -83,18 +88,18 @@ export async function persistUserProfile(
     setLocalTutorialCompleted(patch.has_completed_tutorial);
   }
 
+  cacheProfileLocally({
+    id: session.id,
+    interests: patch.interests ?? readCachedProfile(session.id)?.interests ?? [],
+    has_completed_tutorial:
+      typeof patch.has_completed_tutorial === 'boolean'
+        ? patch.has_completed_tutorial
+        : Boolean(readCachedProfile(session.id)?.has_completed_tutorial),
+  });
+
   if (!isSupabaseConfigured || !supabase || session.isGuest) {
     return;
   }
 
-  try {
-    const { error } = await supabase.from('profiles').upsert({
-      id: session.id,
-      ...patch,
-      updated_at: new Date().toISOString(),
-    });
-    if (error) console.warn('Profile persist failed:', error.message);
-  } catch (err) {
-    console.warn('Profile persist offline:', err);
-  }
+  await syncProfilePatch(session.id, patch);
 }

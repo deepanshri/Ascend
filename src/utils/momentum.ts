@@ -1,6 +1,7 @@
 import { Habit, HabitCompletionEvent, CompletionType } from '../types';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
-import { getTodayDayIndex, isoDateForDayIndex } from './dates';
+import { getTodayDayIndex } from './dates';
+import { syncHabitLogDelete, syncHabitLogUpsert } from '../lib/offlineSync';
 
 export interface HabitLogRow {
   id?: string;
@@ -138,54 +139,7 @@ export async function upsertHabitLog(
   userId: string | null | undefined,
   event: HabitCompletionEvent
 ): Promise<void> {
-  if (!isSupabaseConfigured || !supabase || !userId || userId.startsWith('guest_')) {
-    return;
-  }
-
-  const loggedDate = isoDateForDayIndex(event.dayIndex);
-  const completion = event.type === 'fallback_micro' ? 0.5 : 1;
-  const row = {
-    id: event.id,
-    user_id: userId,
-    habit_id: event.habitId,
-    logged_date: loggedDate,
-    date: event.date,
-    day_index: event.dayIndex,
-    type: event.type,
-    completion,
-    value: completion,
-    note: event.note || null,
-    timestamp: event.timestamp,
-  };
-
-  try {
-    const upserted = await supabase
-      .from('habit_logs')
-      .upsert(row, { onConflict: 'habit_id,logged_date' });
-
-    if (!upserted.error) return;
-
-    await supabase
-      .from('habit_logs')
-      .delete()
-      .eq('user_id', userId)
-      .eq('habit_id', event.habitId)
-      .eq('logged_date', loggedDate);
-
-    const inserted = await supabase.from('habit_logs').insert(row);
-    if (inserted.error) {
-      await supabase
-        .from('habit_logs')
-        .delete()
-        .eq('user_id', userId)
-        .eq('habit_id', event.habitId)
-        .eq('day_index', event.dayIndex);
-      const retry = await supabase.from('habit_logs').insert(row);
-      if (retry.error) console.warn('habit_logs upsert failed:', retry.error.message);
-    }
-  } catch (err) {
-    console.warn('habit_logs upsert offline:', err);
-  }
+  await syncHabitLogUpsert(userId, event);
 }
 
 export async function deleteHabitLog(
@@ -193,31 +147,7 @@ export async function deleteHabitLog(
   habitId: string,
   dayIndex: number = getTodayDayIndex()
 ): Promise<void> {
-  if (!isSupabaseConfigured || !supabase || !userId || userId.startsWith('guest_')) {
-    return;
-  }
-
-  try {
-    const loggedDate = isoDateForDayIndex(dayIndex);
-    const byDate = await supabase
-      .from('habit_logs')
-      .delete()
-      .eq('user_id', userId)
-      .eq('habit_id', habitId)
-      .eq('logged_date', loggedDate);
-
-    if (byDate.error) {
-      const byIndex = await supabase
-        .from('habit_logs')
-        .delete()
-        .eq('user_id', userId)
-        .eq('habit_id', habitId)
-        .eq('day_index', dayIndex);
-      if (byIndex.error) console.warn('habit_logs delete failed:', byIndex.error.message);
-    }
-  } catch (err) {
-    console.warn('habit_logs delete offline:', err);
-  }
+  await syncHabitLogDelete(userId, habitId, dayIndex);
 }
 
 /**

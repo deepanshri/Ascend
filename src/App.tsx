@@ -13,7 +13,7 @@ import { INITIAL_HABITS, INITIAL_EVIDENCE, INITIAL_COMPLETION_EVENTS } from './d
 import { calculateMomentumScore, deriveHabitsFromEventLog, mergeCompletionEvents, upsertHabitLog, deleteHabitLog } from './utils/momentum';
 import { formatEvidenceDate, getTodayDayIndex } from './utils/dates';
 import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
-import { applyNativeChrome } from './lib/nativeChrome';
+import { applyNativeChrome, hideNativeSplash } from './lib/nativeChrome';
 import {
   getStoredSession,
   setStoredSession,
@@ -128,7 +128,7 @@ export default function App() {
     setSelectedInterests((prev) => {
       const next = prev.includes(interest) ? prev.filter((t) => t !== interest) : [...prev, interest];
       if (session && !session.isGuest) {
-        void persistUserProfile(session, { interests: next });
+        void persistUserProfile(session, { interests: next }).catch(() => {});
       }
       return next;
     });
@@ -398,8 +398,15 @@ export default function App() {
 
   useEffect(() => {
     const dark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
-    void applyNativeChrome(dark);
+    void applyNativeChrome(dark).catch(() => {});
   }, [theme, systemPrefersDark]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void hideNativeSplash().catch(() => {});
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     try {
@@ -474,7 +481,7 @@ export default function App() {
       await runAuthenticatedSync(session);
       if (cancelled) return;
       setSession((prev) => (prev ? { ...prev, syncStatus: 'synced' } : prev));
-    })();
+    })().catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -484,13 +491,13 @@ export default function App() {
   useEffect(() => {
     if (!session || session.isGuest) return;
     if (hydratedUserIdRef.current !== session.id) return;
-    void persistHabitsToTable(session.id, habits);
+    void persistHabitsToTable(session.id, habits).catch(() => {});
   }, [habits, session?.id, session?.isGuest]);
 
   useEffect(() => {
     if (!session || session.isGuest) return;
     if (hydratedUserIdRef.current !== session.id) return;
-    void persistMomentumHistory(session.id, momentumScore, currentDayIndex);
+    void persistMomentumHistory(session.id, momentumScore, currentDayIndex).catch(() => {});
   }, [momentumScore, currentDayIndex, session?.id, session?.isGuest]);
 
   // Home mount: fetch active habits + today's logs (optimistic local UI stays in place)
@@ -514,7 +521,7 @@ export default function App() {
       if (todayLogs.length > 0) {
         setCompletionEvents((prev) => mergeCompletionEvents(prev, todayLogs));
       }
-    })();
+    })().catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -566,7 +573,7 @@ export default function App() {
     };
 
     setCompletionEvents((prev) => [...prev, newEvent]);
-    void upsertHabitLog(session?.id, newEvent);
+    void upsertHabitLog(session?.id, newEvent).catch(() => {});
 
     // Clean up previous today's evidence for this habit
     setEvidenceList((prev) =>
@@ -626,7 +633,7 @@ export default function App() {
       setEvidenceList((prev) =>
         prev.filter((e) => !(e.habitId === habitId && e.dayNumber === todayDayIndex + 1))
       );
-      void deleteHabitLog(session?.id, habitId, todayDayIndex);
+      void deleteHabitLog(session?.id, habitId, todayDayIndex).catch(() => {});
     }
 
     // Activate fallback mode (not complete yet!)
@@ -640,7 +647,7 @@ export default function App() {
     setCompletionEvents((prev) =>
       prev.filter((e) => !(e.habitId === habitId && e.dayIndex === todayDayIndex))
     );
-    void deleteHabitLog(session?.id, habitId, todayDayIndex);
+    void deleteHabitLog(session?.id, habitId, todayDayIndex).catch(() => {});
 
     // Remove evidence for today
     setEvidenceList((prev) =>
@@ -698,7 +705,7 @@ export default function App() {
       setDetailHabit(null);
     }
     if (session && !session.isGuest) {
-      void deleteHabitCascade(session.id, habitId);
+      void deleteHabitCascade(session.id, habitId).catch(() => {});
     }
   };
 
@@ -765,7 +772,7 @@ export default function App() {
         void persistUserProfile(newSession, {
           interests,
           has_completed_tutorial: false,
-        });
+        }).catch(() => {});
       }
     }
     if (isNewUser) {
@@ -785,7 +792,7 @@ export default function App() {
     if (firstHabit) {
       setHabits((prev) => [firstHabit, ...prev]);
       if (session && !session.isGuest) {
-        void insertHabitToSupabase(session.id, firstHabit);
+        void insertHabitToSupabase(session.id, firstHabit).catch(() => {});
       }
     }
     setIsOnboarded(true);
@@ -1023,7 +1030,7 @@ export default function App() {
           void persistUserProfile(session, {
             has_completed_tutorial: true,
             interests: selectedInterests,
-          });
+          }).catch(() => {});
         }
       });
     }, 700);

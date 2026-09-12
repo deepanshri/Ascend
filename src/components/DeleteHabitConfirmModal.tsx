@@ -70,7 +70,7 @@ export const DeleteHabitConfirmModal: React.FC<DeleteHabitConfirmModalProps> = (
             onClick={() => {
               if (!habit) return;
               if (!isGuest) {
-                void deleteHabitCascade(userId, habit.id);
+                void deleteHabitCascade(userId, habit.id).catch(() => {});
               }
               onConfirm();
             }}
