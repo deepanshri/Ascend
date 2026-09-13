@@ -3,6 +3,7 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import { habitCategoryBadge } from '../utils/categories';
 import { getTodayDayIndex, isoDateForDayIndex, toISODate } from '../utils/dates';
 import { HabitLogRow, mapHabitLogRowToEvent } from '../utils/momentum';
+import { isSeedHabitId, SEED_HABIT_IDS } from '../data/initialHabits';
 
 function canSync(userId?: string | null): boolean {
   return Boolean(isSupabaseConfigured && supabase && userId && !userId.startsWith('guest_'));
@@ -79,8 +80,14 @@ export function habitToRow(habit: Habit, userId: string) {
   };
 }
 
-export async function fetchActiveHabits(userId?: string | null): Promise<Habit[]> {
-  if (!canSync(userId) || !supabase) return [];
+export async function fetchHabitsFromTable(userId?: string | null): Promise<{
+  ok: boolean;
+  habits: Habit[];
+  error?: string;
+}> {
+  if (!canSync(userId) || !supabase) {
+    return { ok: false, habits: [], error: 'Supabase is not connected' };
+  }
   try {
     const { data, error } = await supabase
       .from('habits')
@@ -89,25 +96,65 @@ export async function fetchActiveHabits(userId?: string | null): Promise<Habit[]
 
     if (error) {
       console.warn('Habits fetch failed:', error.message);
-      return [];
+      return { ok: false, habits: [], error: error.message };
     }
 
-    return (data as Record<string, unknown>[] | null || [])
+    const habits = (data as Record<string, unknown>[] | null || [])
       .map(rowToHabit)
-      .filter((habit): habit is Habit => habit !== null && !habit.archived);
+      .filter((habit): habit is Habit => habit !== null && !habit.archived && !isSeedHabitId(habit.id));
+
+    return { ok: true, habits };
   } catch (err) {
     console.warn('Habits fetch offline:', err);
-    return [];
+    return { ok: false, habits: [], error: 'Offline or network error' };
   }
 }
 
-export async function persistHabitsToTable(userId: string, habits: Habit[]): Promise<void> {
-  if (!canSync(userId) || !supabase || habits.length === 0) return;
+export async function fetchActiveHabits(userId?: string | null): Promise<Habit[]> {
+  const result = await fetchHabitsFromTable(userId);
+  return result.ok ? result.habits : [];
+}
+
+export async function persistHabitsToTable(userId: string, habits: Habit[]): Promise<boolean> {
+  if (!canSync(userId) || !supabase) return false;
+  const userHabits = habits.filter((habit) => !isSeedHabitId(habit.id));
+  if (userHabits.length === 0) return true;
   try {
-    const { error } = await supabase.from('habits').upsert(habits.map((habit) => habitToRow(habit, userId)));
-    if (error) console.warn('Habits upsert failed:', error.message);
+    const { error } = await supabase.from('habits').upsert(userHabits.map((habit) => habitToRow(habit, userId)));
+    if (error) {
+      console.warn('Habits upsert failed:', error.message);
+      return false;
+    }
+    return true;
   } catch (err) {
     console.warn('Habits upsert offline:', err);
+    return false;
+  }
+}
+
+/** Remove leftover demo seed rows so they never rehydrate onto a new or existing account. */
+export async function purgeSeedHabitsFromTable(userId?: string | null): Promise<void> {
+  if (!canSync(userId) || !supabase || !userId) return;
+  const seedIds = Array.from(SEED_HABIT_IDS);
+  try {
+    const logs = await supabase.from('habit_logs').delete().eq('user_id', userId).in('habit_id', seedIds);
+    if (logs.error) console.warn('Seed habit_logs purge failed:', logs.error.message);
+    const habits = await supabase.from('habits').delete().eq('user_id', userId).in('id', seedIds);
+    if (habits.error) console.warn('Seed habits purge failed:', habits.error.message);
+    const onboardingLogs = await supabase
+      .from('habit_logs')
+      .delete()
+      .eq('user_id', userId)
+      .like('habit_id', 'habit-onboarding-%');
+    if (onboardingLogs.error) console.warn('Onboarding habit_logs purge failed:', onboardingLogs.error.message);
+    const onboardingHabits = await supabase
+      .from('habits')
+      .delete()
+      .eq('user_id', userId)
+      .like('id', 'habit-onboarding-%');
+    if (onboardingHabits.error) console.warn('Onboarding habits purge failed:', onboardingHabits.error.message);
+  } catch (err) {
+    console.warn('Seed habit purge offline:', err);
   }
 }
 
@@ -135,6 +182,7 @@ export async function insertHabitToSupabase(
   userId: string | null | undefined,
   habit: Habit
 ): Promise<boolean> {
+  if (isSeedHabitId(habit.id)) return false;
   if (!canSync(userId) || !supabase) return false;
   const remoteCount = await countActiveHabitsRemote(userId);
   if (remoteCount != null && remoteCount >= 20 && !habit.archived) {
@@ -207,7 +255,7 @@ export async function fetchHabitLogsForDate(
 
     return (data as HabitLogRow[] | null || [])
       .map((row) => mapHabitLogRowToEvent(row))
-      .filter((event): event is HabitCompletionEvent => event !== null);
+      .filter((event): event is HabitCompletionEvent => event !== null && !isSeedHabitId(event.habitId));
   } catch (err) {
     console.warn('habit_logs date fetch offline:', err);
     return [];
@@ -220,4 +268,84 @@ export async function fetchTodayHabitLogs(
   origin: Date = new Date()
 ): Promise<HabitCompletionEvent[]> {
   return fetchHabitLogsForDate(userId, isoDateForDayIndex(dayIndex, origin));
+}
+
+export async function persistHabitLogFrictionReason(
+  userId: string | null | undefined,
+  habitId: string,
+  loggedDate: string,
+  reason: string
+): Promise<void> {
+  if (!canSync(userId) || !supabase || !userId) return;
+  const trimmed = reason.trim();
+  if (!trimmed) return;
+  try {
+    const updated = await supabase
+      .from('habit_logs')
+      .update({ friction_reason: trimmed })
+      .eq('user_id', userId)
+      .eq('habit_id', habitId)
+      .eq('logged_date', loggedDate)
+      .select('id');
+
+    if (!updated.error && Array.isArray(updated.data) && updated.data.length > 0) return;
+
+    const fallbackDate = await supabase
+      .from('habit_logs')
+      .update({ friction_reason: trimmed })
+      .eq('user_id', userId)
+      .eq('habit_id', habitId)
+      .eq('date', loggedDate)
+      .select('id');
+    if (!fallbackDate.error && Array.isArray(fallbackDate.data) && fallbackDate.data.length > 0) return;
+
+    const { error } = await supabase.from('habit_logs').upsert(
+      {
+        user_id: userId,
+        habit_id: habitId,
+        logged_date: loggedDate,
+        date: loggedDate,
+        type: 'missed',
+        completion: 0,
+        value: 0,
+        friction_reason: trimmed,
+        timestamp: Date.now(),
+      },
+      { onConflict: 'habit_id,logged_date' }
+    );
+    if (error) console.warn('habit_logs friction_reason upsert failed:', error.message);
+  } catch (err) {
+    console.warn('habit_logs friction_reason persist offline:', err);
+  }
+}
+
+export async function fetchFrictionReasonsFromTable(
+  userId?: string | null
+): Promise<Array<{ habitId: string; loggedDate: string; reason: string }>> {
+  if (!canSync(userId) || !supabase || !userId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('habit_logs')
+      .select('habit_id, logged_date, date, friction_reason')
+      .eq('user_id', userId)
+      .not('friction_reason', 'is', null);
+
+    if (error) {
+      console.warn('habit_logs friction fetch failed:', error.message);
+      return [];
+    }
+
+    return (data || [])
+      .map((row) => {
+        const habitId = String(row.habit_id || '');
+        const loggedDate = String(row.logged_date || row.date || '').slice(0, 10);
+        const reason = String(row.friction_reason || '').trim();
+        if (!habitId || !loggedDate || !reason) return null;
+        return { habitId, loggedDate, reason };
+      })
+      .filter((row): row is { habitId: string; loggedDate: string; reason: string } => row !== null);
+  } catch (err) {
+    console.warn('habit_logs friction fetch offline:', err);
+    return [];
+  }
 }

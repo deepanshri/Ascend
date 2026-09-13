@@ -50,7 +50,11 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     if (!created) return;
 
     if (!isGuest) {
-      void insertHabitToSupabase(userId, created).catch(() => {});
+      void insertHabitToSupabase(userId, created).then((ok) => {
+        if (!ok) {
+          console.error('Habit was not written to public.habits');
+        }
+      });
     }
 
     setName('');

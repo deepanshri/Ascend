@@ -101,6 +101,7 @@ export async function pushHabitLogRemote(
     completion,
     value: completion,
     note: event.note || null,
+    friction_reason: event.frictionReason || null,
     timestamp: event.timestamp,
   };
 

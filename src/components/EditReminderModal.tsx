@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { StandaloneReminder } from '../types';
-import { weekdayFromIsoDate } from '../lib/notifications';
+import { StandaloneReminder, UserSession } from '../types';
+import { reminderNotificationIds, weekdayFromIsoDate } from '../lib/notifications';
+import { upsertPublicReminder } from '../lib/supabase';
 
 interface EditReminderModalProps {
   reminder: StandaloneReminder | null;
   isOpen: boolean;
   onClose: () => void;
+  userSession?: UserSession | null;
   onSave: (
     id: string,
     updates: {
@@ -29,6 +31,7 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
   reminder,
   isOpen,
   onClose,
+  userSession,
   onSave,
 }) => {
   const [title, setTitle] = useState('');
@@ -49,14 +52,19 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
     }
   }, [reminder, isOpen]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reminder || !title.trim()) return;
 
     const trimmedTime = time.trim();
     const alert10 = trimmedTime ? alert10Min : false;
     const alertExactTime = trimmedTime ? alertExact : false;
-    onSave(reminder.id, {
+    const ids = reminderNotificationIds(reminder.id);
+    const notificationId1 = Math.trunc(reminder.notificationId1 ?? ids.notificationId1);
+    const notificationId2 = Math.trunc(reminder.notificationId2 ?? ids.notificationId2);
+    const daysOfWeek = [weekdayFromIsoDate(date)];
+    const isEnabled = !reminder.completed && (trimmedTime ? alert10 || alertExactTime : true);
+    const updates = {
       title: title.trim(),
       date,
       time: trimmedTime || undefined,
@@ -64,11 +72,19 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
       alert10Min: alert10,
       alertExact: alertExactTime,
       habitId: reminder.habitId ?? null,
-      daysOfWeek: [weekdayFromIsoDate(date)],
-      isEnabled: !reminder.completed && (trimmedTime ? alert10 || alertExactTime : true),
-      notificationId1: reminder.notificationId1,
-      notificationId2: reminder.notificationId2,
+      daysOfWeek,
+      isEnabled,
+      notificationId1,
+      notificationId2,
+    };
+
+    await upsertPublicReminder(userSession, {
+      ...reminder,
+      ...updates,
+      updatedAt: Date.now(),
     });
+
+    onSave(reminder.id, updates);
     onClose();
   };
 

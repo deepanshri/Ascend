@@ -1,0 +1,12 @@
+{
+  "javascript.validate.enable": false,
+  "css.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore",
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "files.watcherExclude": {
+    "**/android/app/build/**": true,
+    "**/android/.gradle/**": true,
+    "**/dist/**": true,
+    "**/node_modules/**": true
+  }
+}

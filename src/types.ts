@@ -27,6 +27,7 @@ export interface HabitCompletionEvent {
   date: string; // YYYY-MM-DD preferred; legacy display strings remap via timestamp
   type: CompletionType; // 'full' (1.0 weight) | 'fallback_micro' (0.5 weight)
   note?: string;
+  frictionReason?: string;
   timestamp: number;
 }
 
@@ -95,7 +96,7 @@ export interface UserSession {
   avatarUrl?: string;
   isGuest: boolean;
   memberSince: string;
-  syncStatus: 'local' | 'synced' | 'syncing';
+  syncStatus: 'local' | 'synced' | 'syncing' | 'error';
 }
 
 export interface UserProfile {
@@ -109,7 +110,10 @@ export interface FrictionAudit {
   date: string;
   dayNumber: number;
   habitName: string;
-  type: 'fallback_used' | 'momentum_dip';
+  habitId?: string;
+  loggedDate?: string;
+  type: 'fallback_used' | 'momentum_dip' | 'missed';
+  reason?: string;
   note?: string;
   timestamp: number;
 }

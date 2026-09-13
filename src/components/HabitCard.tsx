@@ -6,6 +6,7 @@ import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '.
 
 const SWIPE_AXIS_LOCK_PX = 10;
 const DOUBLE_TAP_MS = 250;
+const LONG_PRESS_MS = 550;
 const GHOST_MOUSE_MS = 700;
 
 interface HabitCardProps {
@@ -42,8 +43,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   onNotify: _onNotify,
   onLongPress,
   onDismissLongPress,
-  onOpenEdit,
-  onOpenDeleteConfirm,
+  onOpenEdit: _onOpenEdit,
+  onOpenDeleteConfirm: _onOpenDeleteConfirm,
 }) => {
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -108,7 +109,10 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     const now = Date.now();
     if (now - lastTapTimeRef.current < DOUBLE_TAP_MS) {
       clearSingleTapTimer();
+      clearLongPressTimer();
       lastTapTimeRef.current = 0;
+      wasLongPressRef.current = false;
+      onDismissLongPress?.();
       setIsFlipped((prev) => !prev);
       return true;
     }
@@ -120,6 +124,29 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       lastTapTimeRef.current = 0;
     }, DOUBLE_TAP_MS);
     return false;
+  };
+
+  const shouldDeferLongPress = () => {
+    const now = Date.now();
+    if (now - lastTapTimeRef.current < DOUBLE_TAP_MS) return true;
+    if (now - lastTouchAtRef.current < GHOST_MOUSE_MS) return true;
+    return false;
+  };
+
+  const armLongPress = () => {
+    clearLongPressTimer();
+    if (shouldDeferLongPress()) return;
+    longPressTimerRef.current = window.setTimeout(() => {
+      wasLongPressRef.current = true;
+      gestureAxisRef.current = 'none';
+      setIsDragging(false);
+      setSwipeOffset(0);
+      try {
+        if (navigator.vibrate) navigator.vibrate(40);
+      } catch {}
+      const rect = cardRef.current?.getBoundingClientRect();
+      onLongPress(habit, rect);
+    }, LONG_PRESS_MS);
   };
 
   const applySwipeOffset = (deltaX: number) => {
@@ -162,18 +189,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     hasMovedRef.current = false;
     setIsDragging(true);
 
-    clearLongPressTimer();
-    longPressTimerRef.current = window.setTimeout(() => {
-      wasLongPressRef.current = true;
-      gestureAxisRef.current = 'none';
-      setIsDragging(false);
-      setSwipeOffset(0);
-      try {
-        if (navigator.vibrate) navigator.vibrate(40);
-      } catch {}
-      const rect = cardRef.current?.getBoundingClientRect();
-      onLongPress(habit, rect);
-    }, 400);
+    armLongPress();
   };
 
   useEffect(() => {
@@ -245,6 +261,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   // MOUSE DRAG HANDLERS
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0 || isOtherLongPressed) return;
+    if (Date.now() - lastTouchAtRef.current < GHOST_MOUSE_MS) return;
     startXRef.current = e.clientX;
     startYRef.current = e.clientY;
     dragStartXRef.current = e.clientX;
@@ -255,15 +272,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     hasMovedRef.current = false;
     setIsDragging(true);
 
-    clearLongPressTimer();
-    longPressTimerRef.current = window.setTimeout(() => {
-      wasLongPressRef.current = true;
-      gestureAxisRef.current = 'none';
-      setIsDragging(false);
-      setSwipeOffset(0);
-      const rect = cardRef.current?.getBoundingClientRect();
-      onLongPress(habit, rect);
-    }, 400);
+    armLongPress();
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {

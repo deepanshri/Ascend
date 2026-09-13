@@ -129,6 +129,12 @@ export const INITIAL_HABITS: Habit[] = [
   },
 ];
 
+export const SEED_HABIT_IDS: ReadonlySet<string> = new Set(INITIAL_HABITS.map((habit) => habit.id));
+
+export function isSeedHabitId(id: string): boolean {
+  return SEED_HABIT_IDS.has(id) || id.startsWith('habit-onboarding-');
+}
+
 export const INITIAL_EVIDENCE: IdentityEvidence[] = seedEvidenceForHabit(
   'habit-1',
   'Deep Work & Coding',

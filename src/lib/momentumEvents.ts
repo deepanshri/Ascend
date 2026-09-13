@@ -1,4 +1,5 @@
 import { MomentumEvent, MomentumEventType } from '../types';
+import { isSeedHabitId } from '../data/initialHabits';
 import { countMomentumCompletedActions, fetchSequentialMomentumEvents, insertMomentumEvent, isSupabaseConfigured, supabase } from './supabase';
 import { parseToIsoDate, toISODate } from '../utils/dates';
 import { isUuid, mergeMomentumEvents } from '../utils/momentum';
@@ -136,7 +137,7 @@ export async function fetchMomentumEventsFromTable(userId?: string | null): Prom
         timestamp: row.timestamp,
       })
     )
-    .filter((event): event is MomentumEvent => event !== null);
+    .filter((event): event is MomentumEvent => event !== null && !isSeedHabitId(event.habitId));
 }
 
 /** COUNT(*) of full | fallback rows. Returns null when the table is unreachable. */
@@ -161,7 +162,7 @@ export async function appendMomentumEventRemote(
   userId: string | null | undefined,
   event: MomentumEvent
 ): Promise<void> {
-  if (!canSync(userId) || !userId) return;
+  if (!canSync(userId) || !userId || isSeedHabitId(event.habitId)) return;
   if (!isOnline()) {
     enqueue({ userId, event });
     return;
@@ -175,7 +176,7 @@ export async function pushMomentumEventsRemote(
   events: MomentumEvent[]
 ): Promise<void> {
   if (!canSync(userId) || !userId || events.length === 0) return;
-  for (const event of events) {
+  for (const event of events.filter((event) => !isSeedHabitId(event.habitId))) {
     await appendMomentumEventRemote(userId, event);
   }
 }
@@ -184,6 +185,7 @@ export async function flushMomentumEventQueue(): Promise<void> {
   if (!isOnline() || !isSupabaseConfigured || !supabase) return;
   const remaining: MomentumQueueItem[] = [];
   for (const item of readQueue()) {
+    if (isSeedHabitId(item.event.habitId)) continue;
     const ok = await insertMomentumEventRemote(item.userId, item.event);
     if (!ok) remaining.push(item);
   }

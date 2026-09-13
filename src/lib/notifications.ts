@@ -20,7 +20,7 @@ export const DEFAULT_NOTIFICATION_WINDOWS: PsychologyNotificationWindows = {
 export const NOTIFICATION_WINDOWS_KEY = 'ascend_psychology_notifications';
 
 const CHANNEL_ID = 'ascend-momentum';
-const REMINDER_CHANNEL_ID = 'ascend-reminders';
+export const REMINDER_CHANNEL_ID = 'ascend_reminders';
 const NOTIFICATION_IDS = {
   morning: 81000,
   afternoon: 81300,
@@ -179,13 +179,17 @@ export async function requestNotificationPermissions(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
 
   try {
-    const current = await LocalNotifications.checkPermissions();
-    if (current.display === 'granted') return true;
     const requested = await LocalNotifications.requestPermissions();
     return requested.display === 'granted';
   } catch {
     return false;
   }
+}
+
+export async function initializeReminderNotifications(): Promise<boolean> {
+  const granted = await requestNotificationPermissions();
+  if (granted) await ensureReminderChannel();
+  return granted;
 }
 
 export async function requestPsychologyNotificationAccess(): Promise<boolean> {
@@ -263,7 +267,7 @@ function stableNotificationId(key: string, salt: number): number {
     hash = Math.imul(hash ^ key.charCodeAt(i), 16777619) >>> 0;
   }
   // Stay in 210000–909999 so we never collide with psychology ids 20300 / 81000 / 81300.
-  return 210000 + (hash % 700000);
+  return (210000 + (hash % 700000)) | 0;
 }
 
 export function weekdayFromIsoDate(isoDate: string): number {
@@ -350,9 +354,9 @@ function reminderCancelTargets(
   const stored2 = typeof reminder === 'string' ? undefined : reminder.notificationId2;
   return Array.from(
     new Set(
-      [stored1, stored2, computed.notificationId1, computed.notificationId2].filter(
-        (id): id is number => typeof id === 'number' && Number.isFinite(id)
-      )
+      [stored1, stored2, computed.notificationId1, computed.notificationId2]
+        .map((id) => (id == null ? NaN : Math.trunc(Number(id))))
+        .filter((id): id is number => Number.isInteger(id) && id > 0)
     )
   );
 }
@@ -374,14 +378,20 @@ export async function cancelReminderDualAlerts(
 
 export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): Promise<StandaloneReminder> {
   const hydrated = withReminderNotificationIds(reminder);
+  const notificationId1 = Math.trunc(Number(hydrated.notificationId1));
+  const notificationId2 = Math.trunc(Number(hydrated.notificationId2));
+  hydrated.notificationId1 = notificationId1;
+  hydrated.notificationId2 = notificationId2;
+
   await cancelReminderDualAlerts(hydrated);
 
   if (!Capacitor.isNativePlatform() || !isReminderScheduleActive(hydrated)) {
     return hydrated;
   }
 
-  const granted = await requestNotificationPermissions();
-  if (!granted) return hydrated;
+  // Explicit permission prompt on schedule / toggle-on.
+  const requested = await LocalNotifications.requestPermissions();
+  if (requested.display !== 'granted') return hydrated;
 
   const target = parseReminderTarget(hydrated);
   if (!target) return hydrated;
@@ -392,9 +402,9 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
   const tenMinBefore = new Date(target.getTime() - 10 * 60 * 1000);
   const notifications: LocalNotificationSchema[] = [];
 
-  if (hydrated.alert10Min !== false && tenMinBefore.getTime() > now) {
+  if (hydrated.alert10Min !== false && tenMinBefore.getTime() > now && Number.isInteger(notificationId1)) {
     notifications.push({
-      id: hydrated.notificationId1 as number,
+      id: notificationId1,
       title: `10 min: ${hydrated.title}`,
       body: `Upcoming reminder in 10 minutes: "${hydrated.title}"`,
       channelId: REMINDER_CHANNEL_ID,
@@ -403,9 +413,9 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
     });
   }
 
-  if (hydrated.alertExact !== false && target.getTime() > now) {
+  if (hydrated.alertExact !== false && target.getTime() > now && Number.isInteger(notificationId2)) {
     notifications.push({
-      id: hydrated.notificationId2 as number,
+      id: notificationId2,
       title: `Due now: ${hydrated.title}`,
       body: hydrated.notes?.trim() || `It's time for "${hydrated.title}"`,
       channelId: REMINDER_CHANNEL_ID,
@@ -418,14 +428,15 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
 
   try {
     await LocalNotifications.schedule({ notifications });
-  } catch {
-    // Native scheduling can fail without notification permission or exact-alarm access.
+  } catch (err) {
+    console.warn('LocalNotifications.schedule failed:', err);
   }
 
   return hydrated;
 }
 
 export async function rescheduleAllReminderDualAlerts(reminders: StandaloneReminder[]): Promise<StandaloneReminder[]> {
+  await requestNotificationPermissions();
   const hydrated = reminders.map(withReminderNotificationIds);
   for (const reminder of hydrated) {
     await cancelReminderDualAlerts(reminder);

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { StandaloneReminder, UserSession } from '../types';
-import { weekdayFromIsoDate } from '../lib/notifications';
+import { reminderNotificationIds, weekdayFromIsoDate } from '../lib/notifications';
+import { fetchPublicReminders, upsertPublicReminder } from '../lib/supabase';
 import { ReminderCard } from './ReminderCard';
 import { ReminderLongPressOverlay } from './ReminderLongPressOverlay';
 import { EditReminderModal } from './EditReminderModal';
@@ -9,7 +10,13 @@ import { DeleteReminderConfirmModal } from './DeleteReminderConfirmModal';
 
 interface RemindersViewProps {
   reminders: StandaloneReminder[];
-  onAddReminder: (reminder: Omit<StandaloneReminder, 'id' | 'completed' | 'createdAt' | 'updatedAt'>) => void;
+  onAddReminder: (
+    reminder: Omit<StandaloneReminder, 'id' | 'completed' | 'createdAt' | 'updatedAt'> & {
+      id?: string;
+      notificationId1?: number;
+      notificationId2?: number;
+    }
+  ) => void;
   onUpdateReminder?: (id: string, updates: Partial<Omit<StandaloneReminder, 'id' | 'createdAt'>>) => void;
   onToggleComplete: (id: string) => void;
   onSetReminderCompleted?: (id: string, completed: boolean) => void;
@@ -18,6 +25,7 @@ interface RemindersViewProps {
   onNotify?: (message: string) => void;
   userSession?: UserSession | null;
   onSyncReminders?: () => void;
+  onRemindersHydrated?: (reminders: StandaloneReminder[]) => void;
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }
 
@@ -30,6 +38,8 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
   onDeleteReminder,
   onSnoozeReminder,
   onNotify,
+  userSession,
+  onRemindersHydrated,
   onScroll,
 }) => {
   // Bottom Sheet State for New Reminder
@@ -44,6 +54,18 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
   const [editingReminder, setEditingReminder] = useState<StandaloneReminder | null>(null);
   const [deletingReminder, setDeletingReminder] = useState<StandaloneReminder | null>(null);
 
+  useEffect(() => {
+    if (!userSession || userSession.isGuest) return;
+    let cancelled = false;
+    void fetchPublicReminders(userSession.id).then((remote) => {
+      if (cancelled || !remote) return;
+      onRemindersHydrated?.(remote);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userSession?.id, userSession?.isGuest]);
+
   const handleOpenBottomSheet = () => {
     const now = new Date();
     setTime('');
@@ -52,20 +74,45 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
     setIsBottomSheetOpen(true);
   };
 
-  const handleSubmitNewReminder = (e: React.FormEvent) => {
+  const handleSubmitNewReminder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
+    const now = Date.now();
     const trimmedTime = time.trim();
-    onAddReminder({
+    const id = 'rem-' + now + '-' + Math.random().toString(36).substring(2, 6);
+    const ids = reminderNotificationIds(id);
+    const item: StandaloneReminder = {
+      id,
       title: title.trim(),
       date,
       time: trimmedTime || undefined,
-      alert10Min: trimmedTime ? true : false,
-      alertExact: trimmedTime ? true : false,
+      alert10Min: Boolean(trimmedTime),
+      alertExact: Boolean(trimmedTime),
+      completed: false,
+      createdAt: now,
+      updatedAt: now,
       habitId: null,
       daysOfWeek: [weekdayFromIsoDate(date)],
       isEnabled: true,
+      notificationId1: ids.notificationId1,
+      notificationId2: ids.notificationId2,
+    };
+
+    await upsertPublicReminder(userSession, item);
+
+    onAddReminder({
+      id: item.id,
+      title: item.title,
+      date: item.date,
+      time: item.time,
+      alert10Min: item.alert10Min,
+      alertExact: item.alertExact,
+      habitId: item.habitId,
+      daysOfWeek: item.daysOfWeek,
+      isEnabled: item.isEnabled,
+      notificationId1: item.notificationId1,
+      notificationId2: item.notificationId2,
     });
 
     setIsBottomSheetOpen(false);
@@ -368,6 +415,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
         <EditReminderModal
           isOpen={Boolean(editingReminder)}
           reminder={editingReminder}
+          userSession={userSession}
           onClose={() => setEditingReminder(null)}
           onSave={(id, updates) => {
             if (onUpdateReminder) {

@@ -10,7 +10,7 @@ import {
   HabitCompletionEvent,
   MomentumEvent,
 } from './types';
-import { INITIAL_HABITS, INITIAL_EVIDENCE, INITIAL_COMPLETION_EVENTS } from './data/initialHabits';
+import { isSeedHabitId } from './data/initialHabits';
 import {
   calculateDailyWeightedScore,
   calculateMomentumScore,
@@ -22,6 +22,7 @@ import {
   mergeMomentumEvents,
   momentumEventsFromCompletionLog,
   newMomentumEventId,
+  resolveMomentumEventDate,
   upsertHabitLog,
   deleteHabitLog,
 } from './utils/momentum';
@@ -43,13 +44,15 @@ import {
 } from './lib/supabase';
 import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted } from './lib/profile';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
-import { fetchActiveHabits, fetchHabitLogsForDate, insertHabitToSupabase, deleteHabitCascade } from './lib/habitsApi';
+import { fetchActiveHabits, fetchHabitLogsForDate, deleteHabitCascade, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable } from './lib/habitsApi';
 import { startAscendSpotlightTutorial, destroyAscendSpotlightTutorial } from './lib/tutorial';
 import {
   hydrateNotificationWindows,
+  initializeReminderNotifications,
   loadNotificationWindows,
   persistNotificationWindows,
   reminderNotificationIds,
+  requestNotificationPermissions,
   schedulePsychologyNotifications,
   weekdayFromIsoDate,
   withReminderNotificationIds,
@@ -68,6 +71,15 @@ import {
   toggleExamShield,
   toggleVacation,
 } from './lib/protection';
+import {
+  createMissedFrictionAudit,
+  enqueueFrictionPrompts,
+  loadPendingFrictionPrompts,
+  markFrictionPrompted,
+  mergeFrictionAuditsFromLogs,
+  savePendingFrictionPrompts,
+  type PendingFrictionPrompt,
+} from './lib/frictionAudit';
 import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
 import { RadialFanCalendar } from './components/RadialFanCalendar';
@@ -82,12 +94,19 @@ import { HabitDetailModal } from './components/HabitDetailModal';
 import { DeleteHabitConfirmModal } from './components/DeleteHabitConfirmModal';
 import { IdentityLedgerModal } from './components/IdentityLedgerModal';
 import { HabitLongPressOverlay } from './components/HabitLongPressOverlay';
+import { FrictionAuditModal } from './components/FrictionAuditModal';
 import { AuthView } from './components/AuthView';
 import { OnboardingView } from './components/OnboardingView';
 
 export default function App() {
   // Authentication & Session State
-  const [session, setSession] = useState<UserSession | null>(() => getStoredSession());
+  const [session, setSession] = useState<UserSession | null>(() => {
+    const stored = getStoredSession();
+    if (stored && !stored.isGuest) {
+      return { ...stored, syncStatus: stored.syncStatus === 'error' ? 'error' : 'syncing' };
+    }
+    return stored;
+  });
   const sessionRef = useRef<UserSession | null>(session);
   sessionRef.current = session;
   const [isOnboarded, setIsOnboarded] = useState<boolean>(() => isOnboardingCompleted());
@@ -108,6 +127,19 @@ export default function App() {
       return false;
     }
   });
+
+  useEffect(() => {
+    async function checkConnection() {
+      const { data, error } = await supabase.from('profiles').select('count', { count: 'exact', head: true });
+      if (error) {
+        console.error('❌ SUPABASE CONNECTION ERROR:', error.message);
+      } else {
+        console.log('✅ SUPABASE CONNECTED SUCCESSFULLY');
+      }
+    }
+  
+    checkConnection();
+  }, []);
 
   useEffect(() => {
     try {
@@ -188,18 +220,10 @@ export default function App() {
       const saved = localStorage.getItem('ascend_friction_audits');
       if (saved) return JSON.parse(saved);
     } catch {}
-    return [
-      {
-        id: 'fa-1',
-        date: 'Yesterday',
-        dayNumber: 3,
-        habitName: 'Deep Work & Flow',
-        type: 'fallback_used',
-        note: 'Low energy after travel — executed 2-min micro-habit write session instead of quitting.',
-        timestamp: Date.now() - 86400000,
-      },
-    ];
+    return [];
   });
+
+  const [pendingFriction, setPendingFriction] = useState<PendingFrictionPrompt[]>(() => loadPendingFrictionPrompts());
 
   // Persistence via localStorage for habits
   const [habits, setHabits] = useState<Habit[]>(() => {
@@ -207,38 +231,46 @@ export default function App() {
       const saved = localStorage.getItem('habit_tracker_habits');
       if (saved) {
         const parsed = JSON.parse(saved) as Habit[];
-        return parsed.map((h) => {
+        return parsed
+          .filter((h) => !isSeedHabitId(h.id))
+          .map((h) => {
           const category = normalizeHabitCategory(h.category);
           return { ...h, category, tags: [habitCategoryBadge(category)] };
         });
       }
     } catch {}
-    return INITIAL_HABITS;
+    return [];
   });
 
   // Append-only immutable completion event log (ground truth for habit history)
   const [completionEvents, setCompletionEvents] = useState<HabitCompletionEvent[]>(() => {
     try {
       const saved = localStorage.getItem('ascend_completion_events');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved) as HabitCompletionEvent[];
+        return parsed.filter((event) => !isSeedHabitId(event.habitId));
+      }
     } catch {}
-    return INITIAL_COMPLETION_EVENTS;
+    return [];
   });
 
   const [momentumEvents, setMomentumEvents] = useState<MomentumEvent[]>(() => {
     const stored = loadLocalMomentumEvents();
-    if (stored) return stored;
+    if (stored) return stored.filter((event) => !isSeedHabitId(event.habitId));
     try {
       const saved = localStorage.getItem('ascend_completion_events');
-      const logs: HabitCompletionEvent[] = saved ? JSON.parse(saved) : INITIAL_COMPLETION_EVENTS;
-      let seedHabits = INITIAL_HABITS;
+      const logs: HabitCompletionEvent[] = saved ? JSON.parse(saved) : [];
+      const userLogs = logs.filter((event) => !isSeedHabitId(event.habitId));
+      let seedHabits: Habit[] = [];
       try {
         const habitSaved = localStorage.getItem('habit_tracker_habits');
-        if (habitSaved) seedHabits = JSON.parse(habitSaved) as Habit[];
+        if (habitSaved) {
+          seedHabits = (JSON.parse(habitSaved) as Habit[]).filter((habit) => !isSeedHabitId(habit.id));
+        }
       } catch {}
-      return momentumEventsFromCompletionLog(logs, seedHabits);
+      return momentumEventsFromCompletionLog(userLogs, seedHabits);
     } catch {
-      return momentumEventsFromCompletionLog(INITIAL_COMPLETION_EVENTS, INITIAL_HABITS);
+      return [];
     }
   });
   momentumEventsRef.current = momentumEvents;
@@ -306,13 +338,15 @@ export default function App() {
       const saved = localStorage.getItem('habit_tracker_evidence');
       if (saved) {
         const parsed = JSON.parse(saved) as IdentityEvidence[];
-        return parsed.map((item) => ({
+        return parsed
+          .filter((item) => !isSeedHabitId(item.habitId))
+          .map((item) => ({
           ...item,
           category: normalizeHabitCategory(item.category),
         }));
       }
     } catch {}
-    return INITIAL_EVIDENCE;
+    return [];
   });
 
   // Standalone Reminders state
@@ -384,6 +418,15 @@ export default function App() {
           missed.forEach((event) => {
             void appendMomentumEventRemote(userId, event);
           });
+          const prompts = missed.map((event) => {
+            const habit = habitsRef.current.find((item) => item.id === event.habitId);
+            return {
+              habitId: event.habitId,
+              habitName: habit?.name || 'Habit',
+              loggedDate: originIso,
+            };
+          });
+          setPendingFriction((prev) => enqueueFrictionPrompts(prev, prompts));
         }
       }
 
@@ -495,7 +538,7 @@ export default function App() {
           month: 'short',
           year: 'numeric',
         }),
-        syncStatus: 'synced',
+        syncStatus: 'syncing',
       };
       setSession(restoredSession);
       setStoredSession(restoredSession);
@@ -574,6 +617,10 @@ export default function App() {
     } catch {}
   }, [frictionAudits]);
 
+  useEffect(() => {
+    savePendingFrictionPrompts(pendingFriction);
+  }, [pendingFriction]);
+
   const weekIsoDates = useMemo(() => getWeekDates(calendarOrigin).map((date) => toISODate(date)), [calendarOrigin]);
   const todayDayIndex = getTodayDayIndex();
   const currentDayIndex = useMemo(() => {
@@ -644,8 +691,19 @@ export default function App() {
   hasCompletedTutorialRef.current = hasCompletedTutorial;
   momentumScoreRef.current = todayMomentumScore;
 
+  const applySyncStatus = (status: UserSession['syncStatus']) => {
+    setSession((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, syncStatus: status };
+      setStoredSession(next);
+      return next;
+    });
+  };
+
   const runAuthenticatedSync = async (targetSession: UserSession) => {
-    if (targetSession.isGuest) return;
+    if (targetSession.isGuest) {
+      return { ok: false, error: 'Guest sessions stay local' };
+    }
     const result = await syncAuthenticatedAccount({
       session: targetSession,
       habits: habitsRef.current,
@@ -658,7 +716,11 @@ export default function App() {
     setHabits(result.habits);
     setCompletionEvents(result.completionEvents);
     setMomentumEvents((prev) => mergeMomentumEvents(prev, result.momentumEvents));
-    hydratedUserIdRef.current = targetSession.id;
+    if (result.ok) {
+      hydratedUserIdRef.current = targetSession.id;
+    }
+    applySyncStatus(result.ok ? 'synced' : 'error');
+    return result;
   };
 
   // Guest → auth: hydrate profiles, habits, habit_logs, and momentum_history
@@ -669,11 +731,15 @@ export default function App() {
     }
     let cancelled = false;
     void (async () => {
-      setSession((prev) => (prev ? { ...prev, syncStatus: 'syncing' } : prev));
-      await runAuthenticatedSync(session);
-      if (cancelled) return;
-      setSession((prev) => (prev ? { ...prev, syncStatus: 'synced' } : prev));
-    })().catch(() => {});
+      applySyncStatus('syncing');
+      try {
+        const result = await runAuthenticatedSync(session);
+        if (cancelled) return;
+        applySyncStatus(result.ok ? 'synced' : 'error');
+      } catch {
+        if (!cancelled) applySyncStatus('error');
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -683,7 +749,9 @@ export default function App() {
   useEffect(() => {
     if (!session || session.isGuest) return;
     if (hydratedUserIdRef.current !== session.id) return;
-    void persistHabitsToTable(session.id, habits).catch(() => {});
+    void persistHabitsToTable(session.id, habits).then((ok) => {
+      applySyncStatus(ok ? 'synced' : 'error');
+    });
   }, [habits, session?.id, session?.isGuest]);
 
   useEffect(() => {
@@ -724,24 +792,49 @@ export default function App() {
         fetchMomentumEventsFromTable(session.id),
       ]);
       if (cancelled) return;
-      if (remoteHabits.length > 0) {
-        setHabits((prev) => {
-          const byId = new Map(prev.map((habit) => [habit.id, habit]));
-          remoteHabits.forEach((habit) => byId.set(habit.id, habit));
-          return Array.from(byId.values());
-        });
+      setHabits((prev) => {
+        const byId = new Map(prev.filter((habit) => !isSeedHabitId(habit.id)).map((habit) => [habit.id, habit]));
+        remoteHabits
+          .filter((habit) => !isSeedHabitId(habit.id))
+          .forEach((habit) => byId.set(habit.id, habit));
+        return Array.from(byId.values());
+      });
+      const userDateLogs = dateLogs.filter((event) => !isSeedHabitId(event.habitId));
+      if (userDateLogs.length > 0) {
+        setCompletionEvents((prev) =>
+          mergeCompletionEvents(
+            prev.filter((event) => !isSeedHabitId(event.habitId)),
+            userDateLogs,
+            calendarOrigin
+          )
+        );
       }
-      if (dateLogs.length > 0) {
-        setCompletionEvents((prev) => mergeCompletionEvents(prev, dateLogs, calendarOrigin));
-      }
-      if (remoteMomentum.length > 0) {
-        setMomentumEvents((prev) => mergeMomentumEvents(prev, remoteMomentum));
+      const userMomentum = remoteMomentum.filter((event) => !isSeedHabitId(event.habitId));
+      if (userMomentum.length > 0) {
+        setMomentumEvents((prev) =>
+          mergeMomentumEvents(
+            prev.filter((event) => !isSeedHabitId(event.habitId)),
+            userMomentum
+          )
+        );
       }
     })().catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [activeTab, session?.id, session?.isGuest, currentSelectedDate, calendarOrigin]);
+
+  useEffect(() => {
+    if (!session || session.isGuest) return;
+    let cancelled = false;
+    void fetchFrictionReasonsFromTable(session.id).then((rows) => {
+      if (cancelled || rows.length === 0) return;
+      setFrictionAudits((prev) => mergeFrictionAuditsFromLogs(prev, rows, habitsRef.current));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.id, session?.isGuest]);
 
   // Calculate day completion rates (1-7) using active habits
   const dayCompletionRates = useMemo(() => {
@@ -769,6 +862,55 @@ export default function App() {
   const appendMomentumLog = (event: MomentumEvent) => {
     setMomentumEvents((prev) => mergeMomentumEvents(prev, [event]));
     void appendMomentumEventRemote(sessionRef.current?.id, event);
+  };
+
+  const enqueueMissedFrictionAudit = (habitId: string, habitName: string, loggedDate: string) => {
+    setPendingFriction((prev) =>
+      enqueueFrictionPrompts(prev, [{ habitId, habitName, loggedDate }])
+    );
+  };
+
+  const handleMarkMissed = (habitId: string, loggedDate: string = toISODate(calendarOrigin)) => {
+    if (!isViewingToday) return;
+    const targetHabit = habits.find((habit) => habit.id === habitId);
+    if (!targetHabit) return;
+
+    const alreadyCredited = completionEvents.some(
+      (event) => event.habitId === habitId && resolveEventIsoDate(event, calendarOrigin) === loggedDate
+    );
+    if (alreadyCredited) return;
+
+    const alreadyMissed = momentumEvents.some(
+      (event) =>
+        event.habitId === habitId &&
+        event.eventType === 'missed' &&
+        resolveMomentumEventDate(event) === loggedDate
+    );
+    if (!alreadyMissed) {
+      appendMomentumLog(createMomentumEvent(targetHabit, 'missed', loggedDate));
+    }
+
+    setLongPressedHabitId(null);
+    setLongPressedRect(null);
+    enqueueMissedFrictionAudit(habitId, targetHabit.name, loggedDate);
+  };
+
+  const activeFrictionPrompt = pendingFriction[0] ?? null;
+
+  const handleFrictionSubmit = (reason: string) => {
+    const prompt = pendingFriction[0];
+    if (!prompt) return;
+    markFrictionPrompted(prompt.habitId, prompt.loggedDate);
+    setFrictionAudits((prev) => [createMissedFrictionAudit(prompt, reason), ...prev]);
+    void persistHabitLogFrictionReason(sessionRef.current?.id, prompt.habitId, prompt.loggedDate, reason);
+    setPendingFriction((prev) => prev.slice(1));
+  };
+
+  const handleFrictionSkip = () => {
+    const prompt = pendingFriction[0];
+    if (!prompt) return;
+    markFrictionPrompted(prompt.habitId, prompt.loggedDate);
+    setPendingFriction((prev) => prev.slice(1));
   };
 
   // GESTURE / TAP ACTION: Complete Today (Full 100% or Fallback Micro 50%)
@@ -926,14 +1068,13 @@ export default function App() {
     setDetailHabit(updatedHabit);
   };
 
-  // Reset demo data
+  // Reset to an empty local workspace (no demo habits)
   const handleResetData = () => {
-    const seededMomentum = momentumEventsFromCompletionLog(INITIAL_COMPLETION_EVENTS, INITIAL_HABITS);
-    setHabits(INITIAL_HABITS);
-    setEvidenceList(INITIAL_EVIDENCE);
-    setCompletionEvents(INITIAL_COMPLETION_EVENTS);
-    setMomentumEvents(seededMomentum);
-    setIdentityVoteFloor(countIdentityVotes(seededMomentum));
+    setHabits([]);
+    setEvidenceList([]);
+    setCompletionEvents([]);
+    setMomentumEvents([]);
+    setIdentityVoteFloor(0);
     setActiveFallbackIds([]);
     localStorage.removeItem('habit_tracker_habits');
     localStorage.removeItem('habit_tracker_evidence');
@@ -950,18 +1091,28 @@ export default function App() {
     importedEvents?: HabitCompletionEvent[],
     importedMomentum?: MomentumEvent[]
   ) => {
-    setHabits(importedHabits);
+    const userHabits = importedHabits.filter((habit) => !isSeedHabitId(habit.id));
+    setHabits(userHabits);
     if (importedEvidence && Array.isArray(importedEvidence)) {
-      setEvidenceList(importedEvidence);
+      setEvidenceList(importedEvidence.filter((item) => !isSeedHabitId(item.habitId)));
     }
     if (importedEvents && Array.isArray(importedEvents)) {
-      setCompletionEvents(importedEvents);
+      setCompletionEvents(importedEvents.filter((event) => !isSeedHabitId(event.habitId)));
     }
     if (importedMomentum && Array.isArray(importedMomentum)) {
-      setMomentumEvents((prev) => mergeMomentumEvents(prev, importedMomentum));
-    } else if (importedEvents && Array.isArray(importedEvents)) {
       setMomentumEvents((prev) =>
-        mergeMomentumEvents(prev, momentumEventsFromCompletionLog(importedEvents, importedHabits))
+        mergeMomentumEvents(
+          prev.filter((event) => !isSeedHabitId(event.habitId)),
+          importedMomentum.filter((event) => !isSeedHabitId(event.habitId))
+        )
+      );
+    } else if (importedEvents && Array.isArray(importedEvents)) {
+      const userEvents = importedEvents.filter((event) => !isSeedHabitId(event.habitId));
+      setMomentumEvents((prev) =>
+        mergeMomentumEvents(
+          prev.filter((event) => !isSeedHabitId(event.habitId)),
+          momentumEventsFromCompletionLog(userEvents, userHabits)
+        )
       );
     }
   };
@@ -977,10 +1128,10 @@ export default function App() {
     localStorage.clear();
     setSession(null);
     setIsOnboarded(false);
-    setHabits(INITIAL_HABITS);
-    setEvidenceList(INITIAL_EVIDENCE);
-    setCompletionEvents(INITIAL_COMPLETION_EVENTS);
-    setMomentumEvents(momentumEventsFromCompletionLog(INITIAL_COMPLETION_EVENTS, INITIAL_HABITS));
+    setHabits([]);
+    setEvidenceList([]);
+    setCompletionEvents([]);
+    setMomentumEvents([]);
     setReminders([]);
     setActiveTab('home');
   };
@@ -998,26 +1149,38 @@ export default function App() {
         }).catch(() => {});
       }
     }
+    if (!newSession.isGuest) {
+      void purgeSeedHabitsFromTable(newSession.id).catch(() => {});
+    }
     if (isNewUser) {
+      if (newSession.isGuest) {
+        setHabits((prev) => prev.filter((habit) => !isSeedHabitId(habit.id)));
+        setCompletionEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
+        setMomentumEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
+        setEvidenceList((prev) => prev.filter((item) => !isSeedHabitId(item.habitId)));
+      } else {
+        setHabits([]);
+        setCompletionEvents([]);
+        setMomentumEvents([]);
+        setEvidenceList([]);
+      }
       setIsOnboarded(false);
       setOnboardingCompleted(false);
       setHasCompletedTutorial(false);
       setLocalTutorialCompleted(false);
       tutorialLockRef.current = false;
     } else {
+      setHabits((prev) => prev.filter((habit) => !isSeedHabitId(habit.id)));
+      setCompletionEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
+      setMomentumEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
+      setEvidenceList((prev) => prev.filter((item) => !isSeedHabitId(item.habitId)));
       setIsOnboarded(true);
       setOnboardingCompleted(true);
     }
   };
 
   // Onboarding Complete handler
-  const handleOnboardingComplete = (firstHabit?: Habit) => {
-    if (firstHabit) {
-      setHabits((prev) => [firstHabit, ...prev]);
-      if (session && !session.isGuest) {
-        void insertHabitToSupabase(session.id, firstHabit).catch(() => {});
-      }
-    }
+  const handleOnboardingComplete = () => {
     setIsOnboarded(true);
     setOnboardingCompleted(true);
   };
@@ -1047,6 +1210,7 @@ export default function App() {
 
   // Native dual-alert re-scheduler after force-quit / reboot (RECEIVE_BOOT_COMPLETED)
   useEffect(() => {
+    void initializeReminderNotifications();
     notificationScheduler.bootReschedulePendingAlerts(reminders);
     // Initial reminders come from localStorage; re-arm once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1074,10 +1238,14 @@ export default function App() {
   };
 
   const handleAddReminder = (
-    newRem: Omit<StandaloneReminder, 'id' | 'completed' | 'createdAt' | 'updatedAt'>
+    newRem: Omit<StandaloneReminder, 'id' | 'completed' | 'createdAt' | 'updatedAt'> & {
+      id?: string;
+      notificationId1?: number;
+      notificationId2?: number;
+    }
   ) => {
     const now = Date.now();
-    const id = 'rem-' + now + '-' + Math.random().toString(36).substring(2, 6);
+    const id = newRem.id || 'rem-' + now + '-' + Math.random().toString(36).substring(2, 6);
     const ids = reminderNotificationIds(id);
     const hasTime = Boolean(newRem.time);
     const item: StandaloneReminder = {
@@ -1091,13 +1259,13 @@ export default function App() {
       habitId: newRem.habitId ?? null,
       daysOfWeek: newRem.daysOfWeek?.length ? newRem.daysOfWeek : [weekdayFromIsoDate(newRem.date)],
       isEnabled: true,
-      notificationId1: ids.notificationId1,
-      notificationId2: ids.notificationId2,
+      notificationId1: Math.trunc(newRem.notificationId1 ?? ids.notificationId1),
+      notificationId2: Math.trunc(newRem.notificationId2 ?? ids.notificationId2),
     };
 
     notificationScheduler.scheduleReminderAlerts(item);
 
-    const updated = [item, ...reminders];
+    const updated = [item, ...reminders.filter((existing) => existing.id !== item.id)];
     setReminders(updated);
     persistReminderSync(updated);
 
@@ -1106,6 +1274,7 @@ export default function App() {
 
   const handleToggleReminder = (id: string) => {
     const now = Date.now();
+    void requestNotificationPermissions();
     const updated = reminders.map((r) => {
       if (r.id !== id) return r;
       const nextCompleted = !r.completed;
@@ -1128,6 +1297,7 @@ export default function App() {
 
   const handleSetReminderCompleted = (id: string, completed: boolean) => {
     const now = Date.now();
+    void requestNotificationPermissions();
     const updated = reminders.map((r) => {
       if (r.id !== id) return r;
       if (r.completed === completed) return r;
@@ -1313,9 +1483,17 @@ export default function App() {
                 <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-bold">
                   Guest
                 </span>
-              ) : (
+              ) : session.syncStatus === 'syncing' ? (
+                <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-bold">
+                  Syncing
+                </span>
+              ) : session.syncStatus === 'synced' ? (
                 <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-blue-950/60 text-emerald-800 dark:text-blue-300 border border-emerald-200 dark:border-blue-800 font-bold">
                   Synced
+                </span>
+              ) : (
+                <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 font-bold">
+                  {session.syncStatus === 'local' ? 'Local' : 'Offline'}
                 </span>
               )}
               {examShieldActive && (
@@ -1459,6 +1637,10 @@ export default function App() {
             onSnoozeReminder={handleSnoozeReminder}
             onNotify={showNotification}
             userSession={session}
+            onRemindersHydrated={(remote) => {
+              setReminders(remote);
+              notificationScheduler.bootReschedulePendingAlerts(remote);
+            }}
             onSyncReminders={() => {
               remindersSyncService.syncReminders(reminders, session).then((res) => {
                 setReminders(res.reminders);
@@ -1508,10 +1690,13 @@ export default function App() {
             onOpenLedger={() => setIsLedgerModalOpen(true)}
             onUpgradeGuest={() => setIsUpgradeModalOpen(true)}
             onSyncNow={async () => {
-              if (!session || session.isGuest) return;
-              try {
-                await runAuthenticatedSync(session);
-              } catch {}
+              if (!session || session.isGuest) {
+                throw new Error('Guest sessions stay local');
+              }
+              const result = await runAuthenticatedSync(session);
+              if (!result.ok) {
+                throw new Error(result.error || 'Sync failed');
+              }
             }}
             onChangePassword={() => setIsPasswordModalOpen(true)}
             onLogout={handleDeleteAccount}
@@ -1574,7 +1759,7 @@ export default function App() {
             rect={longPressedRect}
             todayIndex={todayDayIndex}
             isFallbackActive={isViewingToday && activeFallbackIds.includes(longPressedHabit.id)}
-            onToggleFallbackMode={handleToggleFallbackMode}
+            onMarkMissed={handleMarkMissed}
             onClose={() => {
               setLongPressedHabitId(null);
               setLongPressedRect(null);
@@ -1584,10 +1769,11 @@ export default function App() {
               setLongPressedRect(null);
               setDetailHabit(h);
             }}
-            onOpenDeleteConfirm={(h) => {
+            onArchive={(h) => {
               setLongPressedHabitId(null);
               setLongPressedRect(null);
-              setDeleteConfirmHabit(h);
+              handleArchiveHabit(h.id);
+              showNotification('Habit archived');
             }}
           />
         )}
@@ -1628,6 +1814,14 @@ export default function App() {
               showNotification('Habit deleted');
             }
           }}
+        />
+
+        <FrictionAuditModal
+          isOpen={Boolean(activeFrictionPrompt)}
+          habitName={activeFrictionPrompt?.habitName || ''}
+          loggedDate={activeFrictionPrompt?.loggedDate}
+          onSubmit={handleFrictionSubmit}
+          onSkip={handleFrictionSkip}
         />
 
         <IdentityLedgerModal

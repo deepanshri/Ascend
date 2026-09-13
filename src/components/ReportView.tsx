@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Habit, IdentityEvidence, FrictionAudit } from '../types';
 import { getTodayDayIndex, getWeekdayShort } from '../utils/dates';
 import { countMomentumCompletedActions } from '../lib/supabase';
+import { weeklyFrictionPatterns } from '../lib/frictionAudit';
 
 interface ReportViewProps {
   habits: Habit[];
@@ -152,6 +153,14 @@ export const ReportView: React.FC<ReportViewProps> = ({
       selfPath: createPath(selfPoints),
     };
   }, [habits]);
+
+  const frictionPatterns = useMemo(() => weeklyFrictionPatterns(frictionAudits), [frictionAudits]);
+  const flaggedFrictionEvents = useMemo(() => {
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return frictionAudits
+      .filter((audit) => audit.type === 'missed' && audit.timestamp >= weekAgo && (audit.reason || audit.note))
+      .slice(0, 6);
+  }, [frictionAudits]);
 
   // Improvements data for Analysis section (matches the design)
   const analysisData = useMemo(() => {
@@ -841,6 +850,41 @@ export const ReportView: React.FC<ReportViewProps> = ({
             <span className="text-slate-700 dark:text-slate-200 font-semibold">This week</span>
           </div>
         </div>
+
+        {(frictionPatterns.length > 0 || flaggedFrictionEvents.length > 0) && (
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Friction this week
+            </p>
+            {frictionPatterns.length > 0 ? (
+              <div className="flex flex-col gap-1.5">
+                {frictionPatterns.map((pattern) => (
+                  <div
+                    key={pattern.reason}
+                    className="px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 text-[12px] text-amber-900 dark:text-amber-200 font-semibold"
+                  >
+                    {pattern.reason} was cited {pattern.count}x this week
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {flaggedFrictionEvents.length > 0 ? (
+              <ul className="space-y-1">
+                {flaggedFrictionEvents.map((event) => (
+                  <li
+                    key={event.id}
+                    className="text-[11.5px] text-slate-500 dark:text-slate-400"
+                  >
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">{event.habitName}</span>
+                    {' · '}
+                    {event.reason || event.note}
+                    {event.date ? ` · ${event.date}` : ''}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        )}
       </section>
       )}
 

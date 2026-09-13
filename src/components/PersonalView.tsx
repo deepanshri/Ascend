@@ -232,7 +232,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       await onSyncNow();
       showToast('✓ Synced successfully with cloud storage!');
     } catch {
-      showToast('Sync completed locally.');
+      showToast('Sync failed — you are offline or the cloud write did not succeed.');
     } finally {
       setIsSyncing(false);
     }

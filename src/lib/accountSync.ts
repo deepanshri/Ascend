@@ -1,7 +1,7 @@
 import { Habit, HabitCompletionEvent, MomentumEvent, UserSession } from '../types';
-import { INITIAL_HABITS } from '../data/initialHabits';
+import { isSeedHabitId } from '../data/initialHabits';
 import { fetchUserProfile, persistUserProfile } from './profile';
-import { fetchActiveHabits, persistHabitsToTable } from './habitsApi';
+import { fetchHabitsFromTable, persistHabitsToTable, purgeSeedHabitsFromTable } from './habitsApi';
 import {
   fetchHabitLogsFromTable,
   mergeCompletionEvents,
@@ -11,8 +11,6 @@ import {
 import { fetchMomentumEventsFromTable, pushMomentumEventsRemote } from './momentumEvents';
 import { getTodayDayIndex } from '../utils/dates';
 import { isSupabaseConfigured, supabase } from './supabase';
-
-const SEED_HABIT_IDS = new Set(INITIAL_HABITS.map((habit) => habit.id));
 
 export interface AccountSyncInput {
   session: UserSession;
@@ -28,17 +26,24 @@ export interface AccountSyncResult {
   habits: Habit[];
   completionEvents: HabitCompletionEvent[];
   momentumEvents: MomentumEvent[];
+  ok: boolean;
+  error?: string;
 }
 
 export { persistHabitsToTable };
 
+function withoutSeedHabits(habits: Habit[]): Habit[] {
+  return habits.filter((habit) => !isSeedHabitId(habit.id));
+}
+
 function mergeHabits(local: Habit[], remote: Habit[]): Habit[] {
-  if (remote.length === 0) return local;
+  const localUserHabits = withoutSeedHabits(local);
+  const remoteUserHabits = withoutSeedHabits(remote);
+  if (remoteUserHabits.length === 0) return localUserHabits;
 
   const merged = new Map<string, Habit>();
-  remote.forEach((habit) => merged.set(habit.id, habit));
-  local.forEach((habit) => {
-    if (SEED_HABIT_IDS.has(habit.id) && !merged.has(habit.id)) return;
+  remoteUserHabits.forEach((habit) => merged.set(habit.id, habit));
+  localUserHabits.forEach((habit) => {
     if (!merged.has(habit.id)) merged.set(habit.id, habit);
   });
   return Array.from(merged.values());
@@ -84,9 +89,11 @@ export async function syncAuthenticatedAccount(
   const { session } = input;
   if (!session || session.isGuest || session.id.startsWith('guest_')) {
     return {
-      habits: input.habits,
+      habits: withoutSeedHabits(input.habits),
       completionEvents: input.completionEvents,
       momentumEvents: input.momentumEvents,
+      ok: false,
+      error: 'Guest sessions stay local',
     };
   }
 
@@ -98,19 +105,49 @@ export async function syncAuthenticatedAccount(
     has_completed_tutorial: hasCompletedTutorial,
   });
 
-  const remoteHabits = await fetchActiveHabits(session.id);
-  const mergedHabits = mergeHabits(input.habits, remoteHabits);
-  await persistHabitsToTable(session.id, mergedHabits);
+  await purgeSeedHabitsFromTable(session.id);
+
+  const remoteHabitsResult = await fetchHabitsFromTable(session.id);
+  if (!remoteHabitsResult.ok) {
+    return {
+      habits: withoutSeedHabits(input.habits),
+      completionEvents: input.completionEvents,
+      momentumEvents: input.momentumEvents,
+      ok: false,
+      error: remoteHabitsResult.error || 'Could not read habits from Supabase',
+    };
+  }
+
+  const mergedHabits = mergeHabits(input.habits, remoteHabitsResult.habits);
+  const wroteHabits = await persistHabitsToTable(session.id, mergedHabits);
+  if (!wroteHabits) {
+    return {
+      habits: mergedHabits,
+      completionEvents: input.completionEvents,
+      momentumEvents: input.momentumEvents,
+      ok: false,
+      error: 'Could not write habits to Supabase',
+    };
+  }
 
   const remoteLogs = await fetchHabitLogsFromTable(session.id);
-  const mergedLogs = mergeCompletionEvents(input.completionEvents, remoteLogs);
+  const mergedLogs = mergeCompletionEvents(input.completionEvents, remoteLogs).filter(
+    (event) => !isSeedHabitId(event.habitId)
+  );
   await pushLocalLogs(session.id, mergedLogs);
 
   const remoteMomentum = await fetchMomentumEventsFromTable(session.id);
-  const mergedMomentum = mergeMomentumEvents(input.momentumEvents, remoteMomentum);
+  const mergedMomentum = mergeMomentumEvents(input.momentumEvents, remoteMomentum).filter(
+    (event) => !isSeedHabitId(event.habitId)
+  );
   await pushMomentumEventsRemote(session.id, mergedMomentum);
 
   await persistMomentumHistory(session.id, input.momentumScore);
 
-  return { habits: mergedHabits, completionEvents: mergedLogs, momentumEvents: mergedMomentum };
+  return {
+    habits: mergedHabits,
+    completionEvents: mergedLogs,
+    momentumEvents: mergedMomentum,
+    ok: true,
+  };
 }

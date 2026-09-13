@@ -188,29 +188,61 @@ export function generateAvatarUrl(name: string): string {
   return `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${clean}&backgroundColor=e2f8eb,bbf7d0,dcfce7`;
 }
 
+export function mapAuthError(raw: unknown): string {
+  const message = raw instanceof Error ? raw.message : String(raw || '');
+  const text = message.toLowerCase();
+  if (text.includes('invalid login') || text.includes('invalid credentials')) {
+    return 'Wrong email or password.';
+  }
+  if (text.includes('rate limit') || text.includes('over_email_send_rate_limit') || text.includes('429')) {
+    return 'Account could not be opened yet. Wait a minute and tap Sign In with this email.';
+  }
+  if (text.includes('already registered') || text.includes('already been registered') || text.includes('user already exists')) {
+    return 'That email already has an account. Use Sign In instead.';
+  }
+  if (text.includes('email not confirmed')) {
+    return 'Account created. Tap Sign In with the same email and password.';
+  }
+  return message || 'Authentication failed. Please check your credentials.';
+}
+
+function sessionFromAuthUser(
+  user: { id: string; email?: string | null; created_at?: string; user_metadata?: Record<string, unknown> },
+  email: string,
+  name?: string
+): UserSession {
+  const displayName =
+    (typeof name === 'string' && name.trim()) ||
+    String(user.user_metadata?.full_name || '') ||
+    email.split('@')[0];
+  return {
+    id: user.id,
+    email: user.email || email,
+    name: displayName,
+    avatarUrl: String(user.user_metadata?.avatar_url || '') || generateAvatarUrl(displayName),
+    isGuest: false,
+    memberSince: new Date(user.created_at || Date.now()).toLocaleDateString('en-US', {
+      month: 'short',
+      year: 'numeric',
+    }),
+    syncStatus: 'syncing',
+  };
+}
+
+async function signInRemote(email: string, password: string): Promise<UserSession> {
+  if (!supabase) throw new Error('Cloud is not configured.');
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw new Error(mapAuthError(error.message));
+  if (!data.user) throw new Error('Sign in failed.');
+  const session = sessionFromAuthUser(data.user, email);
+  setStoredSession(session);
+  return session;
+}
+
 export const authService = {
   async signInWithEmail(email: string, password: string): Promise<UserSession> {
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) throw new Error(error.message);
-      const user = data.user;
-      const session: UserSession = {
-        id: user.id,
-        email: user.email || email,
-        name: user.user_metadata?.full_name || email.split('@')[0],
-        avatarUrl: user.user_metadata?.avatar_url || generateAvatarUrl(email),
-        isGuest: false,
-        memberSince: new Date(user.created_at || Date.now()).toLocaleDateString('en-US', {
-          month: 'short',
-          year: 'numeric',
-        }),
-        syncStatus: 'synced',
-      };
-      setStoredSession(session);
-      return session;
+      return signInRemote(email, password);
     }
 
     // Local / Demo Authenticated mode
@@ -223,7 +255,7 @@ export const authService = {
       avatarUrl: generateAvatarUrl(name),
       isGuest: false,
       memberSince: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-      syncStatus: 'synced',
+      syncStatus: 'syncing',
     };
     setStoredSession(session);
     return session;
@@ -247,19 +279,20 @@ export const authService = {
           },
         },
       });
-      if (error) throw new Error(error.message);
-      const user = data.user;
-      const session: UserSession = {
-        id: user?.id || 'usr_' + Math.random().toString(36).substring(2, 9),
-        email,
-        name: name.trim() || email.split('@')[0],
-        avatarUrl: generateAvatarUrl(name),
-        isGuest: false,
-        memberSince: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-        syncStatus: 'synced',
-      };
-      setStoredSession(session);
-      return session;
+
+      if (data.session?.user) {
+        const session = sessionFromAuthUser(data.session.user, email, name);
+        setStoredSession(session);
+        return session;
+      }
+
+      // Skip inbox confirmation: if the user row exists, open the session with the password.
+      try {
+        return await signInRemote(email, password);
+      } catch (signInErr) {
+        if (error) throw new Error(mapAuthError(error.message));
+        throw signInErr;
+      }
     }
 
     // Local simulated signup
@@ -271,7 +304,7 @@ export const authService = {
       avatarUrl: generateAvatarUrl(name),
       isGuest: false,
       memberSince: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-      syncStatus: 'synced',
+      syncStatus: 'syncing',
     };
     setStoredSession(session);
     return session;
@@ -296,7 +329,7 @@ export const authService = {
   async resetPasswordForEmail(email: string): Promise<{ success: boolean; message: string }> {
     if (isSupabaseConfigured && supabase) {
       const { error } = await supabase.auth.resetPasswordForEmail(email);
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(mapAuthError(error.message));
       return { success: true, message: `Password reset instructions sent to ${email}.` };
     }
 
@@ -319,7 +352,7 @@ export const authService = {
       name: name || currentSession.name,
       avatarUrl: generateAvatarUrl(name || email),
       isGuest: false,
-      syncStatus: 'synced',
+      syncStatus: 'syncing',
     };
 
     if (isSupabaseConfigured && supabase) {
@@ -328,9 +361,19 @@ export const authService = {
         password,
         options: { data: { full_name: updated.name, avatar_url: updated.avatarUrl } },
       });
-      if (error) throw new Error(error.message);
-      if (data.user?.id) {
-        updated.id = data.user.id;
+      const signedInUser = data.session?.user;
+      if (signedInUser?.id) {
+        updated.id = signedInUser.id;
+      } else {
+        try {
+          const signed = await signInRemote(email, password);
+          updated.id = signed.id;
+          updated.name = signed.name || updated.name;
+          updated.avatarUrl = signed.avatarUrl || updated.avatarUrl;
+        } catch (signInErr) {
+          if (error) throw new Error(mapAuthError(error.message));
+          throw signInErr;
+        }
       }
     } else {
       await new Promise((r) => setTimeout(r, 450));
@@ -405,8 +448,8 @@ function toReminderRow(userId: string, reminder: StandaloneReminder): ReminderRo
     target_time: hydrated.time || null,
     days_of_week: hydrated.daysOfWeek?.length ? hydrated.daysOfWeek : [weekdayFromIsoDate(hydrated.date)],
     is_enabled: isEnabled,
-    notification_id_1: hydrated.notificationId1 ?? ids.notificationId1,
-    notification_id_2: hydrated.notificationId2 ?? ids.notificationId2,
+    notification_id_1: Math.trunc(Number(hydrated.notificationId1 ?? ids.notificationId1)),
+    notification_id_2: Math.trunc(Number(hydrated.notificationId2 ?? ids.notificationId2)),
     notes: hydrated.notes || null,
     completed: hydrated.completed,
     deleted: hydrated.deleted || false,
@@ -480,6 +523,68 @@ function toLegacyStandaloneRow(userId: string, reminder: StandaloneReminder): Re
     updated_at: row.updated_at,
     deleted: row.deleted,
   };
+}
+
+function toPublicReminderCoreRow(userId: string, reminder: StandaloneReminder): ReminderRow {
+  const hydrated = withReminderNotificationIds(reminder);
+  const ids = reminderNotificationIds(hydrated.id);
+  return {
+    id: hydrated.id,
+    user_id: userId,
+    habit_id: hydrated.habitId || null,
+    target_time: hydrated.time || null,
+    days_of_week: hydrated.daysOfWeek?.length ? hydrated.daysOfWeek : [weekdayFromIsoDate(hydrated.date)],
+    is_enabled: hydrated.isEnabled !== false && !hydrated.completed && !hydrated.deleted,
+    notification_id_1: Math.trunc(Number(hydrated.notificationId1 ?? ids.notificationId1)),
+    notification_id_2: Math.trunc(Number(hydrated.notificationId2 ?? ids.notificationId2)),
+  };
+}
+
+/** Direct fetch of `public.reminders` for the authenticated user. */
+export async function fetchPublicReminders(userId?: string | null): Promise<StandaloneReminder[] | null> {
+  if (!canWriteUserRows(userId) || !supabase || !userId) return null;
+  try {
+    const { data, error } = await supabase.from('reminders').select('*').eq('user_id', userId);
+    if (error) {
+      console.warn('public.reminders fetch failed:', error.message);
+      return null;
+    }
+    return ((data || []) as ReminderRow[])
+      .map((row) => fromReminderRow(row))
+      .filter((item) => !item.deleted);
+  } catch (err) {
+    console.warn('public.reminders fetch offline:', err);
+    return null;
+  }
+}
+
+/**
+ * Upsert one reminder into `public.reminders`.
+ * Always writes id, user_id, habit_id, target_time, days_of_week, is_enabled,
+ * notification_id_1, notification_id_2. Retries with only those columns if the
+ * wider row is rejected by schema.
+ */
+export async function upsertPublicReminder(
+  userSession: UserSession | null | undefined,
+  reminder: StandaloneReminder
+): Promise<boolean> {
+  if (!canWriteUserRows(userSession?.id) || !supabase || !userSession) return false;
+  const full = toReminderRow(userSession.id, reminder);
+  const core = toPublicReminderCoreRow(userSession.id, reminder);
+  try {
+    const { error } = await supabase.from('reminders').upsert(full);
+    if (!error) return true;
+    console.warn('public.reminders upsert failed, retrying core columns:', error.message);
+    const retry = await supabase.from('reminders').upsert(core);
+    if (retry.error) {
+      console.warn('public.reminders core upsert failed:', retry.error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('public.reminders upsert offline:', err);
+    return false;
+  }
 }
 
 export const remindersSyncService = {
@@ -562,7 +667,16 @@ export const remindersSyncService = {
 
       if (toUpsertToRemote.length > 0) {
         const { error: upsertError } = await supabase.from(remote.table).upsert(toUpsertToRemote);
-        if (upsertError) {
+        if (upsertError && remote.table === 'reminders') {
+          console.warn('Supabase reminders upsert note, retrying core columns:', upsertError.message);
+          const coreRows = hydratedLocal
+            .filter((item) => toUpsertToRemote.some((row) => row.id === item.id))
+            .map((item) => toPublicReminderCoreRow(userSession.id, item));
+          const retry = await supabase.from('reminders').upsert(coreRows);
+          if (retry.error) {
+            console.warn('Supabase reminders core upsert note:', retry.error.message);
+          }
+        } else if (upsertError) {
           console.warn('Supabase reminders upsert note:', upsertError.message);
         }
       }

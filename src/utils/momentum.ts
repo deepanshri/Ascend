@@ -1,4 +1,5 @@
 import { Habit, HabitCompletionEvent, CompletionType, MomentumEvent, MomentumEventType } from '../types';
+import { isSeedHabitId } from '../data/initialHabits';
 import { isSupabaseConfigured, supabase, fetchSequentialMomentumEvents } from '../lib/supabase';
 import {
   dayIndexForIso,
@@ -204,6 +205,7 @@ export interface HabitLogRow {
   type?: string;
   completion_type?: string;
   note?: string;
+  friction_reason?: string;
   completion?: number;
   value?: number;
   timestamp?: number | string;
@@ -237,16 +239,19 @@ function resolveDayIndex(row: HabitLogRow, origin: Date = new Date()): number {
   return getTodayDayIndex();
 }
 
-function resolveCompletionType(row: HabitLogRow): CompletionType {
+function resolveCompletionType(row: HabitLogRow): CompletionType | null {
+  const raw = String(row.type || row.completion_type || '').toLowerCase();
+  if (raw.includes('miss')) return null;
   const numeric = Number(row.completion ?? row.value);
+  if (Number.isFinite(numeric) && numeric === 0 && !raw) return null;
   if (Number.isFinite(numeric) && numeric > 0 && numeric < 1) {
     return 'fallback_micro';
   }
 
-  const raw = String(row.type || row.completion_type || 'full').toLowerCase();
   if (raw.includes('micro') || raw.includes('fallback') || raw === '0.5' || raw === 'partial') {
     return 'fallback_micro';
   }
+  if (!raw && Number.isFinite(numeric) && numeric <= 0) return null;
   return 'full';
 }
 
@@ -255,6 +260,9 @@ export function mapHabitLogRowToEvent(row: HabitLogRow, origin: Date = new Date(
   if (!habitId) return null;
 
   const dayIndex = resolveDayIndex(row, origin);
+  const completionType = resolveCompletionType(row);
+  if (!completionType) return null;
+
   const isoDate =
     parseToIsoDate(row.logged_date || row.date || row.logged_on || row.completed_at) ||
     toISODate(getWeekDates(origin)[dayIndex] ?? origin);
@@ -272,8 +280,9 @@ export function mapHabitLogRowToEvent(row: HabitLogRow, origin: Date = new Date(
     habitId: String(habitId),
     dayIndex,
     date: isoDate,
-    type: resolveCompletionType(row),
+    type: completionType,
     note: row.note || undefined,
+    frictionReason: row.friction_reason || undefined,
     timestamp,
   };
 }
@@ -324,7 +333,7 @@ export async function fetchHabitLogsFromTable(userId?: string | null): Promise<H
 
     return (data as HabitLogRow[])
       .map((row) => mapHabitLogRowToEvent(row))
-      .filter((event): event is HabitCompletionEvent => event !== null);
+      .filter((event): event is HabitCompletionEvent => event !== null && !isSeedHabitId(event.habitId));
   } catch (err) {
     console.warn('habit_logs fetch offline:', err);
     return [];
@@ -335,6 +344,7 @@ export async function upsertHabitLog(
   userId: string | null | undefined,
   event: HabitCompletionEvent
 ): Promise<void> {
+  if (isSeedHabitId(event.habitId)) return;
   await syncHabitLogUpsert(userId, event);
 }
 
