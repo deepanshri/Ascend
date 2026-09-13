@@ -5,6 +5,7 @@ import { getTodayDayIndex, getWeekdayShort } from '../utils/dates';
 interface ReportViewProps {
   habits: Habit[];
   evidenceList: IdentityEvidence[];
+  identityVoteCount?: number;
   onOpenLedger: () => void;
   examShieldActive: boolean;
   onToggleExamShield: () => void;
@@ -21,6 +22,7 @@ type GraphMode = 'concentric' | 'trajectory';
 export const ReportView: React.FC<ReportViewProps> = ({
   habits,
   evidenceList,
+  identityVoteCount,
   onOpenLedger,
   examShieldActive,
   onToggleExamShield,
@@ -171,7 +173,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
       item.curr,
       `"+${item.delta}%"`,
       habits.length,
-      evidenceList.length,
+      identityVoteCount ?? evidenceList.length,
     ]);
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');

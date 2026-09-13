@@ -30,6 +30,7 @@ import {
 interface PersonalViewProps {
   userSession: UserSession;
   evidenceList: IdentityEvidence[];
+  identityVoteCount?: number;
   selectedInterests?: string[];
   onToggleInterest?: (interest: string) => void;
   examShieldActive?: boolean;
@@ -50,6 +51,7 @@ interface PersonalViewProps {
 export const PersonalView: React.FC<PersonalViewProps> = ({
   userSession,
   evidenceList,
+  identityVoteCount,
   selectedInterests: propSelectedInterests,
   onToggleInterest,
   examShieldActive = false,
@@ -231,7 +233,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     }
   };
 
-  const totalLifetimeExecutions = evidenceList.length;
+  const totalLifetimeExecutions = identityVoteCount ?? evidenceList.length;
 
   return (
     <div

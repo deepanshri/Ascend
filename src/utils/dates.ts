@@ -49,6 +49,13 @@ export function toISODate(date: Date = new Date()): string {
   return `${y}-${m}-${day}`;
 }
 
+/** End of a local YYYY-MM-DD calendar day, in epoch ms. */
+export function endOfIsoDate(iso: string): number {
+  const [year, month, day] = iso.split('-').map(Number);
+  if (!year || !month || !day) return Date.now();
+  return new Date(year, month - 1, day, 23, 59, 59, 999).getTime();
+}
+
 export function isoDateForDayIndex(dayIndex: number, date: Date = new Date()): string {
   return toISODate(getWeekDates(date)[dayIndex] ?? date);
 }

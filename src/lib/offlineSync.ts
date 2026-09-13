@@ -236,6 +236,13 @@ export async function flushOfflineQueue(): Promise<void> {
     if (!ok) remainingProfiles.push(item);
   }
   writeJson(PROFILE_QUEUE_KEY, remainingProfiles);
+
+  try {
+    const { flushMomentumEventQueue } = await import('./momentumEvents');
+    await flushMomentumEventQueue();
+  } catch {
+    // momentum_events table may not exist yet on older projects.
+  }
 }
 
 export function startOfflineSyncListener(): void {

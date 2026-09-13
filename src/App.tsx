@@ -8,10 +8,25 @@ import {
   ThemeMode,
   FrictionAudit,
   HabitCompletionEvent,
+  MomentumEvent,
 } from './types';
 import { INITIAL_HABITS, INITIAL_EVIDENCE, INITIAL_COMPLETION_EVENTS } from './data/initialHabits';
-import { calculateMomentumScore, deriveHabitsFromEventLog, mergeCompletionEvents, upsertHabitLog, deleteHabitLog } from './utils/momentum';
-import { formatEvidenceDate, getTodayDayIndex, getWeekDates, resolveEventIsoDate, startOfDay, toISODate } from './utils/dates';
+import {
+  calculateDailyWeightedScore,
+  calculateMomentumScore,
+  collectMissedMomentumEvents,
+  countIdentityVotes,
+  createMomentumEvent,
+  deriveHabitsFromEventLog,
+  mergeCompletionEvents,
+  mergeMomentumEvents,
+  momentumEventsFromCompletionLog,
+  newMomentumEventId,
+  upsertHabitLog,
+  deleteHabitLog,
+} from './utils/momentum';
+import { appendMomentumEventRemote, loadLocalMomentumEvents, MOMENTUM_EVENTS_STORAGE_KEY, saveLocalMomentumEvents } from './lib/momentumEvents';
+import { endOfIsoDate, formatEvidenceDate, getTodayDayIndex, getWeekDates, resolveEventIsoDate, startOfDay, toISODate } from './utils/dates';
 import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome, hideNativeSplash } from './lib/nativeChrome';
 import {
@@ -105,6 +120,13 @@ export default function App() {
       return false;
     }
   });
+
+  const examShieldRef = useRef(examShieldActive);
+  const vacationModeRef = useRef(vacationModeActive);
+  const habitsRef = useRef<Habit[]>([]);
+  const momentumEventsRef = useRef<MomentumEvent[]>([]);
+  examShieldRef.current = examShieldActive;
+  vacationModeRef.current = vacationModeActive;
 
   useEffect(() => {
     try {
@@ -208,11 +230,41 @@ export default function App() {
     return INITIAL_COMPLETION_EVENTS;
   });
 
+  const [momentumEvents, setMomentumEvents] = useState<MomentumEvent[]>(() => {
+    const stored = loadLocalMomentumEvents();
+    if (stored) return stored;
+    try {
+      const saved = localStorage.getItem('ascend_completion_events');
+      const logs: HabitCompletionEvent[] = saved ? JSON.parse(saved) : INITIAL_COMPLETION_EVENTS;
+      let seedHabits = INITIAL_HABITS;
+      try {
+        const habitSaved = localStorage.getItem('habit_tracker_habits');
+        if (habitSaved) seedHabits = JSON.parse(habitSaved) as Habit[];
+      } catch {}
+      return momentumEventsFromCompletionLog(logs, seedHabits);
+    } catch {
+      return momentumEventsFromCompletionLog(INITIAL_COMPLETION_EVENTS, INITIAL_HABITS);
+    }
+  });
+  momentumEventsRef.current = momentumEvents;
+
+  const [identityVoteFloor, setIdentityVoteFloor] = useState(() => {
+    try {
+      return Math.max(0, Number(localStorage.getItem('ascend_identity_vote_floor') || 0) || 0);
+    } catch {
+      return 0;
+    }
+  });
+
   useEffect(() => {
     try {
       localStorage.setItem('ascend_completion_events', JSON.stringify(completionEvents));
     } catch {}
   }, [completionEvents]);
+
+  useEffect(() => {
+    saveLocalMomentumEvents(momentumEvents);
+  }, [momentumEvents]);
 
   // Hydrate profile interests + tutorial flag from Supabase `profiles`
   useEffect(() => {
@@ -318,6 +370,22 @@ export default function App() {
       const nowIso = toISODate();
       const originIso = toISODate(calendarOrigin);
       if (nowIso === originIso) return;
+
+      if (!examShieldRef.current && !vacationModeRef.current) {
+        const missed = collectMissedMomentumEvents(
+          habitsRef.current,
+          momentumEventsRef.current,
+          originIso,
+          calendarOrigin
+        );
+        if (missed.length > 0) {
+          setMomentumEvents((prev) => mergeMomentumEvents(prev, missed));
+          const userId = sessionRef.current?.id;
+          missed.forEach((event) => {
+            void appendMomentumEventRemote(userId, event);
+          });
+        }
+      }
 
       const nextOrigin = startOfDay(new Date());
       const week = getWeekDates(nextOrigin).map((date) => toISODate(date));
@@ -514,22 +582,43 @@ export default function App() {
     return derivedHabits.find((h) => h.id === longPressedHabitId) || null;
   }, [derivedHabits, longPressedHabitId]);
 
-  // Weighted momentum for the selected date (drives RadialFanCalendar + mascot)
+  // Rolling momentum from the append-only events log (drives RadialFanCalendar + mascot)
   const momentumScore = useMemo(() => {
-    return calculateMomentumScore(habits, currentDayIndex, examShieldActive, completionEvents, calendarOrigin);
-  }, [habits, currentDayIndex, examShieldActive, completionEvents, calendarOrigin]);
+    return calculateMomentumScore(momentumEvents, {
+      examShield: examShieldActive,
+      vacationMode: vacationModeActive,
+      asOf: endOfIsoDate(currentSelectedDate),
+    });
+  }, [momentumEvents, examShieldActive, vacationModeActive, currentSelectedDate]);
 
   const todayMomentumScore = useMemo(() => {
-    return calculateMomentumScore(habits, todayDayIndex, examShieldActive, completionEvents, calendarOrigin);
-  }, [habits, todayDayIndex, examShieldActive, completionEvents, calendarOrigin]);
+    return calculateMomentumScore(momentumEvents, {
+      examShield: examShieldActive,
+      vacationMode: vacationModeActive,
+    });
+  }, [momentumEvents, examShieldActive, vacationModeActive]);
 
-  const habitsRef = useRef(habits);
+  const identityVoteCount = useMemo(() => countIdentityVotes(momentumEvents), [momentumEvents]);
+
+  useEffect(() => {
+    setIdentityVoteFloor((prev) => {
+      const next = Math.max(prev, identityVoteCount);
+      try {
+        localStorage.setItem('ascend_identity_vote_floor', String(next));
+      } catch {}
+      return next;
+    });
+  }, [identityVoteCount]);
+
+  const displayedIdentityVotes = Math.max(identityVoteCount, identityVoteFloor);
+
   const completionEventsRef = useRef(completionEvents);
   const selectedInterestsRef = useRef(selectedInterests);
   const hasCompletedTutorialRef = useRef(hasCompletedTutorial);
   const momentumScoreRef = useRef(momentumScore);
   const hydratedUserIdRef = useRef<string | null>(null);
   habitsRef.current = habits;
+  momentumEventsRef.current = momentumEvents;
   completionEventsRef.current = completionEvents;
   selectedInterestsRef.current = selectedInterests;
   hasCompletedTutorialRef.current = hasCompletedTutorial;
@@ -541,12 +630,14 @@ export default function App() {
       session: targetSession,
       habits: habitsRef.current,
       completionEvents: completionEventsRef.current,
+      momentumEvents: momentumEventsRef.current,
       interests: selectedInterestsRef.current,
       hasCompletedTutorial: Boolean(hasCompletedTutorialRef.current),
       momentumScore: momentumScoreRef.current,
     });
     setHabits(result.habits);
     setCompletionEvents(result.completionEvents);
+    setMomentumEvents((prev) => mergeMomentumEvents(prev, result.momentumEvents));
     hydratedUserIdRef.current = targetSession.id;
   };
 
@@ -590,7 +681,7 @@ export default function App() {
       totalHabits,
       lastUpdated: new Date().toISOString(),
     });
-  }, [todayMomentumScore, activeHabits, todayDayIndex, completionEvents]);
+  }, [todayMomentumScore, activeHabits, todayDayIndex, completionEvents, momentumEvents]);
 
   useEffect(() => {
     void schedulePsychologyNotifications({
@@ -632,7 +723,7 @@ export default function App() {
   const dayCompletionRates = useMemo(() => {
     return Array.from({ length: 7 }, (_, dayIdx) => {
       if (activeHabits.length === 0) return 0;
-      return calculateMomentumScore(derivedHabits, dayIdx, examShieldActive, undefined, calendarOrigin) / 100;
+      return calculateDailyWeightedScore(derivedHabits, dayIdx, examShieldActive, undefined, calendarOrigin) / 100;
     });
   }, [activeHabits.length, derivedHabits, examShieldActive, calendarOrigin]);
 
@@ -645,6 +736,11 @@ export default function App() {
     return reminders.filter((r) => !r.completed).length;
   }, [reminders]);
 
+  const appendMomentumLog = (event: MomentumEvent) => {
+    setMomentumEvents((prev) => mergeMomentumEvents(prev, [event]));
+    void appendMomentumEventRemote(sessionRef.current?.id, event);
+  };
+
   // GESTURE / TAP ACTION: Complete Today (Full 100% or Fallback Micro 50%)
   const handleCompleteToday = (habitId: string, isFallback: boolean = false) => {
     if (!isViewingToday) return;
@@ -654,12 +750,11 @@ export default function App() {
     const isMicro = isFallback || activeFallbackIds.includes(habitId);
     const loggedDate = toISODate(calendarOrigin);
 
-    // Clear any previous today completion event for this habit to allow switching / updating cleanly
+    // Daily card projection can replace today's row; the momentum log always appends.
     setCompletionEvents((prev) =>
       prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
     );
 
-    // Remove from active fallback state
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
 
     const newEvent: HabitCompletionEvent = {
@@ -674,11 +769,7 @@ export default function App() {
 
     setCompletionEvents((prev) => [...prev, newEvent]);
     void upsertHabitLog(session?.id, newEvent).catch(() => {});
-
-    // Clean up previous today's evidence for this habit
-    setEvidenceList((prev) =>
-      prev.filter((e) => !(e.habitId === habitId && e.dayNumber === todayDayIndex + 1))
-    );
+    appendMomentumLog(createMomentumEvent(targetHabit, isMicro ? 'fallback' : 'full', loggedDate, newEvent.timestamp));
 
     const newEvidence: IdentityEvidence = {
       id: `ev-${isMicro ? 'micro-' : ''}${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -704,10 +795,8 @@ export default function App() {
         timestamp: Date.now(),
       };
       setFrictionAudits((prevAudits) => [newAudit, ...prevAudits]);
-      showNotification('Completed');
-    } else {
-      showNotification('Completed');
     }
+    showNotification('Completed');
   };
 
   // GESTURE / TAP ACTION: Toggle Fallback Mode for Today (Does NOT mark complete; allows cancel / revert)
@@ -717,13 +806,11 @@ export default function App() {
     if (!targetHabit) return;
 
     if (activeFallbackIds.includes(habitId)) {
-      // If already in fallback mode -> cancel it and return to normal
       setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
       showNotification('Fallback cancelled — back to normal');
       return;
     }
 
-    // If habit was already completed today, unmark it so it can transition to fallback
     const loggedDate = toISODate(calendarOrigin);
     const alreadyLogged = completionEvents.some(
       (e) => e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate
@@ -732,44 +819,23 @@ export default function App() {
       setCompletionEvents((prev) =>
         prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
       );
-      setEvidenceList((prev) =>
-        prev.filter((e) => !(e.habitId === habitId && e.dayNumber === todayDayIndex + 1))
-      );
       void deleteHabitLog(session?.id, habitId, todayDayIndex).catch(() => {});
     }
 
-    // Activate fallback mode (not complete yet!)
     setActiveFallbackIds((prev) => [...prev, habitId]);
     showNotification('fallback');
   };
 
-  // GESTURE / TAP ACTION: Cancel / Reset Today's completion or fallback back to normal
+  // GESTURE / TAP ACTION: Cancel today's card state. Momentum events and identity votes stay logged.
   const handleResetToday = (habitId: string) => {
     if (!isViewingToday) return;
     const loggedDate = toISODate(calendarOrigin);
-    // Remove completion event for today
     setCompletionEvents((prev) =>
       prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
     );
     void deleteHabitLog(session?.id, habitId, todayDayIndex).catch(() => {});
-
-    // Remove evidence for today
-    setEvidenceList((prev) =>
-      prev.filter((e) => !(e.habitId === habitId && e.dayNumber === todayDayIndex + 1))
-    );
-
-    // Remove friction audit for today
-    const habitName = habits.find((h) => h.id === habitId)?.name;
-    if (habitName) {
-      setFrictionAudits((prev) =>
-        prev.filter((a) => !(a.habitName === habitName && a.dayNumber === todayDayIndex + 1))
-      );
-    }
-
-    // Deactivate fallback mode
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
-
-    showNotification('Habit reset to normal');
+    showNotification('Card reset — identity votes stay logged');
   };
 
   // Add new habit (optimistic). Remote insert is performed by AddHabitModal.
@@ -823,21 +889,27 @@ export default function App() {
 
   // Reset demo data
   const handleResetData = () => {
+    const seededMomentum = momentumEventsFromCompletionLog(INITIAL_COMPLETION_EVENTS, INITIAL_HABITS);
     setHabits(INITIAL_HABITS);
     setEvidenceList(INITIAL_EVIDENCE);
     setCompletionEvents(INITIAL_COMPLETION_EVENTS);
+    setMomentumEvents(seededMomentum);
+    setIdentityVoteFloor(countIdentityVotes(seededMomentum));
     setActiveFallbackIds([]);
     localStorage.removeItem('habit_tracker_habits');
     localStorage.removeItem('habit_tracker_evidence');
     localStorage.removeItem('ascend_completion_events');
     localStorage.removeItem('ascend_active_fallbacks');
+    localStorage.removeItem(MOMENTUM_EVENTS_STORAGE_KEY);
+    localStorage.removeItem('ascend_identity_vote_floor');
   };
 
   // Import JSON backup
   const handleImportJSON = (
     importedHabits: Habit[],
     importedEvidence?: IdentityEvidence[],
-    importedEvents?: HabitCompletionEvent[]
+    importedEvents?: HabitCompletionEvent[],
+    importedMomentum?: MomentumEvent[]
   ) => {
     setHabits(importedHabits);
     if (importedEvidence && Array.isArray(importedEvidence)) {
@@ -845,6 +917,13 @@ export default function App() {
     }
     if (importedEvents && Array.isArray(importedEvents)) {
       setCompletionEvents(importedEvents);
+    }
+    if (importedMomentum && Array.isArray(importedMomentum)) {
+      setMomentumEvents((prev) => mergeMomentumEvents(prev, importedMomentum));
+    } else if (importedEvents && Array.isArray(importedEvents)) {
+      setMomentumEvents((prev) =>
+        mergeMomentumEvents(prev, momentumEventsFromCompletionLog(importedEvents, importedHabits))
+      );
     }
   };
 
@@ -862,6 +941,7 @@ export default function App() {
     setHabits(INITIAL_HABITS);
     setEvidenceList(INITIAL_EVIDENCE);
     setCompletionEvents(INITIAL_COMPLETION_EVENTS);
+    setMomentumEvents(momentumEventsFromCompletionLog(INITIAL_COMPLETION_EVENTS, INITIAL_HABITS));
     setReminders([]);
     setActiveTab('home');
   };
@@ -1348,6 +1428,7 @@ export default function App() {
           <ReportView
             habits={activeHabits}
             evidenceList={evidenceList}
+            identityVoteCount={displayedIdentityVotes}
             onOpenLedger={() => setIsLedgerModalOpen(true)}
             examShieldActive={examShieldActive}
             onToggleExamShield={() => setExamShieldActive(!examShieldActive)}
@@ -1364,6 +1445,7 @@ export default function App() {
           <PersonalView
             userSession={session}
             evidenceList={evidenceList}
+            identityVoteCount={displayedIdentityVotes}
             selectedInterests={selectedInterests}
             onToggleInterest={handleToggleInterest}
             examShieldActive={examShieldActive}
@@ -1395,6 +1477,7 @@ export default function App() {
             habits={habits}
             evidenceList={evidenceList}
             completionEvents={completionEvents}
+            momentumEvents={momentumEvents}
             theme={theme}
             onThemeChange={setTheme}
             notificationWindows={notificationWindows}
@@ -1499,6 +1582,7 @@ export default function App() {
           isOpen={isLedgerModalOpen}
           onClose={() => setIsLedgerModalOpen(false)}
           evidenceList={evidenceList}
+          identityVoteCount={displayedIdentityVotes}
           onAddVote={(name, statement, cat) => {
             const newEv: IdentityEvidence = {
               id: 'ev-manual-' + Date.now(),
@@ -1514,6 +1598,14 @@ export default function App() {
               dayNumber: selectedDay,
             };
             setEvidenceList((prev) => [newEv, ...prev]);
+            appendMomentumLog(
+              createMomentumEvent(
+                { id: newMomentumEventId(), category: cat },
+                'full',
+                toISODate(),
+                Date.now()
+              )
+            );
           }}
         />
 

@@ -6,7 +6,20 @@ export type ScheduleType = 'daily' | 'specific_days' | 'interval' | 'weekly_targ
 
 export type CompletionType = 'full' | 'fallback_micro';
 
-// Immutable append-only completion event log record
+export type MomentumEventType = 'full' | 'fallback' | 'missed';
+
+/** Append-only swipe / miss record. Historical rows are never overwritten. */
+export interface MomentumEvent {
+  id: string;
+  habitId: string;
+  eventType: MomentumEventType;
+  weight: number;
+  timestamp: number;
+  /** YYYY-MM-DD local calendar date the event belongs to. */
+  loggedDate?: string;
+}
+
+// Daily card projection (latest-per-day). Momentum + identity votes use MomentumEvent.
 export interface HabitCompletionEvent {
   id: string;
   habitId: string;

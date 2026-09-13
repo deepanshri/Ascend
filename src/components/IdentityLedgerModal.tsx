@@ -5,6 +5,7 @@ interface IdentityLedgerModalProps {
   isOpen: boolean;
   onClose: () => void;
   evidenceList: IdentityEvidence[];
+  identityVoteCount?: number;
   onAddVote?: (habitName: string, identityStatement: string, category: HabitCategory) => void;
 }
 
@@ -12,6 +13,7 @@ export const IdentityLedgerModal: React.FC<IdentityLedgerModalProps> = ({
   isOpen,
   onClose,
   evidenceList,
+  identityVoteCount,
   onAddVote,
 }) => {
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
@@ -51,7 +53,9 @@ export const IdentityLedgerModal: React.FC<IdentityLedgerModalProps> = ({
               <h2 className="text-[18px] font-bold text-slate-900 dark:text-white leading-tight">
                 Identity Evidence Ledger
               </h2>
-              <p className="text-[12px] text-slate-400 dark:text-slate-400">Atomic Habits Proof System</p>
+              <p className="text-[12px] text-slate-400 dark:text-slate-400">
+                {identityVoteCount ?? evidenceList.length} completed actions
+              </p>
             </div>
           </div>
           <button

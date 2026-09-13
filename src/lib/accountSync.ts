@@ -1,12 +1,14 @@
-import { Habit, HabitCompletionEvent, UserSession } from '../types';
+import { Habit, HabitCompletionEvent, MomentumEvent, UserSession } from '../types';
 import { INITIAL_HABITS } from '../data/initialHabits';
 import { fetchUserProfile, persistUserProfile } from './profile';
 import { fetchActiveHabits, persistHabitsToTable } from './habitsApi';
 import {
   fetchHabitLogsFromTable,
   mergeCompletionEvents,
+  mergeMomentumEvents,
   upsertHabitLog,
 } from '../utils/momentum';
+import { fetchMomentumEventsFromTable, pushMomentumEventsRemote } from './momentumEvents';
 import { getTodayDayIndex } from '../utils/dates';
 import { isSupabaseConfigured, supabase } from './supabase';
 
@@ -16,6 +18,7 @@ export interface AccountSyncInput {
   session: UserSession;
   habits: Habit[];
   completionEvents: HabitCompletionEvent[];
+  momentumEvents: MomentumEvent[];
   interests: string[];
   hasCompletedTutorial: boolean;
   momentumScore: number;
@@ -24,6 +27,7 @@ export interface AccountSyncInput {
 export interface AccountSyncResult {
   habits: Habit[];
   completionEvents: HabitCompletionEvent[];
+  momentumEvents: MomentumEvent[];
 }
 
 export { persistHabitsToTable };
@@ -79,7 +83,11 @@ export async function syncAuthenticatedAccount(
 ): Promise<AccountSyncResult> {
   const { session } = input;
   if (!session || session.isGuest || session.id.startsWith('guest_')) {
-    return { habits: input.habits, completionEvents: input.completionEvents };
+    return {
+      habits: input.habits,
+      completionEvents: input.completionEvents,
+      momentumEvents: input.momentumEvents,
+    };
   }
 
   const profile = await fetchUserProfile(session, input.interests);
@@ -98,7 +106,11 @@ export async function syncAuthenticatedAccount(
   const mergedLogs = mergeCompletionEvents(input.completionEvents, remoteLogs);
   await pushLocalLogs(session.id, mergedLogs);
 
+  const remoteMomentum = await fetchMomentumEventsFromTable(session.id);
+  const mergedMomentum = mergeMomentumEvents(input.momentumEvents, remoteMomentum);
+  await pushMomentumEventsRemote(session.id, mergedMomentum);
+
   await persistMomentumHistory(session.id, input.momentumScore);
 
-  return { habits: mergedHabits, completionEvents: mergedLogs };
+  return { habits: mergedHabits, completionEvents: mergedLogs, momentumEvents: mergedMomentum };
 }

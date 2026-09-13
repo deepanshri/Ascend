@@ -1,7 +1,8 @@
-import { Habit, HabitCompletionEvent, CompletionType } from '../types';
+import { Habit, HabitCompletionEvent, CompletionType, MomentumEvent, MomentumEventType } from '../types';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   dayIndexForIso,
+  endOfIsoDate,
   getTodayDayIndex,
   getWeekDates,
   parseToIsoDate,
@@ -15,6 +16,148 @@ export const SELF_IMPROVEMENT_HABIT_WEIGHT = 1.0;
 export const FULL_COMPLETION_VALUE = 1.0;
 export const FALLBACK_COMPLETION_VALUE = 0.5;
 export const MISSED_COMPLETION_VALUE = 0.0;
+/** EMA blending factor for the rolling momentum update. */
+export const MOMENTUM_DECAY_FACTOR = 0.12;
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string | undefined | null): value is string {
+  return Boolean(value && UUID_RE.test(value));
+}
+
+export function newMomentumEventId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0').slice(-12)}`;
+}
+
+export function clampMomentum(value: number): number {
+  return Math.min(100, Math.max(0, value));
+}
+
+/** event_type → score used in the rolling update (full=1, fallback=0.5, missed=0). */
+export function eventScore(eventType: MomentumEventType): number {
+  if (eventType === 'full') return FULL_COMPLETION_VALUE;
+  if (eventType === 'fallback') return FALLBACK_COMPLETION_VALUE;
+  return MISSED_COMPLETION_VALUE;
+}
+
+export function resolveMomentumEventDate(event: MomentumEvent): string {
+  if (event.loggedDate && parseToIsoDate(event.loggedDate)) {
+    return parseToIsoDate(event.loggedDate) as string;
+  }
+  return toISODate(new Date(event.timestamp));
+}
+
+/**
+ * Rolling step: clamp((prev * (1 - decay_factor)) + (score * weight), 0, 100)
+ *
+ * `score * weight` is the observation term. It is scaled onto 0–100
+ * (full Work habit = 100) and blended by decay_factor so each log row is
+ * an EMA step rather than a raw +1.5 jump that would cap near ~12.
+ */
+export function applyMomentumDecayStep(
+  prev: number,
+  score: number,
+  weight: number,
+  decayFactor: number = MOMENTUM_DECAY_FACTOR
+): number {
+  const observation = (score * weight * 100) / WORK_HABIT_WEIGHT;
+  const next = prev * (1 - decayFactor) + observation * decayFactor;
+  return clampMomentum(next);
+}
+
+export function applyMomentumEvent(
+  prev: number,
+  event: Pick<MomentumEvent, 'eventType' | 'weight'>,
+  decayFactor: number = MOMENTUM_DECAY_FACTOR
+): number {
+  return applyMomentumDecayStep(prev, eventScore(event.eventType), event.weight, decayFactor);
+}
+
+export function createMomentumEvent(
+  habit: Pick<Habit, 'id' | 'category'>,
+  eventType: MomentumEventType,
+  loggedDate: string = toISODate(),
+  timestamp: number = Date.now()
+): MomentumEvent {
+  return {
+    id: newMomentumEventId(),
+    habitId: habit.id,
+    eventType,
+    weight: habitWeight({ category: habit.category } as Habit),
+    timestamp,
+    loggedDate,
+  };
+}
+
+export function momentumEventsFromCompletionLog(
+  events: HabitCompletionEvent[],
+  habits: Habit[],
+  origin: Date = new Date()
+): MomentumEvent[] {
+  const byId = new Map(habits.map((habit) => [habit.id, habit]));
+  return events
+    .filter((event) => event.type === 'full' || event.type === 'fallback_micro')
+    .map((event) => {
+      const habit = byId.get(event.habitId);
+      return {
+        id: isUuid(event.id) ? event.id : newMomentumEventId(),
+        habitId: event.habitId,
+        eventType: event.type === 'fallback_micro' ? 'fallback' : 'full',
+        weight: habit ? habitWeight(habit) : SELF_IMPROVEMENT_HABIT_WEIGHT,
+        timestamp: event.timestamp,
+        loggedDate: resolveEventIsoDate(event, origin),
+      } satisfies MomentumEvent;
+    })
+    .sort((a, b) => a.timestamp - b.timestamp);
+}
+
+/** Union by id. Existing rows are never dropped or overwritten. */
+export function mergeMomentumEvents(local: MomentumEvent[], incoming: MomentumEvent[]): MomentumEvent[] {
+  const byId = new Map<string, MomentumEvent>();
+  local.forEach((event) => byId.set(event.id, event));
+  incoming.forEach((event) => {
+    if (!byId.has(event.id)) byId.set(event.id, event);
+  });
+  return Array.from(byId.values()).sort((a, b) => a.timestamp - b.timestamp);
+}
+
+/** Identity Ledger total = COUNT(*) where event_type IN ('full', 'fallback'). */
+export function countIdentityVotes(events: MomentumEvent[]): number {
+  let count = 0;
+  for (const event of events) {
+    if (event.eventType === 'full' || event.eventType === 'fallback') count += 1;
+  }
+  return count;
+}
+
+export function collectMissedMomentumEvents(
+  habits: Habit[],
+  events: MomentumEvent[],
+  isoDate: string,
+  origin: Date = new Date()
+): MomentumEvent[] {
+  const dayIndex = dayIndexForIso(isoDate, origin);
+  const logged = new Set(
+    events
+      .filter((event) => resolveMomentumEventDate(event) === isoDate)
+      .map((event) => event.habitId)
+  );
+
+  const missed: MomentumEvent[] = [];
+  habits.forEach((habit) => {
+    if (habit.archived) return;
+    if (habit.scheduledDays && habit.scheduledDays.length > 0 && dayIndex >= 0) {
+      if (!habit.scheduledDays.includes(dayIndex)) return;
+    }
+    if (logged.has(habit.id)) return;
+    missed.push(createMomentumEvent(habit, 'missed', isoDate, endOfIsoDate(isoDate)));
+  });
+  return missed;
+}
 
 export interface HabitLogRow {
   id?: string;
@@ -188,15 +331,15 @@ export function deriveHabitsFromEventLog(
     const days = [false, false, false, false, false, false, false];
     const microDays = [false, false, false, false, false, false, false];
 
-    const habitEvents = events.filter((e) => e.habitId === habit.id);
+    const habitEvents = events
+      .filter((e) => e.habitId === habit.id)
+      .sort((a, b) => a.timestamp - b.timestamp);
     for (const ev of habitEvents) {
       const iso = resolveEventIsoDate(ev, origin);
       const dayIndex = weekIso.indexOf(iso);
       if (dayIndex < 0) continue;
       days[dayIndex] = true;
-      if (ev.type === 'fallback_micro') {
-        microDays[dayIndex] = true;
-      }
+      microDays[dayIndex] = ev.type === 'fallback_micro';
     }
 
     return {
@@ -208,13 +351,11 @@ export function deriveHabitsFromEventLog(
 }
 
 /**
- * Priority-weighted momentum (0–100):
- * Work (W) weight 1.5, Self Improvement (SI) weight 1.0.
- * Completion: full swipe = 1.0, fallback swipe = 0.5, unlogged/missed = 0.0.
- * Score = (Σ(habit_weight × completion_value) / Σ habit_weights) × 100.
- * Exam Shield omits missed habits from the denominator so momentum does not decay.
+ * Same-day weighted snapshot (0–100) for the 7-day fan dots.
+ * Work (W) = 1.5, Self Improvement (SI) = 1.0.
+ * Full swipe = 1.0, fallback = 0.5, unlogged/missed = 0.0.
  */
-export function calculateMomentumScore(
+export function calculateDailyWeightedScore(
   habits: Habit[],
   dayIndex: number = 3,
   examShield: boolean = false,
@@ -243,5 +384,35 @@ export function calculateMomentumScore(
   });
 
   if (weightTotal <= 0) return examShield ? 100 : 0;
-  return Math.min(100, Math.max(0, Math.round((weightedSum / weightTotal) * 100)));
+  return clampMomentum(Math.round((weightedSum / weightTotal) * 100));
+}
+
+export interface RollingMomentumOptions {
+  examShield?: boolean;
+  vacationMode?: boolean;
+  asOf?: number;
+  decayFactor?: number;
+}
+
+/**
+ * Rolling momentum from the append-only `momentum_events` log.
+ * Iterates timestamp order: clamp((prev * (1 - decay_factor)) + (score * weight), 0, 100).
+ * Exam Shield / Vacation skip `missed` rows so decay is paused.
+ */
+export function calculateMomentumScore(
+  events: MomentumEvent[],
+  options: RollingMomentumOptions = {}
+): number {
+  const decayFactor = options.decayFactor ?? MOMENTUM_DECAY_FACTOR;
+  const skipMissed = Boolean(options.examShield || options.vacationMode);
+  const asOf = options.asOf;
+  const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
+
+  let prev = 0;
+  for (const event of sorted) {
+    if (asOf !== undefined && event.timestamp > asOf) continue;
+    if (skipMissed && event.eventType === 'missed') continue;
+    prev = applyMomentumEvent(prev, event, decayFactor);
+  }
+  return Math.round(prev);
 }

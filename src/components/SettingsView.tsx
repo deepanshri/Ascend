@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Habit, IdentityEvidence, ThemeMode, HabitCompletionEvent } from '../types';
+import { Habit, IdentityEvidence, ThemeMode, HabitCompletionEvent, MomentumEvent } from '../types';
 import { habitCategoryLabel } from '../utils/categories';
 import { NotificationWindowToggles } from './NotificationWindowToggles';
 import type { NotificationWindowKey, PsychologyNotificationWindows } from '../lib/notifications';
@@ -8,6 +8,7 @@ interface SettingsViewProps {
   habits: Habit[];
   evidenceList?: IdentityEvidence[];
   completionEvents?: HabitCompletionEvent[];
+  momentumEvents?: MomentumEvent[];
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
   notificationWindows: PsychologyNotificationWindows;
@@ -18,7 +19,8 @@ interface SettingsViewProps {
   onImportJSON: (
     importedHabits: Habit[],
     importedEvidence?: IdentityEvidence[],
-    importedEvents?: HabitCompletionEvent[]
+    importedEvents?: HabitCompletionEvent[],
+    importedMomentum?: MomentumEvent[]
   ) => void;
   onDeleteAccount: () => void;
   onClearCache: () => void;
@@ -29,6 +31,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   habits,
   evidenceList = [],
   completionEvents = [],
+  momentumEvents = [],
   theme,
   onThemeChange,
   notificationWindows,
@@ -60,6 +63,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       app: 'Ascend Habit Tracker',
       habits,
       completionEvents,
+      momentumEvents,
       evidenceLedger: evidenceList,
       totalHabits: habits.length,
       activeHabits: habits.filter((h) => !h.archived).length,
@@ -138,7 +142,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         const text = evt.target?.result as string;
         const parsed = JSON.parse(text);
         if (parsed && Array.isArray(parsed.habits)) {
-          onImportJSON(parsed.habits, parsed.evidenceLedger, parsed.completionEvents);
+          onImportJSON(parsed.habits, parsed.evidenceLedger, parsed.completionEvents, parsed.momentumEvents);
           setExportFeedback('Imported Successfully ✓');
           setTimeout(() => setExportFeedback(null), 2500);
         } else {
