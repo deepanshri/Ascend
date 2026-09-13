@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { StandaloneReminder } from '../types';
+import { weekdayFromIsoDate } from '../lib/notifications';
 
 interface EditReminderModalProps {
   reminder: StandaloneReminder | null;
@@ -15,6 +16,11 @@ interface EditReminderModalProps {
       notes?: string;
       alert10Min?: boolean;
       alertExact?: boolean;
+      habitId?: string | null;
+      daysOfWeek?: number[];
+      isEnabled?: boolean;
+      notificationId1?: number;
+      notificationId2?: number;
     }
   ) => void;
 }
@@ -47,13 +53,21 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
     e.preventDefault();
     if (!reminder || !title.trim()) return;
 
+    const trimmedTime = time.trim();
+    const alert10 = trimmedTime ? alert10Min : false;
+    const alertExactTime = trimmedTime ? alertExact : false;
     onSave(reminder.id, {
       title: title.trim(),
       date,
-      time: time.trim() || undefined,
+      time: trimmedTime || undefined,
       notes: notes.trim() || undefined,
-      alert10Min: time.trim() ? alert10Min : false,
-      alertExact: time.trim() ? alertExact : false,
+      alert10Min: alert10,
+      alertExact: alertExactTime,
+      habitId: reminder.habitId ?? null,
+      daysOfWeek: [weekdayFromIsoDate(date)],
+      isEnabled: !reminder.completed && (trimmedTime ? alert10 || alertExactTime : true),
+      notificationId1: reminder.notificationId1,
+      notificationId2: reminder.notificationId2,
     });
     onClose();
   };
@@ -175,6 +189,11 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
                 <span>⚡ Exact Time</span>
               </button>
             </div>
+          )}
+          {time.trim() && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+              Saves to your account and schedules native alerts 10 minutes before and at the exact time on this device.
+            </p>
           )}
 
           {/* Notes */}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { StandaloneReminder, UserSession } from '../types';
+import { weekdayFromIsoDate } from '../lib/notifications';
 import { ReminderCard } from './ReminderCard';
 import { ReminderLongPressOverlay } from './ReminderLongPressOverlay';
 import { EditReminderModal } from './EditReminderModal';
@@ -62,6 +63,9 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
       time: trimmedTime || undefined,
       alert10Min: trimmedTime ? true : false,
       alertExact: trimmedTime ? true : false,
+      habitId: null,
+      daysOfWeek: [weekdayFromIsoDate(date)],
+      isEnabled: true,
     });
 
     setIsBottomSheetOpen(false);
@@ -228,7 +232,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
                     New Reminder
                   </h3>
                   <p className="text-[11.5px] text-slate-500 dark:text-slate-400">
-                    Set a date and optional time
+                    Native alerts fire 10 minutes before and at the exact time
                   </p>
                 </div>
 

@@ -65,7 +65,7 @@ export interface StandaloneReminder {
   id: string;
   title: string;
   date: string; // YYYY-MM-DD
-  time?: string; // HH:MM (24-hour, optional)
+  time?: string; // HH:MM (24-hour, optional) — same as target_time
   notes?: string;
   completed: boolean;
   alert10Min?: boolean; // 10-minute prior alert enabled
@@ -75,6 +75,11 @@ export interface StandaloneReminder {
   createdAt: number;
   updatedAt: number; // Timestamp for Last-Write-Wins synchronization
   deleted?: boolean; // Soft-delete tombstone for cross-device sync
+  habitId?: string | null;
+  daysOfWeek?: number[]; // 0 = Sunday … 6 = Saturday
+  isEnabled?: boolean;
+  notificationId1?: number; // 10-minute prior native notification id
+  notificationId2?: number; // exact-time native notification id
 }
 
 export type ActiveTab = 'home' | 'reminders' | 'report' | 'personal' | 'settings';

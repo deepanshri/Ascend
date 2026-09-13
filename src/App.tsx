@@ -49,7 +49,10 @@ import {
   hydrateNotificationWindows,
   loadNotificationWindows,
   persistNotificationWindows,
+  reminderNotificationIds,
   schedulePsychologyNotifications,
+  weekdayFromIsoDate,
+  withReminderNotificationIds,
   type NotificationWindowKey,
   type PsychologyNotificationWindows,
 } from './lib/notifications';
@@ -316,7 +319,10 @@ export default function App() {
   const [reminders, setReminders] = useState<StandaloneReminder[]>(() => {
     try {
       const saved = localStorage.getItem('habit_tracker_reminders');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved) as StandaloneReminder[];
+        if (Array.isArray(parsed)) return parsed.map(withReminderNotificationIds);
+      }
     } catch {}
     const now = new Date();
     const future15m = new Date(now.getTime() + 15 * 60 * 1000);
@@ -343,7 +349,7 @@ export default function App() {
         createdAt: Date.now() - 3600000,
         updatedAt: Date.now() - 3600000,
       },
-    ];
+    ].map(withReminderNotificationIds);
   });
 
   useEffect(() => {
@@ -1039,87 +1045,102 @@ export default function App() {
     }
   };
 
-  // Boot-Completed Alert Re-scheduler: survives app force-quit & reboot
+  // Native dual-alert re-scheduler after force-quit / reboot (RECEIVE_BOOT_COMPLETED)
   useEffect(() => {
-    notificationScheduler.bootReschedulePendingAlerts((title, message) => {
-      showNotification(`${title}: ${message}`);
-    });
+    notificationScheduler.bootReschedulePendingAlerts(reminders);
+    // Initial reminders come from localStorage; re-arm once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Last-write-wins pull: apply the newest public.reminders row and re-schedule natives.
+  useEffect(() => {
+    if (!session || session.isGuest) return;
+    let cancelled = false;
+    void remindersSyncService.syncReminders(reminders, session).then((res) => {
+      if (cancelled) return;
+      setReminders(res.reminders);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, session?.isGuest]);
+
   // Standalone Reminders Handlers with Supabase LWW sync and OS-level alerts
+  const persistReminderSync = (updated: StandaloneReminder[]) => {
+    void remindersSyncService.syncReminders(updated, session).then((res) => {
+      setReminders(res.reminders);
+    });
+  };
+
   const handleAddReminder = (
     newRem: Omit<StandaloneReminder, 'id' | 'completed' | 'createdAt' | 'updatedAt'>
   ) => {
     const now = Date.now();
+    const id = 'rem-' + now + '-' + Math.random().toString(36).substring(2, 6);
+    const ids = reminderNotificationIds(id);
+    const hasTime = Boolean(newRem.time);
     const item: StandaloneReminder = {
       ...newRem,
-      id: 'rem-' + now + '-' + Math.random().toString(36).substring(2, 6),
+      id,
       completed: false,
-      alert10Min: newRem.alert10Min !== false,
-      alertExact: newRem.alertExact !== false,
+      alert10Min: hasTime && newRem.alert10Min !== false,
+      alertExact: hasTime && newRem.alertExact !== false,
       createdAt: now,
       updatedAt: now,
+      habitId: newRem.habitId ?? null,
+      daysOfWeek: newRem.daysOfWeek?.length ? newRem.daysOfWeek : [weekdayFromIsoDate(newRem.date)],
+      isEnabled: true,
+      notificationId1: ids.notificationId1,
+      notificationId2: ids.notificationId2,
     };
 
-    // Schedule OS-level alerts at creation time (10min prior + exact time)
-    notificationScheduler.scheduleReminderAlerts(item, (title, message) => {
-      showNotification(`${title}: ${message}`);
-    });
+    notificationScheduler.scheduleReminderAlerts(item);
 
-    setReminders((prev) => {
-      const updated = [item, ...prev];
-      // Sync via Supabase Last-Write-Wins module
-      remindersSyncService.syncReminders(updated, session);
-      return updated;
-    });
+    const updated = [item, ...reminders];
+    setReminders(updated);
+    persistReminderSync(updated);
 
-    showNotification('Reminder scheduled with alerts');
+    showNotification(hasTime ? 'Reminder scheduled with dual native alerts' : 'Reminder saved');
   };
 
   const handleToggleReminder = (id: string) => {
     const now = Date.now();
-    setReminders((prev) => {
-      const updated = prev.map((r) => {
-        if (r.id === id) {
-          const nextCompleted = !r.completed;
-          if (nextCompleted) {
-            notificationScheduler.cancelReminderAlerts(id);
-          } else {
-            notificationScheduler.scheduleReminderAlerts(
-              { ...r, completed: false, updatedAt: now },
-              (title, message) => showNotification(`${title}: ${message}`)
-            );
-          }
-          return { ...r, completed: nextCompleted, updatedAt: now };
-        }
-        return r;
-      });
-      remindersSyncService.syncReminders(updated, session);
-      return updated;
+    const updated = reminders.map((r) => {
+      if (r.id !== id) return r;
+      const nextCompleted = !r.completed;
+      const revised = {
+        ...r,
+        completed: nextCompleted,
+        isEnabled: !nextCompleted,
+        updatedAt: now,
+      };
+      if (nextCompleted) {
+        notificationScheduler.cancelReminderAlerts(id, revised);
+      } else {
+        notificationScheduler.scheduleReminderAlerts(revised);
+      }
+      return revised;
     });
+    setReminders(updated);
+    persistReminderSync(updated);
   };
 
   const handleSetReminderCompleted = (id: string, completed: boolean) => {
     const now = Date.now();
-    setReminders((prev) => {
-      const updated = prev.map((r) => {
-        if (r.id === id) {
-          if (r.completed === completed) return r;
-          if (completed) {
-            notificationScheduler.cancelReminderAlerts(id);
-          } else {
-            notificationScheduler.scheduleReminderAlerts(
-              { ...r, completed: false, updatedAt: now },
-              (title, message) => showNotification(`${title}: ${message}`)
-            );
-          }
-          return { ...r, completed, updatedAt: now };
-        }
-        return r;
-      });
-      remindersSyncService.syncReminders(updated, session);
-      return updated;
+    const updated = reminders.map((r) => {
+      if (r.id !== id) return r;
+      if (r.completed === completed) return r;
+      const revised = { ...r, completed, isEnabled: !completed, updatedAt: now };
+      if (completed) {
+        notificationScheduler.cancelReminderAlerts(id, revised);
+      } else {
+        notificationScheduler.scheduleReminderAlerts(revised);
+      }
+      return revised;
     });
+    setReminders(updated);
+    persistReminderSync(updated);
   };
 
   const handleUpdateReminder = (
@@ -1127,64 +1148,56 @@ export default function App() {
     updates: Partial<Omit<StandaloneReminder, 'id' | 'createdAt'>>
   ) => {
     const now = Date.now();
-    setReminders((prev) => {
-      const updated = prev.map((r) => {
-        if (r.id === id) {
-          const revised = { ...r, ...updates, updatedAt: now };
-          notificationScheduler.cancelReminderAlerts(id);
-          if (!revised.completed) {
-            notificationScheduler.scheduleReminderAlerts(revised, (title, message) => {
-              showNotification(`${title}: ${message}`);
-            });
-          }
-          return revised;
-        }
-        return r;
-      });
-      remindersSyncService.syncReminders(updated, session);
-      return updated;
+    const updated = reminders.map((r) => {
+      if (r.id !== id) return r;
+      const revised = withReminderNotificationIds({ ...r, ...updates, updatedAt: now });
+      const alertsOff = revised.alert10Min === false && revised.alertExact === false;
+      if (revised.completed || revised.isEnabled === false || alertsOff) {
+        notificationScheduler.cancelReminderAlerts(id, revised);
+      } else {
+        notificationScheduler.scheduleReminderAlerts(revised);
+      }
+      return revised;
     });
+    setReminders(updated);
+    persistReminderSync(updated);
     showNotification('Reminder updated');
   };
 
   const handleDeleteReminder = (id: string) => {
     const now = Date.now();
-    notificationScheduler.cancelReminderAlerts(id);
-    setReminders((prev) => {
-      const itemToDelete = prev.find((r) => r.id === id);
-      const updated = prev.filter((r) => r.id !== id);
-      if (itemToDelete) {
-        // Last-Write-Wins tombstone sync
-        remindersSyncService.syncReminders(
-          [...updated, { ...itemToDelete, deleted: true, updatedAt: now }],
-          session
-        );
-      }
-      return updated;
-    });
+    const itemToDelete = reminders.find((r) => r.id === id);
+    const updated = reminders.filter((r) => r.id !== id);
+    if (itemToDelete) {
+      notificationScheduler.cancelReminderAlerts(id, itemToDelete);
+      persistReminderSync([{ ...itemToDelete, deleted: true, isEnabled: false, updatedAt: now }, ...updated]);
+    }
+    setReminders(updated);
     showNotification('Reminder deleted');
   };
 
   const handleSnoozeReminder = (id: string, minutes: number) => {
-    const now = new Date();
+    const until = new Date(Date.now() + minutes * 60 * 1000);
     const nowTimestamp = Date.now();
-    now.setMinutes(now.getMinutes() + minutes);
-    const newTime = now.toTimeString().slice(0, 5);
+    const newTime = until.toTimeString().slice(0, 5);
+    const newDate = toISODate(until);
 
-    setReminders((prev) => {
-      const updated = prev.map((r) => {
-        if (r.id === id) {
-          const snoozed = { ...r, time: newTime, updatedAt: nowTimestamp };
-          notificationScheduler.scheduleReminderAlerts(snoozed, (title, message) => {
-            showNotification(`${title}: ${message}`);
-          });
-          return snoozed;
-        }
-        return r;
+    const updated = reminders.map((r) => {
+      if (r.id !== id) return r;
+      const snoozed = withReminderNotificationIds({
+        ...r,
+        time: newTime,
+        date: newDate,
+        daysOfWeek: [weekdayFromIsoDate(newDate)],
+        isEnabled: true,
+        completed: false,
+        updatedAt: nowTimestamp,
       });
-      remindersSyncService.syncReminders(updated, session);
-      return updated;
+      notificationScheduler.scheduleReminderAlerts(snoozed);
+      return snoozed;
     });
+    setReminders(updated);
+    persistReminderSync(updated);
     showNotification(`Snoozed for ${minutes} minutes`);
   };
 
@@ -1449,7 +1462,11 @@ export default function App() {
             onSyncReminders={() => {
               remindersSyncService.syncReminders(reminders, session).then((res) => {
                 setReminders(res.reminders);
-                showNotification('Reminders synchronized with Supabase');
+                showNotification(
+                  res.status === 'synced'
+                    ? 'Reminders synchronized across devices'
+                    : 'Reminders saved on this device'
+                );
               });
             }}
             onScroll={handleMainScroll}

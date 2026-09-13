@@ -1,5 +1,14 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { MomentumEventType, UserSession } from '../types';
+import { MomentumEventType, StandaloneReminder, UserSession } from '../types';
+import {
+  cancelReminderDualAlerts,
+  reminderNotificationIds,
+  requestNotificationPermissions,
+  rescheduleAllReminderDualAlerts,
+  scheduleReminderDualAlerts,
+  weekdayFromIsoDate,
+  withReminderNotificationIds,
+} from './notifications';
 
 const env = (import.meta as any).env || {};
 const supabaseUrl = env.VITE_SUPABASE_URL || 'https://dpgupbcbhkmjtyqkljpr.supabase.co';
@@ -346,7 +355,7 @@ export const authService = {
 // ==========================================
 
 export interface SyncResult {
-  reminders: import('../types').StandaloneReminder[];
+  reminders: StandaloneReminder[];
   status: 'synced' | 'local' | 'error';
   lastSyncedAt: number;
 }
@@ -354,152 +363,215 @@ export interface SyncResult {
 const REMINDERS_LOCAL_STORAGE_KEY = 'habit_tracker_reminders';
 const REMINDERS_LAST_SYNC_KEY = 'ascend_reminders_last_sync_timestamp';
 
+type ReminderRow = Record<string, unknown>;
+
+function asIsoDate(value: unknown, fallback = ''): string {
+  const raw = String(value || fallback);
+  return raw.slice(0, 10);
+}
+
+function asOptionalInt(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function asHHmm(value: unknown): string | undefined {
+  if (!value) return undefined;
+  const match = String(value).match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return undefined;
+  return `${match[1].padStart(2, '0')}:${match[2]}`;
+}
+
+function asIntArray(value: unknown, fallbackDate: string): number[] {
+  if (Array.isArray(value) && value.length > 0) {
+    return value
+      .map((entry) => Number(entry))
+      .filter((entry) => Number.isInteger(entry) && entry >= 0 && entry <= 6);
+  }
+  return [weekdayFromIsoDate(fallbackDate)];
+}
+
+function toReminderRow(userId: string, reminder: StandaloneReminder): ReminderRow {
+  const hydrated = withReminderNotificationIds(reminder);
+  const ids = reminderNotificationIds(hydrated.id);
+  const isEnabled = hydrated.isEnabled !== false && !hydrated.completed && !hydrated.deleted;
+  return {
+    id: hydrated.id,
+    user_id: userId,
+    habit_id: hydrated.habitId || null,
+    title: hydrated.title,
+    date: hydrated.date,
+    target_time: hydrated.time || null,
+    days_of_week: hydrated.daysOfWeek?.length ? hydrated.daysOfWeek : [weekdayFromIsoDate(hydrated.date)],
+    is_enabled: isEnabled,
+    notification_id_1: hydrated.notificationId1 ?? ids.notificationId1,
+    notification_id_2: hydrated.notificationId2 ?? ids.notificationId2,
+    notes: hydrated.notes || null,
+    completed: hydrated.completed,
+    deleted: hydrated.deleted || false,
+    alert_10min: hydrated.alert10Min !== false,
+    alert_exact: hydrated.alertExact !== false,
+    created_at: new Date(hydrated.createdAt).toISOString(),
+    updated_at: new Date(hydrated.updatedAt || hydrated.createdAt).toISOString(),
+  };
+}
+
+function fromReminderRow(row: ReminderRow): StandaloneReminder {
+  const date = asIsoDate(row.date);
+  return withReminderNotificationIds({
+    id: String(row.id),
+    title: String(row.title || ''),
+    date,
+    time: asHHmm(row.target_time) || asHHmm(row.time),
+    notes: row.notes ? String(row.notes) : undefined,
+    completed: Boolean(row.completed),
+    alert10Min: row.alert_10min !== false,
+    alertExact: row.alert_exact !== false,
+    createdAt: row.created_at ? new Date(String(row.created_at)).getTime() : Date.now(),
+    updatedAt: row.updated_at ? new Date(String(row.updated_at)).getTime() : Date.now(),
+    deleted: Boolean(row.deleted),
+    habitId: row.habit_id ? String(row.habit_id) : null,
+    daysOfWeek: asIntArray(row.days_of_week, date),
+    isEnabled: row.is_enabled !== false && !row.completed && !row.deleted,
+    notificationId1: asOptionalInt(row.notification_id_1),
+    notificationId2: asOptionalInt(row.notification_id_2),
+  });
+}
+
+async function persistMergedReminders(reminders: StandaloneReminder[], lastSyncedAt: number) {
+  try {
+    localStorage.setItem(REMINDERS_LOCAL_STORAGE_KEY, JSON.stringify(reminders));
+    localStorage.setItem(REMINDERS_LAST_SYNC_KEY, lastSyncedAt.toString());
+  } catch {}
+}
+
+async function fetchRemoteReminderRows(
+  userId: string
+): Promise<{ table: 'reminders' | 'standalone_reminders'; rows: ReminderRow[] } | { error: string }> {
+  if (!supabase) return { error: 'Supabase is not configured' };
+
+  const primary = await supabase.from('reminders').select('*').eq('user_id', userId);
+  if (!primary.error) {
+    return { table: 'reminders', rows: (primary.data || []) as ReminderRow[] };
+  }
+
+  const fallback = await supabase.from('standalone_reminders').select('*').eq('user_id', userId);
+  if (!fallback.error) {
+    return { table: 'standalone_reminders', rows: (fallback.data || []) as ReminderRow[] };
+  }
+
+  return { error: primary.error.message };
+}
+
+function toLegacyStandaloneRow(userId: string, reminder: StandaloneReminder): ReminderRow {
+  const row = toReminderRow(userId, reminder);
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    title: row.title,
+    date: row.date,
+    time: row.target_time,
+    notes: row.notes,
+    completed: row.completed,
+    alert_10min: row.alert_10min,
+    alert_exact: row.alert_exact,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    deleted: row.deleted,
+  };
+}
+
 export const remindersSyncService = {
   /**
-   * Last-Write-Wins (LWW) cross-device synchronizer for StandaloneReminders
-   * Resolves conflicts by comparing updatedAt timestamps (Apple Reminders style).
+   * Last-Write-Wins (LWW) cross-device synchronizer for reminders.
+   * Fetches public.reminders, keeps the newest updated_at, then re-schedules native alerts.
    */
   async syncReminders(
-    localReminders: import('../types').StandaloneReminder[],
+    localReminders: StandaloneReminder[],
     userSession?: UserSession | null
   ): Promise<SyncResult> {
     const now = Date.now();
+    const hydratedLocal = localReminders.map(withReminderNotificationIds);
 
-    // If Supabase is not configured or user is guest / offline, use local LWW persistence
     if (!isSupabaseConfigured || !supabase || !userSession || userSession.isGuest) {
-      try {
-        localStorage.setItem(REMINDERS_LOCAL_STORAGE_KEY, JSON.stringify(localReminders));
-        localStorage.setItem(REMINDERS_LAST_SYNC_KEY, now.toString());
-      } catch {}
+      await persistMergedReminders(hydratedLocal.filter((item) => !item.deleted), now);
+      await rescheduleAllReminderDualAlerts(hydratedLocal);
       return {
-        reminders: localReminders,
+        reminders: hydratedLocal.filter((item) => !item.deleted),
         status: 'local',
         lastSyncedAt: now,
       };
     }
 
     try {
-      // 1. Fetch remote reminders for this user
-      const { data: remoteData, error } = await supabase
-        .from('standalone_reminders')
-        .select('*')
-        .eq('user_id', userSession.id);
-
-      if (error) {
-        console.warn('Supabase reminders table query note:', error.message);
-        // Graceful fallback to local cache
+      const remote = await fetchRemoteReminderRows(userSession.id);
+      if ('error' in remote) {
+        console.warn('Supabase reminders table query note:', remote.error);
+        await rescheduleAllReminderDualAlerts(hydratedLocal);
         return {
-          reminders: localReminders,
+          reminders: hydratedLocal.filter((item) => !item.deleted),
           status: 'local',
           lastSyncedAt: now,
         };
       }
 
-      // 2. Perform Last-Write-Wins (LWW) merge
-      const localMap = new Map<string, import('../types').StandaloneReminder>();
-      localReminders.forEach((r) => localMap.set(r.id, r));
+      const localMap = new Map<string, StandaloneReminder>();
+      hydratedLocal.forEach((item) => localMap.set(item.id, item));
 
-      const remoteMap = new Map<string, any>();
-      (remoteData || []).forEach((row: any) => remoteMap.set(row.id, row));
+      const remoteMap = new Map<string, ReminderRow>();
+      remote.rows.forEach((row) => remoteMap.set(String(row.id), row));
 
-      const mergedMap = new Map<string, import('../types').StandaloneReminder>();
-      const toUpsertToRemote: any[] = [];
+      const mergedMap = new Map<string, StandaloneReminder>();
+      const toUpsertToRemote: ReminderRow[] = [];
 
-      // Check all local records against remote
       for (const [id, localItem] of localMap.entries()) {
         const remoteRow = remoteMap.get(id);
         if (!remoteRow) {
-          // Local only -> push to remote
           mergedMap.set(id, localItem);
-          toUpsertToRemote.push({
-            id: localItem.id,
-            user_id: userSession.id,
-            title: localItem.title,
-            date: localItem.date,
-            time: localItem.time,
-            notes: localItem.notes || null,
-            completed: localItem.completed,
-            alert_10min: localItem.alert10Min !== false,
-            alert_exact: localItem.alertExact !== false,
-            created_at: new Date(localItem.createdAt).toISOString(),
-            updated_at: new Date(localItem.updatedAt || localItem.createdAt).toISOString(),
-            deleted: localItem.deleted || false,
-          });
-        } else {
-          // Both exist -> Last-Write-Wins
-          const remoteUpdatedAt = new Date(remoteRow.updated_at).getTime();
-          const localUpdatedAt = localItem.updatedAt || localItem.createdAt || 0;
+          toUpsertToRemote.push(
+            remote.table === 'reminders'
+              ? toReminderRow(userSession.id, localItem)
+              : toLegacyStandaloneRow(userSession.id, localItem)
+          );
+          continue;
+        }
 
-          if (localUpdatedAt >= remoteUpdatedAt) {
-            // Local is newer or equal -> local wins
-            mergedMap.set(id, localItem);
-            if (localUpdatedAt > remoteUpdatedAt) {
-              toUpsertToRemote.push({
-                id: localItem.id,
-                user_id: userSession.id,
-                title: localItem.title,
-                date: localItem.date,
-                time: localItem.time,
-                notes: localItem.notes || null,
-                completed: localItem.completed,
-                alert_10min: localItem.alert10Min !== false,
-                alert_exact: localItem.alertExact !== false,
-                created_at: new Date(localItem.createdAt).toISOString(),
-                updated_at: new Date(localUpdatedAt).toISOString(),
-                deleted: localItem.deleted || false,
-              });
-            }
-          } else {
-            // Remote is newer -> remote wins
-            mergedMap.set(id, {
-              id: remoteRow.id,
-              title: remoteRow.title,
-              date: remoteRow.date,
-              time: remoteRow.time,
-              notes: remoteRow.notes || undefined,
-              completed: Boolean(remoteRow.completed),
-              alert10Min: remoteRow.alert_10min !== false,
-              alertExact: remoteRow.alert_exact !== false,
-              createdAt: new Date(remoteRow.created_at).getTime(),
-              updatedAt: remoteUpdatedAt,
-              deleted: Boolean(remoteRow.deleted),
-            });
+        const remoteUpdatedAt = new Date(String(remoteRow.updated_at)).getTime();
+        const localUpdatedAt = localItem.updatedAt || localItem.createdAt || 0;
+
+        if (localUpdatedAt >= remoteUpdatedAt) {
+          mergedMap.set(id, localItem);
+          if (localUpdatedAt > remoteUpdatedAt) {
+            toUpsertToRemote.push(
+              remote.table === 'reminders'
+                ? toReminderRow(userSession.id, localItem)
+                : toLegacyStandaloneRow(userSession.id, localItem)
+            );
           }
+        } else {
+          mergedMap.set(id, fromReminderRow(remoteRow));
         }
       }
 
-      // Check remote items not in local
       for (const [id, remoteRow] of remoteMap.entries()) {
         if (!localMap.has(id)) {
-          mergedMap.set(id, {
-            id: remoteRow.id,
-            title: remoteRow.title,
-            date: remoteRow.date,
-            time: remoteRow.time,
-            notes: remoteRow.notes || undefined,
-            completed: Boolean(remoteRow.completed),
-            alert10Min: remoteRow.alert_10min !== false,
-            alertExact: remoteRow.alert_exact !== false,
-            createdAt: new Date(remoteRow.created_at).getTime(),
-            updatedAt: new Date(remoteRow.updated_at).getTime(),
-            deleted: Boolean(remoteRow.deleted),
-          });
+          mergedMap.set(id, fromReminderRow(remoteRow));
         }
       }
 
-      // 3. Push local changes to Supabase
       if (toUpsertToRemote.length > 0) {
-        await supabase.from('standalone_reminders').upsert(toUpsertToRemote);
+        const { error: upsertError } = await supabase.from(remote.table).upsert(toUpsertToRemote);
+        if (upsertError) {
+          console.warn('Supabase reminders upsert note:', upsertError.message);
+        }
       }
 
-      // Filter out tombstones (deleted items)
-      const finalActiveReminders = Array.from(mergedMap.values()).filter((r) => !r.deleted);
+      const merged = Array.from(mergedMap.values()).map(withReminderNotificationIds);
+      await rescheduleAllReminderDualAlerts(merged);
 
-      // Persist locally
-      try {
-        localStorage.setItem(REMINDERS_LOCAL_STORAGE_KEY, JSON.stringify(finalActiveReminders));
-        localStorage.setItem(REMINDERS_LAST_SYNC_KEY, now.toString());
-      } catch {}
+      const finalActiveReminders = merged.filter((item) => !item.deleted);
+      await persistMergedReminders(finalActiveReminders, now);
 
       return {
         reminders: finalActiveReminders,
@@ -508,8 +580,9 @@ export const remindersSyncService = {
       };
     } catch (err) {
       console.warn('Supabase LWW sync fallback:', err);
+      await rescheduleAllReminderDualAlerts(hydratedLocal);
       return {
-        reminders: localReminders,
+        reminders: hydratedLocal.filter((item) => !item.deleted),
         status: 'local',
         lastSyncedAt: now,
       };
@@ -518,211 +591,34 @@ export const remindersSyncService = {
 };
 
 // ==========================================
-// LOCAL OS-LEVEL NOTIFICATION SCHEDULER
+// NATIVE LOCAL NOTIFICATION SCHEDULER
 // ==========================================
-// Schedules 10-minute-before and exact-time alerts.
-// Survives page reloads / app restarts via persistent pending alerts storage
-// (mimicking boot-completed broadcast receiver re-scheduling).
-
-interface ScheduledAlertRecord {
-  id: string; // unique alert id (e.g. `alert_${reminderId}_10m`)
-  reminderId: string;
-  title: string;
-  type: '10min' | 'exact';
-  fireAt: number; // Unix timestamp in ms
-}
-
-const SCHEDULED_ALERTS_KEY = 'ascend_scheduled_alerts_registry';
-const activeTimers = new Map<string, number>();
+// Dual-alert Capacitor LocalNotifications: 10 minutes prior + exact target_time.
+// No web Notification / setTimeout fallback. Boot reschedule uses native ids.
 
 export const notificationScheduler = {
-  /**
-   * Request browser Notification permission
-   */
-  async requestPermission(): Promise<NotificationPermission> {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      return 'denied';
-    }
-    if (Notification.permission === 'granted') {
-      return 'granted';
-    }
-    return await Notification.requestPermission();
+  async requestPermission(): Promise<'granted' | 'denied'> {
+    const granted = await requestNotificationPermissions();
+    return granted ? 'granted' : 'denied';
   },
 
-  getPermission(): NotificationPermission {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      return 'denied';
-    }
-    return Notification.permission;
+  scheduleReminderAlerts(reminder: StandaloneReminder) {
+    void scheduleReminderDualAlerts(reminder);
   },
 
-  /**
-   * Schedule alerts for a reminder at creation time:
-   * 1. 10-minute-before alert
-   * 2. At exact-time alert
-   */
-  scheduleReminderAlerts(
-    reminder: import('../types').StandaloneReminder,
-    onFireAlert?: (title: string, message: string, type: '10min' | 'exact') => void
-  ) {
-    if (reminder.completed) return;
-    if (!reminder.time) return;
-
-    const [year, month, day] = reminder.date.split('-').map(Number);
-    const [hours, minutes] = reminder.time.split(':').map(Number);
-    const targetDate = new Date(year, month - 1, day, hours, minutes, 0, 0);
-    const exactTimeMs = targetDate.getTime();
-    const tenMinBeforeMs = exactTimeMs - 10 * 60 * 1000;
-    const now = Date.now();
-
-    const alertsToStore: ScheduledAlertRecord[] = [];
-
-    // 1. 10-minute before alert (if enabled & not passed)
-    if (reminder.alert10Min !== false && tenMinBeforeMs > now) {
-      alertsToStore.push({
-        id: `alert_${reminder.id}_10m`,
-        reminderId: reminder.id,
-        title: reminder.title,
-        type: '10min',
-        fireAt: tenMinBeforeMs,
-      });
-    }
-
-    // 2. Exact-time alert (if enabled & not passed)
-    if (reminder.alertExact !== false && exactTimeMs > now) {
-      alertsToStore.push({
-        id: `alert_${reminder.id}_exact`,
-        reminderId: reminder.id,
-        title: reminder.title,
-        type: 'exact',
-        fireAt: exactTimeMs,
-      });
-    }
-
-    // Persist to registry
-    const registry = this.getStoredRegistry();
-    // Remove any existing alerts for this reminder
-    const filtered = registry.filter((a) => a.reminderId !== reminder.id);
-    const updated = [...filtered, ...alertsToStore];
-    this.saveRegistry(updated);
-
-    // Arm runtime timeouts
-    alertsToStore.forEach((alert) => this.armTimeout(alert, onFireAlert));
+  cancelReminderAlerts(reminderId: string, reminder?: StandaloneReminder) {
+    const ids = reminder
+      ? { id: reminder.id, notificationId1: reminder.notificationId1, notificationId2: reminder.notificationId2 }
+      : reminderId;
+    void cancelReminderDualAlerts(ids);
   },
 
-  cancelReminderAlerts(reminderId: string) {
-    const registry = this.getStoredRegistry();
-    const toCancel = registry.filter((a) => a.reminderId === reminderId);
-    toCancel.forEach((a) => {
-      const timer = activeTimers.get(a.id);
-      if (timer) {
-        clearTimeout(timer);
-        activeTimers.delete(a.id);
-      }
-    });
-    this.saveRegistry(registry.filter((a) => a.reminderId !== reminderId));
-  },
-
-  /**
-   * Boot-Completed / App Startup Re-scheduler:
-   * Called when app mounts to re-arm pending alerts after force-quit or device reboot.
-   */
-  bootReschedulePendingAlerts(
-    onFireAlert?: (title: string, message: string, type: '10min' | 'exact') => void
-  ) {
-    const registry = this.getStoredRegistry();
-    const now = Date.now();
-    const stillValid: ScheduledAlertRecord[] = [];
-
-    registry.forEach((alert) => {
-      if (alert.fireAt > now) {
-        stillValid.push(alert);
-        this.armTimeout(alert, onFireAlert);
-      }
-    });
-
-    this.saveRegistry(stillValid);
-  },
-
-  armTimeout(
-    alert: ScheduledAlertRecord,
-    onFireAlert?: (title: string, message: string, type: '10min' | 'exact') => void
-  ) {
-    // Clear any existing timer
-    const existing = activeTimers.get(alert.id);
-    if (existing) clearTimeout(existing);
-
-    const delay = Math.max(0, alert.fireAt - Date.now());
-    // Safe max delay for setTimeout is ~24.8 days (2147483647 ms)
-    if (delay > 2147483600) return;
-
-    const timerId = window.setTimeout(() => {
-      this.fireNotification(alert, onFireAlert);
-      activeTimers.delete(alert.id);
-      // Remove from registry
-      const registry = this.getStoredRegistry().filter((a) => a.id !== alert.id);
-      this.saveRegistry(registry);
-    }, delay);
-
-    activeTimers.set(alert.id, timerId);
-  },
-
-  fireNotification(
-    alert: ScheduledAlertRecord,
-    onFireAlert?: (title: string, message: string, type: '10min' | 'exact') => void
-  ) {
-    const is10m = alert.type === '10min';
-    const titleText = is10m ? `🔔 10 Min Alert: ${alert.title}` : `⚡ Due Now: ${alert.title}`;
-    const bodyText = is10m
-      ? `Upcoming reminder in 10 minutes: "${alert.title}"`
-      : `It's time for your scheduled reminder: "${alert.title}"`;
-
-    // 1. OS-level Notification (Web API)
-    try {
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        new Notification(titleText, {
-          body: bodyText,
-          icon: '/favicon.ico',
-          badge: '/favicon.ico',
-          tag: alert.id,
-        });
-      }
-    } catch {}
-
-    // 2. Play subtle audio chime if audio context is permitted
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(is10m ? 587.33 : 880, audioCtx.currentTime); // D5 or A5
-      gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.35);
-    } catch {}
-
-    // 3. Invoke UI callback
-    if (onFireAlert) {
-      onFireAlert(alert.title, bodyText, alert.type);
-    }
-  },
-
-  getStoredRegistry(): ScheduledAlertRecord[] {
-    try {
-      const raw = localStorage.getItem(SCHEDULED_ALERTS_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  },
-
-  saveRegistry(list: ScheduledAlertRecord[]) {
-    try {
-      localStorage.setItem(SCHEDULED_ALERTS_KEY, JSON.stringify(list));
-    } catch {}
+  bootReschedulePendingAlerts(reminders: StandaloneReminder[] = []) {
+    void (async () => {
+      await requestNotificationPermissions();
+      await rescheduleAllReminderDualAlerts(reminders);
+    })();
   },
 };
+
 
