@@ -537,6 +537,8 @@ function toPublicReminderCoreRow(userId: string, reminder: StandaloneReminder): 
     is_enabled: hydrated.isEnabled !== false && !hydrated.completed && !hydrated.deleted,
     notification_id_1: Math.trunc(Number(hydrated.notificationId1 ?? ids.notificationId1)),
     notification_id_2: Math.trunc(Number(hydrated.notificationId2 ?? ids.notificationId2)),
+    completed: Boolean(hydrated.completed),
+    updated_at: new Date(hydrated.updatedAt || hydrated.createdAt || Date.now()).toISOString(),
   };
 }
 

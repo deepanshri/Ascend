@@ -361,7 +361,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                   key={tag}
                   type="button"
                   onClick={() => toggleInterest(tag)}
-                  className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-medium border transition cursor-pointer active:scale-95 ${
+                  className={`px-3.5 py-1.5 rounded-xl text-[12.5px] font-medium border transition cursor-pointer active:scale-95 ${
                     isSelected
                       ? 'bg-[#E8F8EE] dark:bg-emerald-950 text-[#165B33] dark:text-emerald-300 border-[#23C15D]/60 font-bold shadow-xs'
                       : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'

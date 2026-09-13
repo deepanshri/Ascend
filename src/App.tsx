@@ -43,6 +43,7 @@ import {
   generateAvatarUrl,
   notificationScheduler,
   remindersSyncService,
+  upsertPublicReminder,
 } from './lib/supabase';
 import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted } from './lib/profile';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
@@ -1383,6 +1384,8 @@ export default function App() {
       return revised;
     });
     setReminders(updated);
+    const revised = updated.find((item) => item.id === id);
+    if (revised) void upsertPublicReminder(session, revised);
     persistReminderSync(updated);
   };
 
@@ -1401,6 +1404,8 @@ export default function App() {
       return revised;
     });
     setReminders(updated);
+    const revised = updated.find((item) => item.id === id);
+    if (revised) void upsertPublicReminder(session, revised);
     persistReminderSync(updated);
   };
 

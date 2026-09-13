@@ -70,7 +70,7 @@ export const FrictionAuditModal: React.FC<FrictionAuditModalProps> = ({
                     key={chip}
                     type="button"
                     onClick={() => submitReason(chip)}
-                    className="px-2.5 py-1.5 rounded-full text-[11.5px] font-bold border transition cursor-pointer bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-emerald-300 dark:hover:border-blue-500"
+                    className="px-2.5 py-1.5 rounded-xl text-[11.5px] font-bold border transition cursor-pointer bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-[#22C55E] dark:hover:border-[#3B82F6]"
                   >
                     {chip}
                   </button>
@@ -90,20 +90,20 @@ export const FrictionAuditModal: React.FC<FrictionAuditModalProps> = ({
                 value={customNote}
                 onChange={(e) => setCustomNote(e.target.value)}
                 placeholder="Or a quick note…"
-                className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[13px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-blue-500"
+                className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[13px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6]"
               />
               <div className="flex space-x-2">
                 <button
                   type="button"
                   onClick={onSkip}
-                  className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-[13px] rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition cursor-pointer"
+                  className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-[13px] rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition cursor-pointer"
                 >
                   Skip
                 </button>
                 <button
                   type="submit"
                   disabled={!customNote.trim()}
-                  className="flex-1 py-2.5 bg-[#23C15D] dark:bg-blue-600 text-white font-bold text-[13px] rounded-xl hover:bg-emerald-600 dark:hover:bg-blue-500 active:scale-95 transition cursor-pointer disabled:opacity-50"
+                  className="flex-1 py-2.5 bg-[#22C55E] dark:bg-[#3B82F6] text-white font-bold text-[13px] rounded-2xl hover:bg-emerald-600 dark:hover:bg-blue-500 active:scale-95 transition cursor-pointer disabled:opacity-50"
                 >
                   Save
                 </button>

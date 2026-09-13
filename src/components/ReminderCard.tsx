@@ -385,7 +385,7 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
             >
               {reminder.title}
             </h4>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${statusBadge.color}`}>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-xl border shrink-0 ${statusBadge.color}`}>
               {statusBadge.text}
             </span>
           </div>

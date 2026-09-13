@@ -113,7 +113,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition cursor-pointer"
+            className="w-7 h-7 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition cursor-pointer"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
@@ -133,7 +133,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Habit name..."
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 focus:outline-emerald-500 dark:focus:outline-blue-500 font-semibold text-[13px]"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] font-semibold text-[13px]"
             />
           </div>
 
@@ -194,7 +194,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
               value={purpose}
               onChange={(e) => setPurpose(e.target.value)}
               placeholder="Why I built this..."
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 focus:outline-emerald-500 dark:focus:outline-blue-500 text-[12.5px]"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-[12.5px]"
             />
           </div>
 
@@ -208,7 +208,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
               value={fallback}
               onChange={(e) => setFallback(e.target.value)}
               placeholder="e.g. 2 min version / 1 single page"
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 focus:outline-emerald-500 dark:focus:outline-blue-500 text-[12.5px]"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-[12.5px]"
             />
           </div>
 
@@ -216,13 +216,13 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
               Category
             </label>
-            <div className="flex rounded-full bg-slate-100 dark:bg-slate-800 p-1">
+            <div className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
               <button
                 type="button"
                 onClick={() => setCategory('work')}
-                className={`flex-1 py-1.5 px-3 rounded-full text-[11.5px] font-bold transition cursor-pointer ${
+                className={`flex-1 py-1.5 px-3 rounded-xl text-[11.5px] font-bold transition cursor-pointer ${
                   category === 'work'
-                    ? 'bg-white dark:bg-slate-700 text-green-700 dark:text-green-300 shadow-sm'
+                    ? 'bg-white dark:bg-slate-700 text-[#22C55E] dark:text-[#3B82F6] shadow-sm'
                     : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
@@ -231,9 +231,9 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
               <button
                 type="button"
                 onClick={() => setCategory('self_improvement')}
-                className={`flex-1 py-1.5 px-3 rounded-full text-[11.5px] font-bold transition cursor-pointer ${
+                className={`flex-1 py-1.5 px-3 rounded-xl text-[11.5px] font-bold transition cursor-pointer ${
                   category === 'self_improvement'
-                    ? 'bg-white dark:bg-slate-700 text-teal-800 dark:text-teal-300 shadow-sm'
+                    ? 'bg-white dark:bg-slate-700 text-[#22C55E] dark:text-[#3B82F6] shadow-sm'
                     : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
@@ -285,7 +285,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
           <button
             type="button"
             onClick={handleDelete}
-            className="text-rose-600 hover:text-rose-700 font-semibold text-[11.5px] px-2 py-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+            className="text-rose-600 hover:text-rose-700 font-semibold text-[11.5px] px-2 py-1 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
           >
             Delete Habit
           </button>
@@ -294,14 +294,14 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium text-[11.5px] rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+              className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium text-[11.5px] rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleSave}
-              className="px-4 py-1.5 bg-[#23C15D] hover:bg-emerald-600 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-semibold text-[11.5px] rounded-xl shadow-xs cursor-pointer"
+              className="px-4 py-1.5 bg-[#22C55E] hover:bg-emerald-600 dark:bg-[#3B82F6] dark:hover:bg-blue-500 text-white font-semibold text-[11.5px] rounded-2xl shadow-xs cursor-pointer"
             >
               Save
             </button>

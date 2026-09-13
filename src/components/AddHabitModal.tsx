@@ -112,9 +112,9 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
         >
           <motion.div
             id="add-habit-modal-card"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 20, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             className="relative w-full max-w-[390px] max-h-[min(92dvh,740px)] bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-y-auto"
           >
@@ -130,7 +130,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                 whileTap={{ scale: 0.88 }}
                 onClick={onClose}
                 aria-label="Close"
-                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition cursor-pointer"
+                className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition cursor-pointer"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
@@ -156,7 +156,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
-                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 focus:outline-emerald-500 dark:focus:outline-blue-500 text-slate-900 dark:text-white text-[12.5px] transition-colors"
+                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-slate-900 dark:text-white text-[12.5px] transition-colors"
                 />
               </div>
 
@@ -215,13 +215,13 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                 <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1.5 text-[12px]">
                   Category
                 </label>
-                <div className="flex rounded-full bg-slate-100 dark:bg-slate-800 p-1">
+                <div className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
                   <button
                     type="button"
                     onClick={() => setCategory('work')}
-                    className={`flex-1 py-2 px-3 rounded-full text-[12px] font-bold transition cursor-pointer ${
+                    className={`flex-1 py-2 px-3 rounded-xl text-[12px] font-bold transition cursor-pointer ${
                       category === 'work'
-                        ? 'bg-white dark:bg-slate-700 text-green-700 dark:text-green-300 shadow-sm'
+                        ? 'bg-white dark:bg-slate-700 text-[#22C55E] dark:text-[#3B82F6] shadow-sm'
                         : 'text-slate-500 dark:text-slate-400'
                     }`}
                   >
@@ -230,9 +230,9 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setCategory('self_improvement')}
-                    className={`flex-1 py-2 px-3 rounded-full text-[12px] font-bold transition cursor-pointer ${
+                    className={`flex-1 py-2 px-3 rounded-xl text-[12px] font-bold transition cursor-pointer ${
                       category === 'self_improvement'
-                        ? 'bg-white dark:bg-slate-700 text-teal-800 dark:text-teal-300 shadow-sm'
+                        ? 'bg-white dark:bg-slate-700 text-[#22C55E] dark:text-[#3B82F6] shadow-sm'
                         : 'text-slate-500 dark:text-slate-400'
                     }`}
                   >
@@ -253,7 +253,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   placeholder="e.g. Protect cognitive stamina and energy cycles"
                   value={purposeAnchor}
                   onChange={(e) => setPurposeAnchor(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 text-slate-900 dark:text-white text-[12.5px] transition-colors"
+                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-slate-900 dark:text-white text-[12.5px] transition-colors"
                 />
               </div>
 
@@ -267,7 +267,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   placeholder="e.g. 5 min warmup, read 1 single page"
                   value={fallbackMicro}
                   onChange={(e) => setFallbackMicro(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 text-slate-900 dark:text-white text-[12.5px] transition-colors"
+                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-slate-900 dark:text-white text-[12.5px] transition-colors"
                 />
                 <p className="text-[10.5px] text-slate-400 mt-1">
                   Triggered automatically when swiping left on the habit card.
@@ -325,7 +325,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   className={`flex-1 py-2.5 font-semibold rounded-2xl shadow-md transition ${
                     atCap
                       ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
-                      : 'bg-[#23C15D] hover:bg-emerald-600 dark:bg-blue-600 dark:hover:bg-blue-500 text-white cursor-pointer'
+                      : 'bg-[#22C55E] hover:bg-emerald-600 dark:bg-[#3B82F6] dark:hover:bg-blue-500 text-white cursor-pointer'
                   }`}
                 >
                   {atCap ? 'Limit reached' : 'Create Habit'}

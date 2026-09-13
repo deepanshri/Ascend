@@ -104,42 +104,33 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
         >
           <motion.div
             id="edit-reminder-modal-card"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 20, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="relative w-full max-w-[390px] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col space-y-4"
+            className="relative w-full max-w-[390px] max-h-[min(92dvh,740px)] bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-y-auto"
           >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-blue-950/60 flex items-center justify-center text-emerald-700 dark:text-blue-400">
-              <svg className="w-4 h-4 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
-                />
-              </svg>
-            </div>
-            <h3 className="text-[17px] font-bold text-slate-900 dark:text-white">
-              Edit Reminder
-            </h3>
+        <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <h2 className="text-[17px] font-bold text-slate-900 dark:text-white leading-tight">Edit Reminder</h2>
+            <p className="text-[11.5px] text-slate-500 dark:text-slate-400">Update time, alerts & notes</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+            aria-label="Close"
+            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition cursor-pointer"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5 text-left">
+        <form onSubmit={handleSubmit} className="mt-4 space-y-3.5 text-[13px] text-left">
           {/* Title */}
           <div>
-            <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">
+            <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1 text-[12px]">
               Title
             </label>
             <input
@@ -148,14 +139,14 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g., Morning Meds, Drink water"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-sm focus:outline-hidden focus:border-emerald-500 dark:focus:border-blue-500"
+              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-[12.5px] focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6]"
             />
           </div>
 
           {/* Date & Time */}
           <div className="grid grid-cols-2 gap-2.5">
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">
+              <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1 text-[12px]">
                 Date
               </label>
               <input
@@ -163,18 +154,18 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
                 required
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs focus:outline-hidden focus:border-emerald-500"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-[12.5px] focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6]"
               />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">
-                Time (optional)
+              <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1 text-[12px]">
+                Time <span className="text-[10px] font-normal text-slate-400">optional</span>
               </label>
               <input
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs focus:outline-hidden focus:border-emerald-500"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-[12.5px] focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6]"
               />
             </div>
           </div>
@@ -185,9 +176,9 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
               <button
                 type="button"
                 onClick={() => setAlert10Min((prev) => !prev)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center space-x-1.5 ${
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center space-x-1.5 ${
                   alert10Min
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-blue-950/60 dark:border-blue-700 dark:text-blue-300'
+                    ? 'bg-emerald-50 border-[#22C55E] text-emerald-800 dark:bg-blue-950/60 dark:border-[#3B82F6] dark:text-blue-300'
                     : 'bg-slate-50 border-slate-200 text-slate-400 dark:bg-slate-800 dark:border-slate-700'
                 }`}
               >
@@ -196,9 +187,9 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
               <button
                 type="button"
                 onClick={() => setAlertExact((prev) => !prev)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center space-x-1.5 ${
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center space-x-1.5 ${
                   alertExact
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-blue-950/60 dark:border-blue-700 dark:text-blue-300'
+                    ? 'bg-emerald-50 border-[#22C55E] text-emerald-800 dark:bg-blue-950/60 dark:border-[#3B82F6] dark:text-blue-300'
                     : 'bg-slate-50 border-slate-200 text-slate-400 dark:bg-slate-800 dark:border-slate-700'
                 }`}
               >
@@ -214,31 +205,31 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
 
           {/* Notes */}
           <div>
-            <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">
-              Notes (optional)
+            <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1 text-[12px]">
+              Notes <span className="text-[10px] font-normal text-slate-400">optional</span>
             </label>
             <textarea
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Add additional details or context..."
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs focus:outline-hidden focus:border-emerald-500 resize-none"
+              className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-[12.5px] focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] resize-none"
             />
           </div>
 
-          <div className="flex space-x-2.5 pt-2">
+          <div className="pt-2 flex space-x-2.5">
             <motion.button
               type="button"
-              whileTap={{ scale: 0.94 }}
+              whileTap={{ scale: 0.95 }}
               onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+              className="flex-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
             >
               Cancel
             </motion.button>
             <motion.button
               type="submit"
-              whileTap={{ scale: 0.94 }}
-              className="flex-1 py-2.5 rounded-xl bg-[#23C15D] dark:bg-blue-600 text-white font-bold text-xs hover:bg-emerald-600 dark:hover:bg-blue-700 shadow-md transition cursor-pointer"
+              whileTap={{ scale: 0.95 }}
+              className="flex-1 py-2.5 rounded-2xl bg-[#22C55E] dark:bg-[#3B82F6] text-white font-semibold hover:bg-emerald-600 dark:hover:bg-blue-500 shadow-md transition cursor-pointer"
             >
               Save Changes
             </motion.button>

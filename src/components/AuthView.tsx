@@ -259,7 +259,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                             prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]
                           );
                         }}
-                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer ${
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
                           selected
                             ? 'bg-emerald-50 dark:bg-blue-950 border-emerald-400 dark:border-blue-500 text-emerald-800 dark:text-blue-200'
                             : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
