@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Habit, HabitCategory, HabitCompletionEvent, IdentityEvidence, FrictionAudit, MomentumEvent } from '../types';
-import { addDaysIso, getTodayDayIndex, getWeekDates, getWeekdayShort, toISODate } from '../utils/dates';
+import { addDaysIso, endOfIsoDate, getTodayDayIndex, getWeekDates, getWeekdayShort, toISODate } from '../utils/dates';
 import { countMomentumCompletedActions } from '../lib/supabase';
 import {
   activeKeystoneHabits,
@@ -13,7 +13,8 @@ import { readSleepSnapshot, sleepRingRate, SLEEP_TARGET_HOURS, type SleepSnapsho
 import { buildReportCsv, downloadCsvFile } from '../lib/reportExport';
 import { FriendsFeed } from './FriendsFeed';
 import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
-import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
+import { calculateMomentumScore, eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
+import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from '../utils/schedule';
 
 interface ReportViewProps {
   habits: Habit[];
@@ -47,22 +48,25 @@ function formatKeystoneCorrelation(correlation: KeystoneCorrelation): string {
   return `On days you complete ${correlation.habitName}, overall momentum is unchanged`;
 }
 
-function categoryDayScore(habit: Habit, dayIndex: number): number {
-  const scheduled =
-    !habit.scheduledDays || habit.scheduledDays.length === 0 || habit.scheduledDays.includes(dayIndex);
-  if (!scheduled) return -1;
+function categoryDayScore(habit: Habit, dayIndex: number, origin: Date = new Date()): number {
+  if (!isHabitScheduledOnDayIndex(habit, dayIndex, origin)) return -1;
   if (!habit.days?.[dayIndex]) return 0;
   return habit.microDays?.[dayIndex] ? 0.5 : 1;
 }
 
-function categoryRateFromDays(habits: Habit[], category: HabitCategory, dayIndexes: number[]): number {
+function categoryRateFromDays(
+  habits: Habit[],
+  category: HabitCategory,
+  dayIndexes: number[],
+  origin: Date = new Date()
+): number {
   const list = habits.filter((habit) => habit.category === category);
   if (list.length === 0 || dayIndexes.length === 0) return 0;
   let score = 0;
   let total = 0;
   list.forEach((habit) => {
     dayIndexes.forEach((index) => {
-      const value = categoryDayScore(habit, index);
+      const value = categoryDayScore(habit, index, origin);
       if (value < 0) return;
       total += 1;
       score += value;
@@ -90,6 +94,7 @@ function categoryRateFromEvents(
     let weightedSum = 0;
     let weightTotal = 0;
     list.forEach((habit) => {
+      if (!isHabitScheduledOnIso(habit, iso)) return;
       const weight = habitWeight(habit);
       weightTotal += weight;
       const best = events.reduce((max, event) => {
@@ -113,6 +118,19 @@ function createLinePath(points: Array<{ x: number; y: number }>): string {
     d += ` C ${midX} ${p0.y}, ${midX} ${p1.y}, ${p1.x} ${p1.y}`;
   }
   return d;
+}
+
+function graphXs(count: number, left = 24, right = 208): number[] {
+  if (count <= 1) return [(left + right) / 2];
+  return Array.from({ length: count }, (_, i) => left + (i / (count - 1)) * (right - left));
+}
+
+function isoRangeInclusive(startIso: string, endIso: string): string[] {
+  const dates: string[] = [];
+  for (let cursor = startIso; cursor <= endIso; cursor = addDaysIso(cursor, 1)) {
+    dates.push(cursor);
+  }
+  return dates;
 }
 
 export const ReportView: React.FC<ReportViewProps> = ({
@@ -210,34 +228,83 @@ export const ReportView: React.FC<ReportViewProps> = ({
   }, [habits, momentumEvents, timeFilter, todayIndex, todayIso, sleep]);
 
   const lineGraphData = useMemo(() => {
-    const xs = [24, 54, 84, 114, 144, 176, 208];
-    const weekIso = getWeekDates().map((date) => toISODate(date));
     const toPoint = (pct: number, x: number, yMin: number, yMax: number) => ({
       x,
       y: Math.round((yMax - Math.min(1, Math.max(0, pct)) * (yMax - yMin)) * 10) / 10,
     });
-
-    const workPoints = xs.map((x, dayIdx) =>
-      toPoint(categoryRateFromDays(habits, 'work', [dayIdx]), x, 48, 122)
-    );
-    const selfPoints = xs.map((x, dayIdx) =>
-      toPoint(categoryRateFromDays(habits, 'self_improvement', [dayIdx]), x, 72, 140)
-    );
     const sleepByIso = new Map<string, number>(sleep.dailyHours.map((row) => [row.isoDate, row.hours]));
-    const sleepPoints = xs.map((x, dayIdx) => {
-      const hours = sleepByIso.get(weekIso[dayIdx] ?? '') ?? 0;
-      return toPoint(hours / SLEEP_TARGET_HOURS, x, 22, 98);
-    });
+    const weekDates = getWeekDates();
+    const weekIso = weekDates.map((date) => toISODate(date));
+
+    let labels: string[] = [];
+    let workRates: number[] = [];
+    let selfRates: number[] = [];
+    let sleepRates: number[] = [];
+    let momentumRates: number[] = [];
+    let title = 'Line graph';
+
+    if (timeFilter === 'today') {
+      title = 'Today';
+      const yesterdayIdx = Math.max(0, todayIndex - 1);
+      const todaySlots = yesterdayIdx === todayIndex ? [todayIndex] : [yesterdayIdx, todayIndex];
+      labels = todaySlots.map((idx) => (idx === todayIndex ? 'Today' : getWeekdayShort(idx)));
+      workRates = todaySlots.map((idx) => categoryRateFromDays(habits, 'work', [idx]));
+      selfRates = todaySlots.map((idx) => categoryRateFromDays(habits, 'self_improvement', [idx]));
+      sleepRates = todaySlots.map((idx) => {
+        const iso = weekIso[idx] ?? todayIso;
+        if (idx === todayIndex && sleep.todayHours != null) return sleep.todayHours / SLEEP_TARGET_HOURS;
+        return (sleepByIso.get(iso) ?? 0) / SLEEP_TARGET_HOURS;
+      });
+    } else if (timeFilter === 'week') {
+      title = 'This week';
+      labels = weekDates.map((_, dayIdx) => getWeekdayShort(dayIdx).slice(0, 1));
+      workRates = weekDates.map((_, dayIdx) => categoryRateFromDays(habits, 'work', [dayIdx]));
+      selfRates = weekDates.map((_, dayIdx) => categoryRateFromDays(habits, 'self_improvement', [dayIdx]));
+      sleepRates = weekIso.map((iso) => (sleepByIso.get(iso) ?? 0) / SLEEP_TARGET_HOURS);
+    } else if (timeFilter === 'month') {
+      title = 'Last 30 days';
+      const monthIsos = isoRangeInclusive(addDaysIso(todayIso, -29), todayIso);
+      labels = monthIsos.map((iso, idx) => (idx % 6 === 0 || idx === monthIsos.length - 1 ? iso.slice(5) : ''));
+      workRates = monthIsos.map((iso) => categoryRateFromEvents(habits, momentumEvents, 'work', iso, iso));
+      selfRates = monthIsos.map((iso) =>
+        categoryRateFromEvents(habits, momentumEvents, 'self_improvement', iso, iso)
+      );
+      sleepRates = monthIsos.map((iso) => (sleepByIso.get(iso) ?? 0) / SLEEP_TARGET_HOURS);
+    } else {
+      title = 'Momentum';
+      const monthIsos = isoRangeInclusive(addDaysIso(todayIso, -29), todayIso);
+      labels = monthIsos.map((iso, idx) => (idx % 6 === 0 || idx === monthIsos.length - 1 ? iso.slice(5) : ''));
+      momentumRates = monthIsos.map(
+        (iso) => calculateMomentumScore(momentumEvents, { asOf: endOfIsoDate(iso), habits }) / 100
+      );
+      workRates = monthIsos.map((iso) => categoryRateFromEvents(habits, momentumEvents, 'work', iso, iso));
+      selfRates = monthIsos.map((iso) =>
+        categoryRateFromEvents(habits, momentumEvents, 'self_improvement', iso, iso)
+      );
+      sleepRates = monthIsos.map((iso) => (sleepByIso.get(iso) ?? 0) / SLEEP_TARGET_HOURS);
+    }
+
+    const xs = graphXs(Math.max(labels.length, 1));
+    const workPoints = xs.map((x, idx) => toPoint(workRates[idx] ?? 0, x, 48, 122));
+    const selfPoints = xs.map((x, idx) => toPoint(selfRates[idx] ?? 0, x, 72, 140));
+    const sleepPoints = xs.map((x, idx) => toPoint(sleepRates[idx] ?? 0, x, 22, 98));
+    const momentumPoints = xs.map((x, idx) => toPoint(momentumRates[idx] ?? 0, x, 36, 132));
 
     return {
+      title,
+      labels,
+      xs,
       workPoints,
       selfPoints,
       sleepPoints,
+      momentumPoints,
+      showMomentum: timeFilter === 'momentum',
       workPath: createLinePath(workPoints),
       selfPath: createLinePath(selfPoints),
       sleepPath: createLinePath(sleepPoints),
+      momentumPath: createLinePath(momentumPoints),
     };
-  }, [habits, sleep.dailyHours]);
+  }, [habits, sleep.dailyHours, sleep.todayHours, timeFilter, todayIndex, todayIso, momentumEvents]);
 
   const frictionWindowMs =
     timeFilter === 'today' ? 1 : timeFilter === 'month' ? 30 : 7;
@@ -372,7 +439,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
         }
       />
 
-      <section className="relative w-full flex flex-col items-center justify-center">
+      <section data-tour="report-rings" className="relative w-full flex flex-col items-center justify-center">
         <div className="relative w-full max-w-[340px] h-[210px] flex items-center justify-center">
           <svg className="w-full h-full overflow-visible" viewBox="0 0 320 220">
             <circle cx={cx} cy={cy} r={80} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
@@ -439,39 +506,78 @@ export const ReportView: React.FC<ReportViewProps> = ({
         )}
       </section>
 
+      <section data-tour="report-momentum" className="bg-[#EFF3F6] dark:bg-slate-800/80 p-1 rounded-2xl flex items-center">
+        {(['today', 'week', 'month', 'momentum'] as TimeFilter[]).map((tab) => {
+          const isActive = timeFilter === tab;
+          const label = tab === 'today' ? 'Today' : tab === 'week' ? 'Week' : tab === 'month' ? 'Month' : '⚡ Momentum';
+          return (
+            <button
+              key={tab}
+              id={`filter-tab-${tab}`}
+              type="button"
+              onClick={() => setTimeFilter(tab)}
+              className={`flex-1 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-xl transition-all duration-200 cursor-pointer text-center ${
+                isActive
+                  ? 'bg-white dark:bg-blue-600 text-emerald-800 dark:text-white shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </section>
+
       <section>
         {graphMode === 'line' ? (
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-2">
             <div className="flex items-center justify-between text-xs px-1">
-              <span className="font-bold text-slate-800 dark:text-white">Line graph</span>
+              <span className="font-bold text-slate-800 dark:text-white">{lineGraphData.title}</span>
               <span className="text-emerald-700 dark:text-blue-400 font-bold tabular-nums">
-                {Math.round(
-                  ((hasSleepData ? categoryStats.work + categoryStats.self + categoryStats.sleep : categoryStats.work + categoryStats.self) /
-                    (hasSleepData ? 3 : 2)) *
-                    100
-                )}
-                %
+                {timeFilter === 'momentum'
+                  ? momentumScore
+                  : Math.round(
+                      ((hasSleepData ? categoryStats.work + categoryStats.self + categoryStats.sleep : categoryStats.work + categoryStats.self) /
+                        (hasSleepData ? 3 : 2)) *
+                        100
+                    )}
+                {timeFilter === 'momentum' ? '' : '%'}
               </span>
             </div>
-            <svg className="w-full h-[155px] overflow-visible" viewBox="0 0 375 162">
+            <svg key={timeFilter} className="w-full h-[155px] overflow-visible" viewBox="0 0 375 162">
               <line x1="16" y1="36" x2="216" y2="36" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
               <line x1="16" y1="78" x2="216" y2="78" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
               <line x1="16" y1="120" x2="216" y2="120" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
-              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, idx) => (
-                <text key={`${day}-${idx}`} x={[24, 54, 84, 114, 144, 176, 208][idx]} y={155} textAnchor="middle" fill={isDark ? '#64748b' : '#94A3B8'} className="text-[9.5px] font-bold">
-                  {day}
+              {lineGraphData.labels.map((label, idx) => (
+                <text
+                  key={`${label}-${idx}`}
+                  x={lineGraphData.xs[idx]}
+                  y={155}
+                  textAnchor="middle"
+                  fill={isDark ? '#64748b' : '#94A3B8'}
+                  className="text-[9.5px] font-bold"
+                >
+                  {label}
                 </text>
               ))}
-              {hasSleepData && (
+              {hasSleepData && !lineGraphData.showMomentum && (
                 <path d={lineGraphData.sleepPath} fill="none" stroke={isDark ? '#1d4ed8' : '#166534'} strokeWidth="2.5" strokeLinecap="round" />
               )}
-              <path d={lineGraphData.workPath} fill="none" stroke={isDark ? '#3b82f6' : '#23C15D'} strokeWidth="2.5" strokeLinecap="round" />
-              <path d={lineGraphData.selfPath} fill="none" stroke={isDark ? '#93c5fd' : '#4ADE80'} strokeWidth="2.5" strokeLinecap="round" />
+              {lineGraphData.showMomentum ? (
+                <path d={lineGraphData.momentumPath} fill="none" stroke={isDark ? '#60a5fa' : '#15803d'} strokeWidth="2.8" strokeLinecap="round" />
+              ) : (
+                <>
+                  <path d={lineGraphData.workPath} fill="none" stroke={isDark ? '#3b82f6' : '#23C15D'} strokeWidth="2.5" strokeLinecap="round" />
+                  <path d={lineGraphData.selfPath} fill="none" stroke={isDark ? '#93c5fd' : '#4ADE80'} strokeWidth="2.5" strokeLinecap="round" />
+                </>
+              )}
             </svg>
           </div>
         ) : (
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-3">
-            <span className="px-1 text-xs font-bold text-slate-800 dark:text-white">Bar breakdown</span>
+            <span className="px-1 text-xs font-bold text-slate-800 dark:text-white">
+              {timeFilter === 'momentum' ? 'Momentum mix' : `${lineGraphData.title} breakdown`}
+            </span>
             <div className={`grid gap-3 ${hasSleepData ? 'grid-cols-3' : 'grid-cols-2'}`}>
               {barSeries.map((col) => {
                 const height = Math.round(col.rate * 110);
@@ -483,7 +589,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                     <div className="h-[120px] w-full flex items-end justify-center">
                       <div
                         style={{ height: `${Math.max(4, height)}px` }}
-                        className="w-8 rounded-t-lg bg-[#23C15D] dark:bg-blue-500"
+                        className="w-8 rounded-t-lg bg-[#23C15D] dark:bg-blue-500 transition-[height] duration-300 ease-out"
                       />
                     </div>
                     <span className="mt-2 text-[11.5px] font-semibold text-slate-700 dark:text-slate-300">{col.label}</span>
@@ -512,6 +618,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
         <button
           type="button"
           id="identity-evidence-ledger-card"
+          data-tour="report-ledger"
           onClick={onOpenLedger}
           className="w-full bg-white dark:bg-slate-900 rounded-2xl p-3.5 px-4 border border-slate-100 dark:border-slate-800 shadow-xs flex items-center justify-between cursor-pointer hover:border-slate-200 dark:hover:border-slate-700 transition"
         >
@@ -573,28 +680,6 @@ export const ReportView: React.FC<ReportViewProps> = ({
         )}
       </section>
 
-      <section className="bg-[#EFF3F6] dark:bg-slate-800/80 p-1 rounded-2xl flex items-center">
-        {(['today', 'week', 'month', 'momentum'] as TimeFilter[]).map((tab) => {
-          const isActive = timeFilter === tab;
-          const label = tab === 'today' ? 'Today' : tab === 'week' ? 'Week' : tab === 'month' ? 'Month' : '⚡ Momentum';
-          return (
-            <button
-              key={tab}
-              id={`filter-tab-${tab}`}
-              type="button"
-              onClick={() => setTimeFilter(tab)}
-              className={`flex-1 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-xl transition-all cursor-pointer text-center ${
-                isActive
-                  ? 'bg-white dark:bg-blue-600 text-emerald-800 dark:text-white shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </section>
-
       <section className="bg-white dark:bg-slate-900 rounded-2xl p-4.5 border border-slate-100 dark:border-slate-800 shadow-xs space-y-4">
         <div className="flex items-center space-x-2.5">
           <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-blue-950/60 flex items-center justify-center text-emerald-800 dark:text-blue-400 shrink-0">
@@ -618,13 +703,14 @@ export const ReportView: React.FC<ReportViewProps> = ({
         {timeFilter === 'momentum' && (
           <div className="grid grid-cols-7 gap-1.5 text-center">
             {Array.from({ length: 7 }, (_, i) => {
-              const completedCount = habits.filter((habit) => habit.days?.[i]).length;
-              const rate = habits.length > 0 ? completedCount / habits.length : 0;
+              const scheduled = habits.filter((habit) => !habit.archived && isHabitScheduledOnDayIndex(habit, i));
+              const completedCount = scheduled.filter((habit) => habit.days?.[i]).length;
+              const rate = scheduled.length > 0 ? completedCount / scheduled.length : null;
               return (
                 <div key={i} className="flex flex-col items-center">
                   <span className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1">{getWeekdayShort(i)}</span>
                   <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[11px] font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
-                    {habits.length === 0 ? '—' : `${Math.round(rate * 100)}%`}
+                    {rate == null ? '—' : `${Math.round(rate * 100)}%`}
                   </div>
                 </div>
               );

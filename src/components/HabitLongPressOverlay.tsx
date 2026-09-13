@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
+import { isHabitScheduledOnDayIndex } from '../utils/schedule';
 
 interface HabitLongPressOverlayProps {
   habit: Habit;
@@ -96,7 +97,7 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
           }`}
           onClick={(e) => e.stopPropagation()}
         >
-          {onMarkMissed && !isTodayDone && (
+          {onMarkMissed && !isTodayDone && isHabitScheduledOnDayIndex(habit, todayIndex) && (
             <button
               type="button"
               id={`habit-${habit.id}-missed-button`}

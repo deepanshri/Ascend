@@ -44,11 +44,14 @@ export function rowToHabit(row: Record<string, unknown>): Habit | null {
     tags: Array.isArray(row.tags) ? row.tags.map(String) : [toDbCategory(fromDbCategory(row.category))],
     priority: (row.priority as Habit['priority']) || undefined,
     scheduleType: (row.schedule_type as Habit['scheduleType']) || (row.scheduleType as Habit['scheduleType']) || undefined,
-    scheduledDays: Array.isArray(row.scheduled_days)
-      ? row.scheduled_days.map(Number)
-      : Array.isArray(row.scheduledDays)
-        ? row.scheduledDays.map(Number)
-        : undefined,
+    scheduledDays: (() => {
+      const raw = Array.isArray(row.scheduled_days)
+        ? row.scheduled_days.map(Number)
+        : Array.isArray(row.scheduledDays)
+          ? row.scheduledDays.map(Number)
+          : [];
+      return raw.length > 0 ? raw : undefined;
+    })(),
     intervalDays: row.interval_days != null ? Number(row.interval_days) : undefined,
     weeklyTargetCount: row.weekly_target_count != null ? Number(row.weekly_target_count) : undefined,
     isKeystone: Boolean(row.is_keystone ?? row.isKeystone),

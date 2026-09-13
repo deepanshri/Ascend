@@ -231,6 +231,107 @@ export async function respondToFriendRequest(edgeId: string, status: 'accepted' 
   }
 }
 
+/** Cancel an outgoing pending request or remove an accepted friendship. RLS already allows either party to delete. */
+export async function removeFriendship(edgeId: string): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from('friends').delete().eq('id', edgeId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export interface ReceivedAffirmationGlow {
+  id: string;
+  fromUserId: string;
+  fromName: string;
+  eventId: string;
+  createdAt: string;
+}
+
+export async function fetchSentGlowEventIds(userId: string): Promise<Set<string>> {
+  const sent = new Set<string>();
+  if (!canUse(userId) || !supabase) return sent;
+  try {
+    const { data, error } = await supabase
+      .from('affirmation_glows')
+      .select('event_id')
+      .eq('from_user_id', userId);
+    if (error) return sent;
+    (data || []).forEach((row) => {
+      if (row.event_id) sent.add(String(row.event_id));
+    });
+  } catch {
+    // Table missing until 008_affirmation_glows.sql is applied.
+  }
+  return sent;
+}
+
+export async function fetchReceivedGlows(userId: string): Promise<ReceivedAffirmationGlow[]> {
+  if (!canUse(userId) || !supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('affirmation_glows')
+      .select('id, from_user_id, event_id, created_at')
+      .eq('to_user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (error || !data) return [];
+    const fromIds = Array.from(new Set(data.map((row) => String(row.from_user_id || '')).filter(Boolean)));
+    const names = await loadProfileMap(fromIds);
+    return data.map((row) => ({
+      id: String(row.id),
+      fromUserId: String(row.from_user_id),
+      fromName: names.get(String(row.from_user_id)) || 'A friend',
+      eventId: String(row.event_id || ''),
+      createdAt: String(row.created_at || ''),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function sendAffirmationGlow(
+  fromUserId: string,
+  toUserId: string,
+  eventId: string
+): Promise<{ ok: boolean; message: string }> {
+  if (!canUse(fromUserId) || !supabase) return { ok: false, message: 'Sign in to send a glow.' };
+  if (fromUserId === toUserId) return { ok: false, message: 'You cannot glow your own update.' };
+  try {
+    const { error } = await supabase.from('affirmation_glows').insert({
+      from_user_id: fromUserId,
+      to_user_id: toUserId,
+      event_id: eventId,
+    });
+    if (error) {
+      if (String(error.message || '').toLowerCase().includes('duplicate') || error.code === '23505') {
+        return { ok: true, message: 'Glow already sent.' };
+      }
+      console.warn('affirmation glow failed:', error.message);
+      return { ok: false, message: 'Could not send glow.' };
+    }
+    return { ok: true, message: 'Affirmation Glow sent.' };
+  } catch {
+    return { ok: false, message: 'Could not send glow.' };
+  }
+}
+
+export async function retractAffirmationGlow(fromUserId: string, eventId: string): Promise<boolean> {
+  if (!canUse(fromUserId) || !supabase) return false;
+  try {
+    const { error } = await supabase
+      .from('affirmation_glows')
+      .delete()
+      .eq('from_user_id', fromUserId)
+      .eq('event_id', eventId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 async function loadHabitNames(friendIds: string[]): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   if (!supabase || friendIds.length === 0) return names;

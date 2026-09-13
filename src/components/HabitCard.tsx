@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
+import { isHabitScheduledOnDayIndex } from '../utils/schedule';
 
 const SWIPE_AXIS_LOCK_PX = 10;
 const DOUBLE_TAP_MS = 250;
@@ -28,6 +29,8 @@ interface HabitCardProps {
   onOpenDeleteConfirm: (habit: Habit) => void;
   onToggleKeystone?: (habitId: string, next: boolean) => void;
   keystoneAtCap?: boolean;
+  keystoneBoosted?: boolean;
+  weekOrigin?: Date;
 }
 
 export const HabitCard: React.FC<HabitCardProps> = ({
@@ -49,6 +52,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   onOpenDeleteConfirm: _onOpenDeleteConfirm,
   onToggleKeystone,
   keystoneAtCap = false,
+  keystoneBoosted = false,
+  weekOrigin,
 }) => {
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -77,6 +82,9 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   gesturesLockedRef.current = gesturesLocked;
 
   const activeIndex = viewIndex ?? todayIndex;
+  const origin = weekOrigin ?? new Date();
+  const isScheduledOnActiveDay = isHabitScheduledOnDayIndex(habit, activeIndex, origin);
+  const isScheduledToday = isHabitScheduledOnDayIndex(habit, todayIndex, origin);
   const isTodayDone = Boolean(habit.days?.[activeIndex]);
   const isTodayMicro = Boolean(habit.microDays?.[activeIndex]);
   const isFallbackActiveToday = isFallbackActive && !isTodayDone;
@@ -390,6 +398,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       } else if (isFallbackActive) {
         // In fallback mode -> swiped left again to cancel fallback and return to normal!
         onToggleFallbackMode(habit.id);
+      } else if (!isScheduledToday) {
+        onNotify('Off day — fallback only on scheduled days');
       } else {
         // Normal -> switch to fallback mode (does NOT mark complete!)
         setCelebration('fallback');
@@ -561,6 +571,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                   ? 'shadow-sm border-amber-500 ring-1 ring-amber-500 bg-amber-100 dark:bg-amber-950'
                   : isFallbackActive && !isTodayDone
                   ? 'shadow-sm border-accent ring-1 ring-accent bg-accent-soft active:scale-[0.995]'
+                  : keystoneBoosted
+                  ? 'keystone-boost-glow bg-emerald-50/90 dark:bg-blue-950/40 active:scale-[0.995]'
                   : habit.isKeystone
                   ? 'shadow-sm border-accent ring-1 ring-accent active:scale-[0.995]'
                   : 'shadow-sm border-line active:scale-[0.995]'
@@ -602,6 +614,14 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                         K
                       </span>
                     )}
+                    {!isScheduledOnActiveDay && (
+                      <span
+                        title="Not scheduled on this day"
+                        className="shrink-0 text-[9px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1 py-0.5"
+                      >
+                        Off
+                      </span>
+                    )}
                   </div>
 
               {/* 7-Day Consistency Checkboxes */}
@@ -612,6 +632,20 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                   const isViewed = dayIdx === activeIndex;
                   const isMicro = habit.microDays?.[dayIdx];
                   const viewedRing = isViewed && !isToday ? 'ring-2 ring-amber-400/70 dark:ring-amber-400/50' : '';
+                  const isScheduled = isHabitScheduledOnDayIndex(habit, dayIdx, origin);
+
+                  if (!isScheduled) {
+                    return (
+                      <div
+                        key={dayIdx}
+                        id={`habit-${habit.id}-day-${dayIdx + 1}`}
+                        title={`Day ${dayIdx + 1}: Not scheduled`}
+                        className={`w-6 h-6 rounded-md flex items-center justify-center select-none cursor-default border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/40 ${viewedRing}`}
+                      >
+                        <span className="text-[8px] font-bold text-slate-300 dark:text-slate-600 leading-none">—</span>
+                      </div>
+                    );
+                  }
 
                   // 1. PAST DAYS (Locked history)
                   if (isPast) {

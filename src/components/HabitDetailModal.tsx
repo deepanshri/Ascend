@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Habit, HabitCategory, HabitPriority } from '../types';
 import { MAX_KEYSTONE_HABITS } from '../lib/keystone';
+import { normalizeScheduledDays, scheduleTypeFromDays } from '../utils/schedule';
+import { WeekdayScheduleChips } from './WeekdayScheduleChips';
 
 interface HabitDetailModalProps {
   habit: Habit | null;
@@ -28,6 +31,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   const [category, setCategory] = useState<HabitCategory>('self_improvement');
   const [isKeystone, setIsKeystone] = useState(false);
   const [keystoneWarning, setKeystoneWarning] = useState(false);
+  const [scheduledWeekdays, setScheduledWeekdays] = useState<number[]>([]);
 
   useEffect(() => {
     if (!habit || !isOpen) return;
@@ -38,11 +42,10 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
     setCategory(habit.category === 'work' ? 'work' : 'self_improvement');
     setIsKeystone(Boolean(habit.isKeystone));
     setKeystoneWarning(false);
+    setScheduledWeekdays(normalizeScheduledDays(habit.scheduledDays));
   }, [habit, isOpen]);
 
-  if (!isOpen || !habit) return null;
-
-  const othersAtCap = !habit.isKeystone && activeKeystoneCount >= MAX_KEYSTONE_HABITS;
+  const othersAtCap = Boolean(habit && !habit.isKeystone && activeKeystoneCount >= MAX_KEYSTONE_HABITS);
 
   const handleKeystoneToggle = () => {
     if (!isKeystone && othersAtCap) {
@@ -54,6 +57,8 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   };
 
   const handleSave = () => {
+    if (!habit) return;
+    const days = normalizeScheduledDays(scheduledWeekdays);
     onUpdateHabit({
       ...habit,
       name: name.trim() || habit.name,
@@ -63,23 +68,40 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
       tags: [category === 'work' ? 'W' : 'SI'],
       category,
       isKeystone: isKeystone && !othersAtCap,
+      scheduledDays: days,
+      scheduleType: scheduleTypeFromDays(days),
+      targetDaysPerWeek: days.length,
     });
     onClose();
   };
 
   const handleDelete = () => {
+    if (!habit) return;
     onDeleteHabit(habit.id);
     onClose();
   };
 
   return (
-    <div
+    <AnimatePresence>
+      {isOpen && habit && (
+    <motion.div
       id="habit-detail-modal-overlay"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-xs"
     >
-      <div
+      <motion.div
         id="habit-detail-modal-card"
-        className="relative w-full max-w-[380px] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col animate-in zoom-in-95 duration-200"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 16 }}
+        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+        className="relative w-full max-w-[380px] max-h-[min(92dvh,740px)] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-y-auto"
       >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -220,6 +242,12 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
             </div>
           </div>
 
+          <WeekdayScheduleChips
+            selected={scheduledWeekdays}
+            onChange={setScheduledWeekdays}
+            hint="Off days skip decay and never count as a miss."
+          />
+
           <div>
             <div className="flex items-center justify-between">
               <label htmlFor="edit-keystone-toggle" className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
@@ -279,7 +307,9 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications, type LocalNotificationSchema } from '@capacitor/local-notifications';
 import { Preferences } from '@capacitor/preferences';
 import { Habit, StandaloneReminder } from '../types';
+import { isHabitScheduledOnDayIndex } from '../utils/schedule';
 
 export type NotificationWindowKey = 'morning' | 'afternoon' | 'night';
 
@@ -102,14 +103,15 @@ function activeHabits(habits: Habit[]): Habit[] {
 }
 
 function remainingToday(habits: Habit[], todayIndex: number): { remaining: number; total: number } {
-  const scheduled = activeHabits(habits);
+  const scheduled = activeHabits(habits).filter((habit) => isHabitScheduledOnDayIndex(habit, todayIndex));
   const remaining = scheduled.filter((habit) => !habit.days?.[todayIndex]).length;
   return { remaining, total: scheduled.length };
 }
 
-function morningCopy(habits: Habit[]): { title: string; body: string } {
+function morningCopy(habits: Habit[], todayIndex: number): { title: string; body: string } {
+  const dueToday = activeHabits(habits).filter((habit) => isHabitScheduledOnDayIndex(habit, todayIndex));
   const featured =
-    activeHabits(habits).find((habit) => habit.priority === 'high') || activeHabits(habits)[0];
+    dueToday.find((habit) => habit.priority === 'high') || dueToday[0] || activeHabits(habits)[0];
   const identity = featured?.identityStatement?.trim();
   const name = featured?.name?.trim();
 
@@ -216,7 +218,7 @@ export async function schedulePsychologyNotifications(input: PsychologyScheduleI
   await ensureChannel();
 
   const { remaining, total } = remainingToday(input.habits, input.todayIndex);
-  const morning = morningCopy(input.habits);
+  const morning = morningCopy(input.habits, input.todayIndex);
   const afternoon = afternoonCopy(remaining, total, input.momentumScore);
   const night = nightCopy(remaining, input.momentumScore);
 

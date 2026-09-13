@@ -208,7 +208,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       {toastMessage && (
         <div
           role="status"
-          className="sticky top-2 z-50 mx-auto w-fit px-4 py-1.5 rounded-full text-[12px] font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white border-2 border-[#23C15D] dark:border-blue-500 shadow-xl animate-in fade-in flex items-center space-x-2"
+          className="sticky top-2 z-50 mx-auto w-fit px-4 py-1.5 rounded-2xl text-[12px] font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white border-2 border-[#23C15D] dark:border-blue-500 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200 flex items-center space-x-2"
         >
           <span className="text-[#23C15D] font-bold">✓</span>
           <span>{toastMessage}</span>
@@ -361,7 +361,10 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       </section>
 
       {/* CARD 3: PROTECTION MODES */}
-      <section className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm space-y-3.5">
+      <section
+        data-tour="personal-protection"
+        className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm space-y-3.5"
+      >
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center">
             <Shield className="w-5 h-5" />
@@ -473,7 +476,10 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       </section>
 
       {/* CARD 4: ADD A FRIEND */}
-      <section className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm flex items-center justify-between">
+      <section
+        data-tour="personal-friends"
+        className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm flex items-center justify-between"
+      >
         <div className="flex items-center space-x-3 min-w-0 pr-2">
           <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center shrink-0">
             <Users className="w-5 h-5" />

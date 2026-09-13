@@ -1,152 +1,144 @@
+-- Fix existing reminders table missing columns before creating indexes
+ALTER TABLE IF EXISTS public.reminders 
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS notification_id_1 INTEGER,
+  ADD COLUMN IF NOT EXISTS notification_id_2 INTEGER,
+  ADD COLUMN IF NOT EXISTS days_of_week INTEGER[] NOT NULL DEFAULT '{}'::INTEGER[],
+  ADD COLUMN IF NOT EXISTS alert_10min BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS alert_exact BOOLEAN NOT NULL DEFAULT TRUE;
+
 -- Append-only momentum event log.
--- Paste this into the Supabase SQL editor (or run the matching migration).
--- Every swipe inserts a new row. Historical rows are never updated or deleted.
---
--- habit_id is stored as text so UUID habit ids and legacy seed ids ('habit-1')
--- both round-trip. User-created habits use crypto.randomUUID().
-
-create table if not exists public.momentum_events (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users (id) on delete cascade,
-  habit_id text not null,
-  event_type text not null check (event_type in ('full', 'fallback', 'missed')),
-  weight double precision not null,
-  "timestamp" timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS public.momentum_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
+  habit_id TEXT NOT NULL,
+  event_type TEXT NOT NULL CHECK (event_type IN ('full', 'fallback', 'missed')),
+  weight DOUBLE PRECISION NOT NULL,
+  "timestamp" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-create index if not exists momentum_events_user_time_idx
-  on public.momentum_events (user_id, "timestamp");
+CREATE INDEX IF NOT EXISTS momentum_events_user_time_idx
+  ON public.momentum_events (user_id, "timestamp");
 
-create index if not exists momentum_events_user_type_idx
-  on public.momentum_events (user_id, event_type);
+CREATE INDEX IF NOT EXISTS momentum_events_user_type_idx
+  ON public.momentum_events (user_id, event_type);
 
-alter table public.momentum_events enable row level security;
+ALTER TABLE public.momentum_events ENABLE ROW LEVEL SECURITY;
 
-drop policy if exists momentum_events_select_own on public.momentum_events;
-create policy momentum_events_select_own
-  on public.momentum_events
-  for select
-  using (auth.uid() = user_id);
+DROP POLICY IF EXISTS momentum_events_select_own ON public.momentum_events;
+CREATE POLICY momentum_events_select_own
+  ON public.momentum_events
+  FOR SELECT
+  USING (auth.uid() = user_id);
 
-drop policy if exists momentum_events_insert_own on public.momentum_events;
-create policy momentum_events_insert_own
-  on public.momentum_events
-  for insert
-  with check (auth.uid() = user_id);
+DROP POLICY IF EXISTS momentum_events_insert_own ON public.momentum_events;
+CREATE POLICY momentum_events_insert_own
+  ON public.momentum_events
+  FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
 
--- No UPDATE / DELETE policies: authenticated clients cannot overwrite history.
-revoke update, delete on public.momentum_events from anon, authenticated;
+REVOKE UPDATE, DELETE ON public.momentum_events FROM anon, authenticated;
 
-create or replace function public.prevent_momentum_events_mutation()
-returns trigger
-language plpgsql
-as $$
-begin
-  raise exception 'momentum_events is append-only';
-end;
+CREATE OR REPLACE FUNCTION public.prevent_momentum_events_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'momentum_events is append-only';
+END;
 $$;
 
-drop trigger if exists momentum_events_no_update on public.momentum_events;
-create trigger momentum_events_no_update
-  before update on public.momentum_events
-  for each row
-  execute procedure public.prevent_momentum_events_mutation();
+DROP TRIGGER IF EXISTS momentum_events_no_update ON public.momentum_events;
+CREATE TRIGGER momentum_events_no_update
+  BEFORE UPDATE ON public.momentum_events
+  FOR EACH ROW
+  EXECUTE PROCEDURE public.prevent_momentum_events_mutation();
 
-drop trigger if exists momentum_events_no_delete on public.momentum_events;
-create trigger momentum_events_no_delete
-  before delete on public.momentum_events
-  for each row
-  execute procedure public.prevent_momentum_events_mutation();
+DROP TRIGGER IF EXISTS momentum_events_no_delete ON public.momentum_events;
+CREATE TRIGGER momentum_events_no_delete
+  BEFORE DELETE ON public.momentum_events
+  FOR EACH ROW
+  EXECUTE PROCEDURE public.prevent_momentum_events_mutation();
 
--- Cross-device reminder schedules (last-write-wins on updated_at).
--- Native Capacitor ids: notification_id_1 = 10 minutes prior, notification_id_2 = exact time.
-
-create table if not exists public.reminders (
-  id text primary key,
-  user_id uuid not null references auth.users (id) on delete cascade,
-  habit_id text,
-  title text not null,
-  date date not null,
-  target_time time,
-  days_of_week integer[] not null default '{}'::integer[],
-  is_enabled boolean not null default true,
-  notification_id_1 integer,
-  notification_id_2 integer,
-  notes text,
-  completed boolean not null default false,
-  deleted boolean not null default false,
-  alert_10min boolean not null default true,
-  alert_exact boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint reminders_days_of_week_valid check (
-    days_of_week <@ array[0, 1, 2, 3, 4, 5, 6]::integer[]
-  )
+-- Reminders Table Definition
+CREATE TABLE IF NOT EXISTS public.reminders (
+  id TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
+  habit_id TEXT,
+  title TEXT NOT NULL,
+  date DATE NOT NULL,
+  target_time TIME,
+  days_of_week INTEGER[] NOT NULL DEFAULT '{}'::INTEGER[],
+  is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  notification_id_1 INTEGER,
+  notification_id_2 INTEGER,
+  notes TEXT,
+  completed BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  alert_10min BOOLEAN NOT NULL DEFAULT TRUE,
+  alert_exact BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-create index if not exists reminders_user_updated_idx
-  on public.reminders (user_id, updated_at desc);
+CREATE INDEX IF NOT EXISTS reminders_user_updated_idx
+  ON public.reminders (user_id, updated_at DESC);
 
-alter table public.reminders enable row level security;
+ALTER TABLE public.reminders ENABLE ROW LEVEL SECURITY;
 
-drop policy if exists reminders_select_own on public.reminders;
-create policy reminders_select_own
-  on public.reminders
-  for select
-  using (auth.uid() = user_id);
+DROP POLICY IF EXISTS reminders_select_own ON public.reminders;
+CREATE POLICY reminders_select_own
+  ON public.reminders
+  FOR SELECT
+  USING (auth.uid() = user_id);
 
-drop policy if exists reminders_insert_own on public.reminders;
-create policy reminders_insert_own
-  on public.reminders
-  for insert
-  with check (auth.uid() = user_id);
+DROP POLICY IF EXISTS reminders_insert_own ON public.reminders;
+CREATE POLICY reminders_insert_own
+  ON public.reminders
+  FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
 
-drop policy if exists reminders_update_own on public.reminders;
-create policy reminders_update_own
-  on public.reminders
-  for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+DROP POLICY IF EXISTS reminders_update_own ON public.reminders;
+CREATE POLICY reminders_update_own
+  ON public.reminders
+  FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
-drop policy if exists reminders_delete_own on public.reminders;
-create policy reminders_delete_own
-  on public.reminders
-  for delete
-  using (auth.uid() = user_id);
+DROP POLICY IF EXISTS reminders_delete_own ON public.reminders;
+CREATE POLICY reminders_delete_own
+  ON public.reminders
+  FOR DELETE
+  USING (auth.uid() = user_id);
 
-grant select, insert, update, delete on public.reminders to authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.reminders TO authenticated;
 
--- Auto-confirm Auth users so a valid email + password creates a usable account.
-update auth.users
-set email_confirmed_at = coalesce(email_confirmed_at, now())
-where email_confirmed_at is null;
+-- Auto-confirm Auth Users
+UPDATE auth.users
+SET email_confirmed_at = COALESCE(email_confirmed_at, NOW())
+WHERE email_confirmed_at IS NULL;
 
-create or replace function public.auto_confirm_auth_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = auth
-as $$
-begin
-  new.email_confirmed_at := coalesce(new.email_confirmed_at, now());
-  return new;
-end;
+CREATE OR REPLACE FUNCTION public.auto_confirm_auth_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = auth
+AS $$
+BEGIN
+  new.email_confirmed_at := COALESCE(new.email_confirmed_at, NOW());
+  RETURN new;
+END;
 $$;
 
-drop trigger if exists auto_confirm_auth_user on auth.users;
-create trigger auto_confirm_auth_user
-  before insert on auth.users
-  for each row
-  execute procedure public.auto_confirm_auth_user();
+DROP TRIGGER IF EXISTS auto_confirm_auth_user ON auth.users;
+CREATE TRIGGER auto_confirm_auth_user
+  BEFORE INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE PROCEDURE public.auto_confirm_auth_user();
 
-alter table if exists public.habit_logs
-  add column if not exists friction_reason text;
+-- Extra Column Fixes
+ALTER TABLE IF EXISTS public.habit_logs
+  ADD COLUMN IF NOT EXISTS friction_reason TEXT;
 
-alter table if exists public.habits
-  add column if not exists is_keystone boolean not null default false;
-
--- Active habit cap (20). Apply supabase/migrations/007_habits_active_cap.sql.
-
--- Friends / peer accountability. Apply supabase/migrations/006_friends.sql
--- (public.friends + profile search + accepted-friend momentum_events reads).
-
+ALTER TABLE IF EXISTS public.habits
+  ADD COLUMN IF NOT EXISTS is_keystone BOOLEAN NOT NULL DEFAULT FALSE;

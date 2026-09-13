@@ -47,7 +47,7 @@ export interface Habit {
   tags?: string[];
   priority?: HabitPriority;
   scheduleType?: ScheduleType;
-  scheduledDays?: number[]; // [0, 2, 4] for Mon/Wed/Fri (0 = Day 1 ... 6 = Day 7)
+  scheduledDays?: number[]; // Monday-first weekdays: [0, 2, 4] = Mon/Wed/Fri. Empty/missing = every day.
   intervalDays?: number; // every X days
   weeklyTargetCount?: number; // X times per week
   isKeystone?: boolean;

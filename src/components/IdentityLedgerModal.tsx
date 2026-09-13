@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { IdentityEvidence, HabitCategory } from '../types';
 
 interface IdentityLedgerModalProps {
@@ -21,8 +22,6 @@ export const IdentityLedgerModal: React.FC<IdentityLedgerModalProps> = ({
   const [newHabit, setNewHabit] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
-  if (!isOpen) return null;
-
   const filteredEvidence = evidenceList.filter((item) => {
     if (selectedFilter === 'all') return true;
     return item.category === selectedFilter;
@@ -38,8 +37,25 @@ export const IdentityLedgerModal: React.FC<IdentityLedgerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-[390px] max-h-[85vh] bg-white dark:bg-slate-900 rounded-[32px] p-5 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+    <AnimatePresence>
+      {isOpen && (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <motion.div
+        className="relative w-full max-w-[390px] max-h-[85vh] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-hidden"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 16 }}
+        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      >
         {/* Header */}
         <div className="flex justify-between items-start pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center space-x-2.5">
@@ -169,7 +185,9 @@ export const IdentityLedgerModal: React.FC<IdentityLedgerModalProps> = ({
             <span>+ Cast Manual Identity Vote</span>
           </button>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

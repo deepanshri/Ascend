@@ -4,14 +4,20 @@ import {
   ensureProfileDirectory,
   fetchFriendActivity,
   fetchFriendships,
+  fetchReceivedGlows,
+  fetchSentGlowEventIds,
   incomingPending,
   outgoingPending,
+  removeFriendship,
   respondToFriendRequest,
+  retractAffirmationGlow,
   searchProfiles,
+  sendAffirmationGlow,
   sendFriendRequest,
   type FriendActivityItem,
   type FriendEdge,
   type ProfileDirectoryHit,
+  type ReceivedAffirmationGlow,
 } from '../lib/friends';
 
 export interface FriendsFeedProps {
@@ -54,6 +60,8 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   const [hits, setHits] = useState<ProfileDirectoryHit[]>([]);
   const [searching, setSearching] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [sentGlows, setSentGlows] = useState<Set<string>>(new Set());
+  const [receivedGlows, setReceivedGlows] = useState<ReceivedAffirmationGlow[]>([]);
 
   const signedIn = Boolean(userId && !isGuest && !String(userId).startsWith('guest_'));
   const incoming = useMemo(() => (userId ? incomingPending(edges, userId) : []), [edges, userId]);
@@ -64,14 +72,22 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     if (!signedIn || !userId) {
       setEdges([]);
       setActivity([]);
+      setSentGlows(new Set());
+      setReceivedGlows([]);
       return;
     }
     setLoading(true);
     await ensureProfileDirectory(userId, userEmail, userName);
     const nextEdges = await fetchFriendships(userId);
-    const nextActivity = await fetchFriendActivity(userId, nextEdges);
+    const [nextActivity, nextSent, nextReceived] = await Promise.all([
+      fetchFriendActivity(userId, nextEdges),
+      fetchSentGlowEventIds(userId),
+      fetchReceivedGlows(userId),
+    ]);
     setEdges(nextEdges);
     setActivity(nextActivity);
+    setSentGlows(nextSent);
+    setReceivedGlows(nextReceived);
     setLoading(false);
   }, [signedIn, userId, userEmail, userName]);
 
@@ -87,6 +103,9 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
         void refresh();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'momentum_events' }, () => {
+        void refresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'affirmation_glows' }, () => {
         void refresh();
       })
       .subscribe();
@@ -140,6 +159,41 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     if (ok) await refresh();
   };
 
+  const handleRemove = async (edgeId: string, kind: 'cancel' | 'unfriend') => {
+    const ok = await removeFriendship(edgeId);
+    flash(
+      ok
+        ? kind === 'cancel'
+          ? 'Request cancelled.'
+          : 'Friend removed.'
+        : kind === 'cancel'
+          ? 'Could not cancel request.'
+          : 'Could not remove friend.'
+    );
+    if (ok) await refresh();
+  };
+
+  const handleGlow = async (item: FriendActivityItem) => {
+    if (!userId) return;
+    if (sentGlows.has(item.id)) {
+      const ok = await retractAffirmationGlow(userId, item.id);
+      if (ok) {
+        setSentGlows((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+        flash('Glow taken back.');
+      }
+      return;
+    }
+    const result = await sendAffirmationGlow(userId, item.friendId, item.id);
+    flash(result.message);
+    if (result.ok) {
+      setSentGlows((prev) => new Set(prev).add(item.id));
+    }
+  };
+
   const body = (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -190,65 +244,141 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
                 tab === 'pending' ? 'bg-surface text-ink shadow-xs' : 'text-ink-muted'
               }`}
             >
-              Pending{incoming.length > 0 ? ` (${incoming.length})` : ''}
+              People{incoming.length > 0 ? ` (${incoming.length})` : ''}
             </button>
           </div>
 
           {notice && <p className="text-[12px] font-semibold text-accent">{notice}</p>}
 
           {tab === 'pending' ? (
-            <div className="space-y-2">
-              {incoming.length === 0 && outgoing.length === 0 ? (
-                <p className="text-[12.5px] text-ink-muted">No pending requests.</p>
+            <div className="space-y-3">
+              {incoming.length === 0 && outgoing.length === 0 && accepted.length === 0 ? (
+                <p className="text-[12.5px] text-ink-muted">No friends or pending requests.</p>
               ) : null}
-              {incoming.map((edge) => (
-                <div key={edge.id} className="p-2.5 rounded-xl border border-line bg-surface-muted flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-ink truncate">{edge.peerName}</p>
-                    <p className="text-[11px] text-ink-muted">Incoming request</p>
-                  </div>
-                  <div className="flex gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => void handleRespond(edge.id, 'accepted')}
-                      className="px-2 py-1 rounded-lg bg-accent text-accent-fg text-[11px] font-bold cursor-pointer"
-                    >
-                      Accept
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleRespond(edge.id, 'declined')}
-                      className="px-2 py-1 rounded-lg border border-line text-ink text-[11px] font-bold cursor-pointer"
-                    >
-                      Decline
-                    </button>
-                  </div>
+              {incoming.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Incoming</p>
+                  {incoming.map((edge) => (
+                    <div key={edge.id} className="p-2.5 rounded-xl border border-line bg-surface-muted flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-ink truncate">{edge.peerName}</p>
+                        <p className="text-[11px] text-ink-muted">Incoming request</p>
+                      </div>
+                      <div className="flex gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => void handleRespond(edge.id, 'accepted')}
+                          className="px-2 py-1 rounded-lg bg-accent text-accent-fg text-[11px] font-bold cursor-pointer"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleRespond(edge.id, 'declined')}
+                          className="px-2 py-1 rounded-lg border border-line text-ink text-[11px] font-bold cursor-pointer"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {outgoing.map((edge) => (
-                <div key={edge.id} className="p-2.5 rounded-xl border border-line bg-surface flex items-center justify-between">
-                  <p className="text-[13px] font-semibold text-ink truncate">{edge.peerName}</p>
-                  <span className="text-[11px] text-ink-muted">Awaiting</span>
+              ) : null}
+              {outgoing.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Outgoing</p>
+                  {outgoing.map((edge) => (
+                    <div key={edge.id} className="p-2.5 rounded-xl border border-line bg-surface flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-ink truncate">{edge.peerName}</p>
+                        <p className="text-[11px] text-ink-muted">Awaiting their accept</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleRemove(edge.id, 'cancel')}
+                        className="px-2 py-1 rounded-lg border border-line text-ink text-[11px] font-bold cursor-pointer shrink-0"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : null}
+              {accepted.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Friends</p>
+                  {accepted.map((edge) => (
+                    <div key={edge.id} className="p-2.5 rounded-xl border border-line bg-surface-muted flex items-center justify-between gap-2">
+                      <p className="text-[13px] font-semibold text-ink truncate">{edge.peerName}</p>
+                      <button
+                        type="button"
+                        onClick={() => void handleRemove(edge.id, 'unfriend')}
+                        className="px-2 py-1 rounded-lg border border-line text-ink text-[11px] font-bold cursor-pointer shrink-0"
+                      >
+                        Unfriend
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          ) : loading && activity.length === 0 ? (
+          ) : loading && activity.length === 0 && receivedGlows.length === 0 ? (
             <p className="text-[12.5px] text-ink-muted">Loading friend activity…</p>
           ) : accepted.length === 0 ? (
             <p className="text-[12.5px] text-ink-muted leading-relaxed">
               No accepted friends yet. Search by username or email to send a request.
             </p>
-          ) : activity.length === 0 ? (
-            <p className="text-[12.5px] text-ink-muted leading-relaxed">Friends have not logged habits yet.</p>
           ) : (
-            <ul className="space-y-1.5">
-              {activity.map((item) => (
-                <li key={item.id} className="p-2.5 rounded-xl border border-line bg-surface-muted">
-                  <p className="text-[12.5px] text-ink leading-relaxed">{item.text}</p>
-                  <p className="text-[10.5px] text-ink-muted mt-0.5">{formatActivityTime(item.timestamp)}</p>
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-2">
+              {receivedGlows.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {receivedGlows.map((glow) => (
+                    <li key={glow.id} className="p-2.5 rounded-xl border border-amber-200/80 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/30">
+                      <p className="text-[12.5px] text-ink leading-relaxed">
+                        {glow.fromName} sent you an Affirmation Glow
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {activity.length === 0 ? (
+                <p className="text-[12.5px] text-ink-muted leading-relaxed">Friends have not logged habits yet.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {activity.map((item) => {
+                    const glowed = sentGlows.has(item.id);
+                    return (
+                      <li key={item.id} className="p-2.5 rounded-xl border border-line bg-surface-muted flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[12.5px] text-ink leading-relaxed">{item.text}</p>
+                          <p className="text-[10.5px] text-ink-muted mt-0.5">{formatActivityTime(item.timestamp)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleGlow(item)}
+                          title={glowed ? 'Take back Affirmation Glow' : 'Send Affirmation Glow'}
+                          aria-label={glowed ? 'Take back Affirmation Glow' : 'Send Affirmation Glow'}
+                          aria-pressed={glowed}
+                          className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition ${
+                            glowed
+                              ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 ring-1 ring-amber-400/70'
+                              : 'bg-surface border border-line text-ink-muted hover:text-amber-700 hover:border-amber-300'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill={glowed ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8">
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M12 21s-6.5-4.35-9.2-8.2C.7 9.9 2.2 6 6.1 6c1.9 0 3.1 1 3.9 2.2C10.8 7 12 6 13.9 6c3.9 0 5.4 3.9 3.3 6.8C18.5 16.65 12 21 12 21z"
+                            />
+                          </svg>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
           )}
         </>
       )}

@@ -11,6 +11,7 @@ import {
   toISODate,
 } from './dates';
 import { syncHabitLogDelete, syncHabitLogUpsert } from '../lib/offlineSync';
+import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from './schedule';
 
 export const WORK_HABIT_WEIGHT = 1.5;
 export const SELF_IMPROVEMENT_HABIT_WEIGHT = 1.0;
@@ -182,9 +183,8 @@ export function collectMissedMomentumEvents(
   const missed: MomentumEvent[] = [];
   habits.forEach((habit) => {
     if (habit.archived) return;
-    if (habit.scheduledDays && habit.scheduledDays.length > 0 && dayIndex >= 0) {
-      if (!habit.scheduledDays.includes(dayIndex)) return;
-    }
+    if (dayIndex >= 0 && !isHabitScheduledOnDayIndex(habit, dayIndex, origin)) return;
+    if (!isHabitScheduledOnIso(habit, isoDate)) return;
     if (logged.has(habit.id)) return;
     missed.push(createMomentumEvent(habit, 'missed', isoDate, endOfIsoDate(isoDate)));
   });
@@ -408,10 +408,8 @@ export function calculateDailyWeightedScore(
   const activeHabits = scoredHabits.filter((h) => !h.archived);
   if (activeHabits.length === 0) return 0;
 
-  const scheduled = activeHabits.filter(
-    (h) => !h.scheduledDays || h.scheduledDays.includes(dayIndex)
-  );
-  const pool = scheduled.length > 0 ? scheduled : activeHabits;
+  const scheduled = activeHabits.filter((h) => isHabitScheduledOnDayIndex(h, dayIndex, origin));
+  const pool = scheduled;
 
   let weightedSum = 0;
   let weightTotal = 0;
@@ -433,6 +431,7 @@ export interface RollingMomentumOptions {
   vacationMode?: boolean;
   asOf?: number;
   decayFactor?: number;
+  habits?: Habit[];
 }
 
 /**
@@ -448,6 +447,7 @@ export function calculateMomentumScore(
   const decayFactor = options.decayFactor ?? MOMENTUM_DECAY_FACTOR;
   const protectionActive = Boolean(options.examShield || options.vacationMode);
   const asOf = options.asOf;
+  const habitById = options.habits ? new Map(options.habits.map((habit) => [habit.id, habit])) : null;
   const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
 
   let prevScore = 0;
@@ -455,7 +455,10 @@ export function calculateMomentumScore(
     if (asOf !== undefined && event.timestamp > asOf) continue;
     const eventScoreValue = eventScore(event.eventType);
     const eventWeight = event.weight;
-    const delta = protectionActive && event.eventType === 'missed' ? 0 : decayFactor;
+    const habit = habitById?.get(event.habitId);
+    const unscheduledMiss =
+      event.eventType === 'missed' && habit ? !isHabitScheduledOnIso(habit, resolveMomentumEventDate(event)) : false;
+    const delta = (protectionActive || unscheduledMiss) && event.eventType === 'missed' ? 0 : decayFactor;
     prevScore = applyRollingMomentumStep(prevScore, eventScoreValue, eventWeight, delta);
   }
   return Math.round(prevScore);

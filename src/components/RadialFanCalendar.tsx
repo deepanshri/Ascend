@@ -1,12 +1,13 @@
 import React from 'react';
 import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDates, getWeekdayNarrow, toISODate } from '../utils/dates';
+import { isHabitScheduledOnDayIndex } from '../utils/schedule';
 import { Mascot, mascotAngleFromMomentum } from './Mascot';
 
 interface RadialFanCalendarProps {
   selectedDay: number; // 1 to 7 (for reference/current active day indicator)
   onSelectDay?: (day: number) => void;
-  dayCompletionRates: number[]; // 7 numbers between 0 and 1
+  dayCompletionRates: Array<number | null>; // 7 rates 0–1, or null when no habit is scheduled that day
   habits: Habit[];
   momentumScore: number; // 0 to 100
   isCelebrating?: boolean;
@@ -42,16 +43,17 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
     .map((h) => {
       const isDone = Boolean(h.days?.[currentDayIndex]);
       const isMicro = Boolean(h.microDays?.[currentDayIndex]);
+      const isScheduled = isHabitScheduledOnDayIndex(h, currentDayIndex, originDate ?? new Date());
       return {
         id: h.id,
         name: h.name,
         isDone,
         isMicro,
-        status: isDone ? (isMicro ? 'micro' : 'full') : 'incomplete',
+        status: !isScheduled ? 'off' : isDone ? (isMicro ? 'micro' : 'full') : 'incomplete',
       };
     })
     .sort((a, b) => {
-      const rank = (s: string) => (s === 'full' ? 2 : s === 'micro' ? 1 : 0);
+      const rank = (s: string) => (s === 'full' ? 3 : s === 'micro' ? 2 : s === 'incomplete' ? 1 : 0);
       return rank(b.status) - rank(a.status);
     });
 
@@ -85,18 +87,22 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
     const x = cx + cardRadius * Math.cos(rad);
     const y = cy - cardRadius * Math.sin(rad);
     const dayIdx = item.day - 1;
-    const completion = dayCompletionRates[dayIdx] ?? 0;
+    const completion = dayCompletionRates[dayIdx];
     const cardDate = weekDates[dayIdx];
 
     // Dot color rules:
-    // 1. If date hasn't arrived yet (dayIdx > today) -> Grey
-    // 2. If done habits > 70% -> Green
-    // 3. If done habits between 40% - 70% -> Light Green
-    // 4. If done habits < 40% -> Orange
+    // 1. If no habit is scheduled that day -> Neutral (never orange/miss)
+    // 2. If date hasn't arrived yet (dayIdx > today) -> Grey
+    // 3. If done habits > 70% -> Green
+    // 4. If done habits between 40% - 70% -> Light Green
+    // 5. If done habits < 40% -> Orange
     let dotBg = '#94A3B8';
     let statusLabel = 'Upcoming';
 
-    if (dayIdx > todayIndex) {
+    if (completion == null) {
+      dotBg = isDark ? '#475569' : '#CBD5E1';
+      statusLabel = 'Off day';
+    } else if (dayIdx > todayIndex) {
       dotBg = isDark ? '#64748B' : '#94A3B8';
       statusLabel = 'Upcoming';
     } else if (completion > 0.70) {
@@ -389,10 +395,22 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
         {arcDots.map((dot, idx) => {
           const isFull = dot.status === 'full';
           const isMicro = dot.status === 'micro';
+          const isOff = dot.status === 'off';
 
           return (
             <g key={dot.id || idx}>
-              {isFull ? (
+              {isOff ? (
+                <circle
+                  cx={dot.x}
+                  cy={dot.y}
+                  r="3.6"
+                  fill="none"
+                  stroke={emptyDotStroke}
+                  strokeWidth="1.1"
+                  strokeDasharray="1.6 1.8"
+                  opacity="0.55"
+                />
+              ) : isFull ? (
                 <g>
                   <circle
                     cx={dot.x}

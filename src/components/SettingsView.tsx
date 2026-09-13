@@ -184,7 +184,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       />
 
       {/* Theme Controls */}
-      <section className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/90 dark:border-slate-800 shadow-sm space-y-2.5">
+      <section data-tour="settings-theme" className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/90 dark:border-slate-800 shadow-sm space-y-2.5">
         <div className="flex items-center justify-between">
           <h2 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px]">
             Theme & Appearance
@@ -253,7 +253,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </h2>
 
         {/* Daily reminder windows */}
-        <div className="space-y-1">
+        <div data-tour="settings-notifications" className="space-y-1">
           <div className="flex flex-col mb-1">
             <span className="text-[12.5px] font-medium text-slate-900 dark:text-white">Daily reminder windows</span>
             <span className="text-[10.5px] text-slate-400">Time-psychology nudges aligned to momentum</span>

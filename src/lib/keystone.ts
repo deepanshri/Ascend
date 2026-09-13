@@ -1,6 +1,7 @@
 import { Habit, MomentumEvent } from '../types';
 import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
 import { toISODate } from '../utils/dates';
+import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from '../utils/schedule';
 
 export const MAX_KEYSTONE_HABITS = 2;
 export const KEYSTONE_CORRELATION_MIN_DAYS_EACH = 3;
@@ -27,8 +28,7 @@ export function keystoneOverallCompletionRate(habits: Habit[]): number | null {
   stones.forEach((habit) => {
     const days = habit.days || [];
     days.forEach((isDone, index) => {
-      const scheduled = !habit.scheduledDays || habit.scheduledDays.length === 0 || habit.scheduledDays.includes(index);
-      if (!scheduled) return;
+      if (!isHabitScheduledOnDayIndex(habit, index)) return;
       total += 1;
       if (isDone) done += 1;
     });
@@ -58,6 +58,7 @@ function dailyOverallScore(habits: Habit[], events: MomentumEvent[], isoDate: st
   let weightedSum = 0;
   let weightTotal = 0;
   active.forEach((habit) => {
+    if (!isHabitScheduledOnIso(habit, isoDate)) return;
     const weight = habitWeight(habit);
     weightTotal += weight;
     weightedSum += weight * (best.get(habit.id) ?? 0);
@@ -86,6 +87,7 @@ export function computeKeystoneCorrelation(
   const offScores: number[] = [];
 
   dates.forEach((iso) => {
+    if (!isHabitScheduledOnIso(habit, iso)) return;
     const keystoneDone = events.some(
       (event) =>
         event.habitId === habit.id &&

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Habit,
   IdentityEvidence,
@@ -28,6 +29,7 @@ import {
 } from './utils/momentum';
 import { appendMomentumEventRemote, fetchMomentumEventsFromTable, loadLocalMomentumEvents, MOMENTUM_EVENTS_STORAGE_KEY, saveLocalMomentumEvents } from './lib/momentumEvents';
 import { endOfIsoDate, formatEvidenceDate, getTodayDayIndex, getWeekDates, resolveEventIsoDate, startOfDay, toISODate } from './utils/dates';
+import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso, scheduledHabitsForDayIndex } from './utils/schedule';
 import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome, hideNativeSplash } from './lib/nativeChrome';
 import {
@@ -45,7 +47,14 @@ import {
 import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted } from './lib/profile';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
 import { fetchActiveHabits, fetchHabitLogsForDate, deleteHabitCascade, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable } from './lib/habitsApi';
-import { startAscendSpotlightTutorial, destroyAscendSpotlightTutorial } from './lib/tutorial';
+import {
+  destroyAscendSpotlightTutorial,
+  hasScreenTutorialCompleted,
+  markScreenTutorialCompleted,
+  startAscendSpotlightTutorial,
+  startScreenTutorial,
+  type TutorialScreen,
+} from './lib/tutorial';
 import {
   hydrateNotificationWindows,
   initializeReminderNotifications,
@@ -133,15 +142,19 @@ export default function App() {
 
   useEffect(() => {
     async function checkConnection() {
-      const { data, error } = await supabase.from('profiles').select('count', { count: 'exact', head: true });
+      if (!isSupabaseConfigured || !supabase) {
+        console.warn('Supabase client is not configured — skipping connection check.');
+        return;
+      }
+      const { error } = await supabase.from('profiles').select('count', { count: 'exact', head: true });
       if (error) {
         console.error('❌ SUPABASE CONNECTION ERROR:', error.message);
       } else {
         console.log('✅ SUPABASE CONNECTED SUCCESSFULLY');
       }
     }
-  
-    checkConnection();
+
+    void checkConnection();
   }, []);
 
   useEffect(() => {
@@ -658,6 +671,11 @@ export default function App() {
     return derivedHabits.filter((h) => !h.archived);
   }, [derivedHabits]);
 
+  const keystoneCompletedOnViewedDay = useMemo(
+    () => activeHabits.filter((habit) => habit.isKeystone && habit.days?.[currentDayIndex]).map((habit) => habit.id),
+    [activeHabits, currentDayIndex]
+  );
+
   const longPressedHabit = useMemo(() => {
     return derivedHabits.find((h) => h.id === longPressedHabitId) || null;
   }, [derivedHabits, longPressedHabitId]);
@@ -668,15 +686,17 @@ export default function App() {
       examShield: examShieldActive,
       vacationMode: vacationModeActive,
       asOf: endOfIsoDate(currentSelectedDate),
+      habits,
     });
-  }, [momentumEvents, examShieldActive, vacationModeActive, currentSelectedDate]);
+  }, [momentumEvents, examShieldActive, vacationModeActive, currentSelectedDate, habits]);
 
   const todayMomentumScore = useMemo(() => {
     return calculateMomentumScore(momentumEvents, {
       examShield: examShieldActive,
       vacationMode: vacationModeActive,
+      habits,
     });
-  }, [momentumEvents, examShieldActive, vacationModeActive]);
+  }, [momentumEvents, examShieldActive, vacationModeActive, habits]);
 
   const identityVoteCount = useMemo(() => countIdentityVotes(momentumEvents), [momentumEvents]);
 
@@ -774,15 +794,16 @@ export default function App() {
   }, [todayMomentumScore, todayDayIndex, session?.id, session?.isGuest]);
 
   useEffect(() => {
-    const totalHabits = activeHabits.length;
-    const habitsCompleted = activeHabits.filter((habit) => Boolean(habit.days?.[todayDayIndex])).length;
+    const scheduledToday = scheduledHabitsForDayIndex(activeHabits, todayDayIndex, calendarOrigin);
+    const totalHabits = scheduledToday.length;
+    const habitsCompleted = scheduledToday.filter((habit) => Boolean(habit.days?.[todayDayIndex])).length;
     void syncWidgetData({
       score: todayMomentumScore,
       habitsCompleted,
       totalHabits,
       lastUpdated: new Date().toISOString(),
     });
-  }, [todayMomentumScore, activeHabits, todayDayIndex, completionEvents, momentumEvents]);
+  }, [todayMomentumScore, activeHabits, todayDayIndex, calendarOrigin, completionEvents, momentumEvents]);
 
   useEffect(() => {
     void schedulePsychologyNotifications({
@@ -852,7 +873,7 @@ export default function App() {
   // Calculate day completion rates (1-7) using active habits
   const dayCompletionRates = useMemo(() => {
     return Array.from({ length: 7 }, (_, dayIdx) => {
-      if (activeHabits.length === 0) return 0;
+      if (scheduledHabitsForDayIndex(derivedHabits, dayIdx, calendarOrigin).length === 0) return null;
       return calculateDailyWeightedScore(
         derivedHabits,
         dayIdx,
@@ -861,7 +882,7 @@ export default function App() {
         calendarOrigin
       ) / 100;
     });
-  }, [activeHabits.length, derivedHabits, examShieldActive, vacationModeActive, calendarOrigin]);
+  }, [derivedHabits, examShieldActive, vacationModeActive, calendarOrigin]);
 
   const selectedDayCompletedCount = activeHabits.filter(
     (h) => h.days[currentDayIndex]
@@ -887,6 +908,10 @@ export default function App() {
     if (!isViewingToday) return;
     const targetHabit = habits.find((habit) => habit.id === habitId);
     if (!targetHabit) return;
+    if (!isHabitScheduledOnIso(targetHabit, loggedDate)) {
+      showNotification('Off day — not counted as a miss');
+      return;
+    }
 
     const alreadyCredited = completionEvents.some(
       (event) => event.habitId === habitId && resolveEventIsoDate(event, calendarOrigin) === loggedDate
@@ -997,6 +1022,10 @@ export default function App() {
     if (!isViewingToday) return;
     const targetHabit = habits.find((h) => h.id === habitId);
     if (!targetHabit) return;
+    if (!isHabitScheduledOnDayIndex(targetHabit, todayDayIndex, calendarOrigin) && !activeFallbackIds.includes(habitId)) {
+      showNotification('Off day — fallback only on scheduled days');
+      return;
+    }
 
     if (activeFallbackIds.includes(habitId)) {
       setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
@@ -1047,6 +1076,8 @@ export default function App() {
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'habit-' + Date.now(),
       days: [false, false, false, false, false, false, false],
       microDays: [false, false, false, false, false, false, false],
+      scheduledDays: payload.scheduledDays && payload.scheduledDays.length > 0 ? payload.scheduledDays : [0, 1, 2, 3, 4, 5, 6],
+      scheduleType: payload.scheduleType || 'daily',
     };
     setHabits((prev) => [newHabit, ...prev]);
     return newHabit;
@@ -1454,6 +1485,7 @@ export default function App() {
       startAscendSpotlightTutorial(() => {
         setHasCompletedTutorial(true);
         setLocalTutorialCompleted(true);
+        markScreenTutorialCompleted('home');
         if (!session.isGuest) {
           void persistUserProfile(session, {
             has_completed_tutorial: true,
@@ -1465,6 +1497,29 @@ export default function App() {
 
     return () => window.clearTimeout(timer);
   }, [session, isOnboarded, hasCompletedTutorial, activeTab, selectedInterests]);
+
+  useEffect(() => {
+    if (!session || !isOnboarded) return;
+    if (hasCompletedTutorial !== true) return;
+    const screen = activeTab as TutorialScreen;
+    if (screen !== 'reminders' && screen !== 'report' && screen !== 'personal' && screen !== 'settings') {
+      return;
+    }
+    if (hasScreenTutorialCompleted(screen)) return;
+
+    setIsNavVisible(true);
+    const timer = window.setTimeout(() => {
+      if (hasScreenTutorialCompleted(screen)) return;
+      startScreenTutorial(screen, () => {
+        markScreenTutorialCompleted(screen);
+      });
+    }, 550);
+
+    return () => {
+      window.clearTimeout(timer);
+      destroyAscendSpotlightTutorial();
+    };
+  }, [session, isOnboarded, hasCompletedTutorial, activeTab]);
 
   // ROUTING: Unauthenticated users -> Auth Screen
   if (!session) {
@@ -1494,9 +1549,15 @@ export default function App() {
         id="mobile-viewport"
         className="relative w-full h-full overflow-hidden"
       >
+        <AnimatePresence mode="sync" initial={false}>
         {/* HOME TAB CONTENT */}
         {activeTab === 'home' && (
-          <main
+          <motion.main
+            key="tab-home"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             id="app-main-content"
             onScroll={handleMainScroll}
             className={`absolute inset-0 z-10 px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col gap-3 overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
@@ -1585,6 +1646,10 @@ export default function App() {
                     }}
                     onToggleKeystone={handleToggleKeystone}
                     keystoneAtCap={!habit.isKeystone && countActiveKeystones(habits) >= MAX_KEYSTONE_HABITS}
+                    keystoneBoosted={
+                      keystoneCompletedOnViewedDay.length > 0 && !keystoneCompletedOnViewedDay.includes(habit.id)
+                    }
+                    weekOrigin={calendarOrigin}
                   />
                 ))
               )}
@@ -1597,11 +1662,19 @@ export default function App() {
               userName={session.name}
               variant="drawer"
             />
-          </main>
+          </motion.main>
         )}
 
         {/* REMINDERS TAB */}
         {activeTab === 'reminders' && (
+          <motion.div
+            key="tab-reminders"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 z-10"
+          >
           <RemindersView
             reminders={reminders}
             onAddReminder={handleAddReminder}
@@ -1629,10 +1702,19 @@ export default function App() {
             onScroll={handleMainScroll}
             onOpenSettings={() => setActiveTab('settings')}
           />
+          </motion.div>
         )}
 
         {/* REPORT TAB */}
         {activeTab === 'report' && (
+          <motion.div
+            key="tab-report"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 z-10"
+          >
           <ReportView
             habits={activeHabits}
             evidenceList={evidenceList}
@@ -1650,10 +1732,19 @@ export default function App() {
             momentumEvents={momentumEvents}
             completionEvents={completionEvents}
           />
+          </motion.div>
         )}
 
         {/* PERSONAL TAB */}
         {activeTab === 'personal' && (
+          <motion.div
+            key="tab-personal"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 z-10"
+          >
           <PersonalView
             userSession={session}
             evidenceList={evidenceList}
@@ -1686,10 +1777,19 @@ export default function App() {
             }}
             onScroll={handleMainScroll}
           />
+          </motion.div>
         )}
 
         {/* SETTINGS TAB */}
         {activeTab === 'settings' && (
+          <motion.div
+            key="tab-settings"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 z-10"
+          >
           <SettingsView
             habits={habits}
             evidenceList={evidenceList}
@@ -1708,7 +1808,9 @@ export default function App() {
             onScroll={handleMainScroll}
             onOpenSettings={() => setActiveTab('home')}
           />
+          </motion.div>
         )}
+        </AnimatePresence>
 
         {/* Floating Bottom Navigation: shrinks on scroll down, pops up on scroll up */}
         <BottomNav
@@ -1720,19 +1822,26 @@ export default function App() {
         />
 
         {/* Top-Level Toast Notification */}
-        {toastNotification && (
-          <div
-            id="ascend-toast-notification"
-            className="fixed top-[max(1.25rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[12px] font-bold px-4 py-2 rounded-full shadow-2xl flex items-center space-x-2 border-2 border-[#23C15D] dark:border-blue-500 animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none"
-          >
-            <div className="w-4 h-4 rounded-full bg-emerald-50 dark:bg-blue-950 flex items-center justify-center text-[#23C15D] dark:text-blue-400 shrink-0">
-              <svg className="w-2.5 h-2.5 stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            </div>
-            <span>{toastNotification}</span>
-          </div>
-        )}
+        <AnimatePresence>
+          {toastNotification && (
+            <motion.div
+              id="ascend-toast-notification"
+              role="status"
+              initial={{ opacity: 0, y: -12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="fixed top-[max(1.25rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[12px] font-bold px-4 py-2 rounded-2xl shadow-2xl flex items-center space-x-2 border-2 border-[#23C15D] dark:border-blue-500 pointer-events-none"
+            >
+              <div className="w-4 h-4 rounded-full bg-emerald-50 dark:bg-blue-950 flex items-center justify-center text-[#23C15D] dark:text-blue-400 shrink-0">
+                <svg className="w-2.5 h-2.5 stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+              </div>
+              <span>{toastNotification}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Spotlighted Habit Overlay with Whole Screen Blur & Dustbin/Pen options */}
         {longPressedHabit && (
@@ -1840,9 +1949,22 @@ export default function App() {
         />
 
         {/* Upgrade Guest Modal */}
+        <AnimatePresence>
         {isUpgradeModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in">
-            <div className="bg-white rounded-3xl p-5 max-w-sm w-full border border-slate-200 shadow-2xl space-y-3">
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            <motion.div
+              className="bg-white rounded-3xl p-5 max-w-sm w-full border border-slate-200 shadow-2xl space-y-3"
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+            >
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-bold text-slate-900">Upgrade to Cloud Account</h3>
                 <button
@@ -1923,14 +2045,28 @@ export default function App() {
                   </button>
                 </div>
               </form>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
         {/* Change Password Modal */}
+        <AnimatePresence>
         {isPasswordModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in">
-            <div className="bg-white rounded-3xl p-5 max-w-sm w-full border border-slate-200 shadow-2xl space-y-3">
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            <motion.div
+              className="bg-white rounded-3xl p-5 max-w-sm w-full border border-slate-200 shadow-2xl space-y-3"
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+            >
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-bold text-slate-900">Change Password</h3>
                 <button
@@ -1995,9 +2131,10 @@ export default function App() {
                   </button>
                 </div>
               </form>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         )}
+        </AnimatePresence>
       </div>
     </div>
   );

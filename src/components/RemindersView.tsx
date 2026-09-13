@@ -159,6 +159,21 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
         }
       />
 
+      <div className="space-y-2">
+        <div
+          data-tour="reminders-standalone"
+          className="px-1 text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed"
+        >
+          Standalone checkpoints stay off the habit log so a missed alert never rewrites identity votes.
+        </div>
+        <div
+          data-tour="reminders-dual-alerts"
+          className="px-1 text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed"
+        >
+          Timed reminders can fire twice: 10 minutes before, then at the exact time — on the device, not a browser timer.
+        </div>
+      </div>
+
       {/* =========================================
           REMINDERS LIST
          ========================================= */}
@@ -259,10 +274,10 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
             <motion.div
               id="new-reminder-bottom-sheet"
               key="new-reminder-bottom-sheet"
-              initial={{ y: '100%', opacity: 0.9 }}
+              initial={{ y: '100%', opacity: 0.92 }}
               animate={{ y: 0, opacity: 1 }}
-              exit={{ y: '100%', opacity: 0.6 }}
-              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+              exit={{ y: '28%', opacity: 0 }}
+              transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
               className="w-full max-w-md mx-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-white/60 dark:border-slate-800 shadow-[0_-10px_40px_rgba(0,0,0,0.15)] rounded-t-[32px] p-5 pb-9 space-y-4"
             >
               {/* Sheet Handle Grabber */}
@@ -299,7 +314,8 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
                     id="reminder-title-input"
                     type="text"
                     required
-                    autoFocus
+                    enterKeyHint="done"
+                    autoComplete="off"
                     placeholder="e.g. Afternoon focus block & posture check"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}

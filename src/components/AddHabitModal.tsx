@@ -4,6 +4,8 @@ import { Habit, HabitCategory, HabitPriority } from '../types';
 import { insertHabitToSupabase, toDbCategory } from '../lib/habitsApi';
 import { MAX_ACTIVE_HABITS } from '../lib/protection';
 import { MAX_KEYSTONE_HABITS } from '../lib/keystone';
+import { normalizeScheduledDays, scheduleTypeFromDays } from '../utils/schedule';
+import { WeekdayScheduleChips } from './WeekdayScheduleChips';
 
 interface AddHabitModalProps {
   isOpen: boolean;
@@ -31,6 +33,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   const [fallbackMicro, setFallbackMicro] = useState('');
   const [isKeystone, setIsKeystone] = useState(false);
   const [keystoneWarning, setKeystoneWarning] = useState(false);
+  const [scheduledWeekdays, setScheduledWeekdays] = useState<number[]>([]);
   const atCap = activeHabitCount >= MAX_ACTIVE_HABITS;
   const keystoneCapReached = activeKeystoneCount >= MAX_KEYSTONE_HABITS;
 
@@ -38,6 +41,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     if (!isOpen) return;
     setIsKeystone(false);
     setKeystoneWarning(false);
+    setScheduledWeekdays([]);
   }, [isOpen]);
 
   const handleKeystoneToggle = () => {
@@ -54,6 +58,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     if (!name.trim() || atCap) return;
 
     const dbCategory = toDbCategory(category);
+    const days = normalizeScheduledDays(scheduledWeekdays);
     const created = onAddHabit({
       name: name.trim(),
       category,
@@ -62,8 +67,9 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
       purposeAnchor: purposeAnchor.trim() || `To reinforce my continuous momentum in ${name.trim()}.`,
       identityStatement: `I consistently practice ${name.trim()}.`,
       fallbackMicroHabit: fallbackMicro.trim(),
-      targetDaysPerWeek: 7,
-      scheduleType: 'daily',
+      targetDaysPerWeek: days.length,
+      scheduleType: scheduleTypeFromDays(days),
+      scheduledDays: days,
       tags: [dbCategory],
       archived: false,
       isKeystone: isKeystone && !keystoneCapReached,
@@ -86,6 +92,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     setCategory('work');
     setIsKeystone(false);
     setKeystoneWarning(false);
+    setScheduledWeekdays([]);
     onClose();
   };
 
@@ -109,7 +116,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="relative w-full max-w-[390px] bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-hidden"
+            className="relative w-full max-w-[390px] max-h-[min(92dvh,740px)] bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-y-auto"
           >
             {/* Modal Header */}
             <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -233,6 +240,8 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              <WeekdayScheduleChips selected={scheduledWeekdays} onChange={setScheduledWeekdays} />
 
               {/* Purpose */}
               <div>
