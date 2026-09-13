@@ -49,6 +49,39 @@ export function toISODate(date: Date = new Date()): string {
   return `${y}-${m}-${day}`;
 }
 
+export function parseIsoDateParts(iso: string): { year: number; month: number; day: number } | null {
+  const [year, month, day] = iso.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return { year, month, day };
+}
+
+export function addDaysIso(iso: string, days: number): string {
+  const parts = parseIsoDateParts(iso);
+  if (!parts) return iso;
+  const date = new Date(parts.year, parts.month - 1, parts.day);
+  date.setDate(date.getDate() + days);
+  return toISODate(date);
+}
+
+/** Whole local calendar days from `fromIso` to `toIso` (can be negative). */
+export function diffDaysIso(fromIso: string, toIso: string): number {
+  const from = parseIsoDateParts(fromIso);
+  const to = parseIsoDateParts(toIso);
+  if (!from || !to) return 0;
+  const a = new Date(from.year, from.month - 1, from.day).getTime();
+  const b = new Date(to.year, to.month - 1, to.day).getTime();
+  return Math.round((b - a) / 86_400_000);
+}
+
+export function formatIsoShort(iso: string): string {
+  const parts = parseIsoDateParts(iso);
+  if (!parts) return iso;
+  return new Date(parts.year, parts.month - 1, parts.day).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 /** End of a local YYYY-MM-DD calendar day, in epoch ms. */
 export function endOfIsoDate(iso: string): number {
   const [year, month, day] = iso.split('-').map(Number);

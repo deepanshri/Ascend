@@ -428,24 +428,25 @@ export interface RollingMomentumOptions {
 /**
  * Rolling momentum from the append-only `momentum_events` log.
  * Iterates timestamp order: clamp((prev * (1 - decay_factor)) + (score * weight), 0, 100).
- * Exam Shield / Vacation skip `missed` rows so decay is paused.
+ * Exam Shield / Vacation set decay factor δ to 0 for missed events so
+ * missing habits does not decay momentum while a protection window is on.
  */
 export function calculateMomentumScore(
   events: MomentumEvent[],
   options: RollingMomentumOptions = {}
 ): number {
   const decayFactor = options.decayFactor ?? MOMENTUM_DECAY_FACTOR;
-  const skipMissed = Boolean(options.examShield || options.vacationMode);
+  const protectionActive = Boolean(options.examShield || options.vacationMode);
   const asOf = options.asOf;
   const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
 
   let prevScore = 0;
   for (const event of sorted) {
     if (asOf !== undefined && event.timestamp > asOf) continue;
-    if (skipMissed && event.eventType === 'missed') continue;
     const eventScoreValue = eventScore(event.eventType);
     const eventWeight = event.weight;
-    prevScore = applyRollingMomentumStep(prevScore, eventScoreValue, eventWeight, decayFactor);
+    const delta = protectionActive && event.eventType === 'missed' ? 0 : decayFactor;
+    prevScore = applyRollingMomentumStep(prevScore, eventScoreValue, eventWeight, delta);
   }
   return Math.round(prevScore);
 }

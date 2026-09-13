@@ -111,16 +111,46 @@ export async function persistHabitsToTable(userId: string, habits: Habit[]): Pro
   }
 }
 
+export async function countActiveHabitsRemote(userId?: string | null): Promise<number | null> {
+  if (!canSync(userId) || !supabase || !userId) return null;
+  try {
+    const { count, error } = await supabase
+      .from('habits')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .or('archived.is.null,archived.eq.false');
+
+    if (error) {
+      console.warn('Active habit count failed:', error.message);
+      return null;
+    }
+    return count ?? 0;
+  } catch (err) {
+    console.warn('Active habit count offline:', err);
+    return null;
+  }
+}
+
 export async function insertHabitToSupabase(
   userId: string | null | undefined,
   habit: Habit
-): Promise<void> {
-  if (!canSync(userId) || !supabase) return;
+): Promise<boolean> {
+  if (!canSync(userId) || !supabase) return false;
+  const remoteCount = await countActiveHabitsRemote(userId);
+  if (remoteCount != null && remoteCount >= 20 && !habit.archived) {
+    console.warn('Maximum limit of 20 active habits reached.');
+    return false;
+  }
   try {
     const { error } = await supabase.from('habits').upsert(habitToRow(habit, userId as string));
-    if (error) console.warn('Habit insert failed:', error.message);
+    if (error) {
+      console.warn('Habit insert failed:', error.message);
+      return false;
+    }
+    return true;
   } catch (err) {
     console.warn('Habit insert offline:', err);
+    return false;
   }
 }
 

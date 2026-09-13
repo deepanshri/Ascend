@@ -26,6 +26,7 @@ import {
   type NotificationWindowKey,
   type PsychologyNotificationWindows,
 } from '../lib/notifications';
+import type { ProtectionModeStatus } from '../lib/protection';
 
 interface PersonalViewProps {
   userSession: UserSession;
@@ -34,8 +35,10 @@ interface PersonalViewProps {
   selectedInterests?: string[];
   onToggleInterest?: (interest: string) => void;
   examShieldActive?: boolean;
+  examShieldStatus?: ProtectionModeStatus;
   onToggleExamShield?: () => void;
   vacationModeActive?: boolean;
+  vacationStatus?: ProtectionModeStatus;
   onToggleVacationMode?: () => void;
   notificationWindows?: PsychologyNotificationWindows;
   onToggleNotificationWindow?: (key: NotificationWindowKey) => void;
@@ -55,8 +58,10 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
   selectedInterests: propSelectedInterests,
   onToggleInterest,
   examShieldActive = false,
+  examShieldStatus,
   onToggleExamShield,
   vacationModeActive = false,
+  vacationStatus,
   onToggleVacationMode,
   notificationWindows = DEFAULT_NOTIFICATION_WINDOWS,
   onToggleNotificationWindow,
@@ -397,83 +402,100 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
         </div>
       </section>
 
-      {/* CARD 3: LIFE & STUDY MODES (SEPARATE OPTION FOR EXAM SHIELD & VACATION) */}
+      {/* CARD 3: PROTECTION MODES */}
       <section className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm space-y-3.5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center">
-              <Shield className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-[16px] font-bold text-slate-900 dark:text-white">
-                Protection Modes
-              </h2>
-              <p className="text-[11.5px] text-slate-400 dark:text-slate-500">
-                Pause momentum decay during exams and vacation
-              </p>
-            </div>
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center">
+            <Shield className="w-5 h-5" />
           </div>
-          <ChevronRight className="w-5 h-5 text-slate-400" />
+          <div>
+            <h2 className="text-[16px] font-bold text-slate-900 dark:text-white">
+              Protection Modes
+            </h2>
+            <p className="text-[11.5px] text-slate-400 dark:text-slate-500">
+              Pause momentum decay during exams and vacation
+            </p>
+          </div>
         </div>
 
-        {/* Two Toggle Buttons */}
-        <div className="grid grid-cols-2 gap-3 pt-1">
-          {/* Toggle Option 1: Exam Shield */}
+        <div className="grid grid-cols-1 gap-3 pt-1">
           <button
             type="button"
             onClick={onToggleExamShield}
-            className={`py-3 px-3.5 rounded-2xl border text-[13px] font-bold flex flex-col items-center justify-center space-y-1.5 transition active:scale-95 cursor-pointer ${
+            disabled={!examShieldActive && Boolean(examShieldStatus && !examShieldStatus.canEnable)}
+            className={`py-3 px-3.5 rounded-2xl border text-left transition ${
               examShieldActive
-                ? 'bg-[#E8F8EE] dark:bg-emerald-950/90 border-[#23C15D] text-[#165B33] dark:text-emerald-300 shadow-sm ring-1 ring-[#23C15D]'
-                : 'bg-slate-50/90 dark:bg-slate-800 border-slate-200/90 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                ? 'bg-[#E8F8EE] dark:bg-emerald-950/90 border-[#23C15D] text-[#165B33] dark:text-emerald-300 shadow-sm ring-1 ring-[#23C15D] cursor-pointer active:scale-[0.99]'
+                : examShieldStatus && !examShieldStatus.canEnable
+                  ? 'bg-slate-50/90 dark:bg-slate-800 border-slate-200/90 dark:border-slate-700 text-slate-500 cursor-not-allowed'
+                  : 'bg-slate-50/90 dark:bg-slate-800 border-slate-200/90 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer active:scale-[0.99]'
             }`}
           >
-            <div className="flex items-center space-x-2">
-              <GraduationCap
-                className={`w-4.5 h-4.5 ${
-                  examShieldActive ? 'text-[#165B33] dark:text-emerald-300' : 'text-slate-500'
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <GraduationCap className={`w-4.5 h-4.5 ${examShieldActive ? 'text-[#165B33] dark:text-emerald-300' : 'text-slate-500'}`} />
+                <span className="text-[13px] font-bold">Exam Shield</span>
+              </div>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  examShieldActive
+                    ? 'bg-emerald-200/70 dark:bg-emerald-900/80 text-[#165B33] dark:text-emerald-200'
+                    : 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400'
                 }`}
-              />
-              <span>Exam Shield</span>
+              >
+                {examShieldActive ? 'Active' : 'Off'}
+              </span>
             </div>
-            <span
-              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                examShieldActive
-                  ? 'bg-emerald-200/70 dark:bg-emerald-900/80 text-[#165B33] dark:text-emerald-200'
-                  : 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {examShieldActive ? 'Active' : 'Off'}
-            </span>
+            <div className="mt-2 space-y-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+              <p>
+                Days used: {examShieldStatus?.daysUsed ?? 0} / {examShieldStatus?.daysCap ?? 14}
+                {examShieldActive ? ` · ${examShieldStatus?.daysRemaining ?? 0} left` : ''}
+              </p>
+              <p>
+                Cooldown remaining:{' '}
+                {examShieldStatus?.cooldownDaysRemaining
+                  ? `${examShieldStatus.cooldownDaysRemaining} day${examShieldStatus.cooldownDaysRemaining === 1 ? '' : 's'}`
+                  : 'None'}
+              </p>
+              <p>Window: {examShieldStatus?.windowLabel || 'Not scheduled'}</p>
+              {examShieldStatus?.blockReason && !examShieldActive && (
+                <p className="text-amber-700 dark:text-amber-300">{examShieldStatus.blockReason}</p>
+              )}
+            </div>
           </button>
 
-          {/* Toggle Option 2: Vacation */}
           <button
             type="button"
             onClick={onToggleVacationMode}
-            className={`py-3 px-3.5 rounded-2xl border text-[13px] font-bold flex flex-col items-center justify-center space-y-1.5 transition active:scale-95 cursor-pointer ${
+            className={`py-3 px-3.5 rounded-2xl border text-left transition cursor-pointer active:scale-[0.99] ${
               vacationModeActive
                 ? 'bg-[#E8F8EE] dark:bg-emerald-950/90 border-[#23C15D] text-[#165B33] dark:text-emerald-300 shadow-sm ring-1 ring-[#23C15D]'
                 : 'bg-slate-50/90 dark:bg-slate-800 border-slate-200/90 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
             }`}
           >
-            <div className="flex items-center space-x-2">
-              <Plane
-                className={`w-4.5 h-4.5 ${
-                  vacationModeActive ? 'text-[#165B33] dark:text-emerald-300' : 'text-slate-500'
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Plane className={`w-4.5 h-4.5 ${vacationModeActive ? 'text-[#165B33] dark:text-emerald-300' : 'text-slate-500'}`} />
+                <span className="text-[13px] font-bold">Vacation</span>
+              </div>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  vacationModeActive
+                    ? 'bg-emerald-200/70 dark:bg-emerald-900/80 text-[#165B33] dark:text-emerald-200'
+                    : 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400'
                 }`}
-              />
-              <span>Vacation</span>
+              >
+                {vacationModeActive ? 'Active' : 'Off'}
+              </span>
             </div>
-            <span
-              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                vacationModeActive
-                  ? 'bg-emerald-200/70 dark:bg-emerald-900/80 text-[#165B33] dark:text-emerald-200'
-                  : 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {vacationModeActive ? 'Active' : 'Off'}
-            </span>
+            <div className="mt-2 space-y-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+              <p>
+                Days used: {vacationStatus?.daysUsed ?? 0} / {vacationStatus?.daysCap ?? 5}
+                {vacationModeActive ? ` · ${vacationStatus?.daysRemaining ?? 0} left` : ' · 5-day window'}
+              </p>
+              <p>Cooldown remaining: None</p>
+              <p>Window: {vacationStatus?.windowLabel || 'Not scheduled'}</p>
+            </div>
           </button>
         </div>
 
@@ -483,10 +505,10 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
             <span className="shrink-0 font-bold">🛡️</span>
             <span>
               {examShieldActive && vacationModeActive
-                ? 'Exam Shield & Vacation active: momentum and progress are protected.'
+                ? 'Exam Shield & Vacation active: missed habits will not decay momentum (δ = 0).'
                 : examShieldActive
-                ? 'Exam Shield active: focus on studies, momentum will not decay.'
-                : 'Vacation active: enjoy your time off, progress is safely protected.'}
+                ? 'Exam Shield active: missed habits will not decay momentum (δ = 0).'
+                : 'Vacation active: missed habits will not decay momentum (δ = 0).'}
             </span>
           </div>
         )}
@@ -902,7 +924,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                     <span>Exam Shield & Vacation</span>
                   </div>
                   <p className="text-slate-600 dark:text-slate-400 text-[11.5px] leading-relaxed">
-                    Toggle Exam Shield or Vacation to pause momentum decay and protect your progress when traveling or during exam prep.
+                    Toggle Exam Shield (14 days/semester, 30-day cooldown) or a 5-day Vacation window to pause miss-decay.
                   </p>
                 </div>
               </div>

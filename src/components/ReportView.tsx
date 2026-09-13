@@ -9,8 +9,6 @@ interface ReportViewProps {
   identityVoteCount?: number;
   userId?: string | null;
   onOpenLedger: () => void;
-  examShieldActive: boolean;
-  onToggleExamShield: () => void;
   frictionAudits: FrictionAudit[];
   onAddFrictionNote: (habitName: string, note: string) => void;
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
@@ -27,8 +25,6 @@ export const ReportView: React.FC<ReportViewProps> = ({
   identityVoteCount,
   userId,
   onOpenLedger,
-  examShieldActive,
-  onToggleExamShield,
   frictionAudits,
   onAddFrictionNote,
   onScroll,
@@ -768,19 +764,6 @@ export const ReportView: React.FC<ReportViewProps> = ({
             {/* Dropdown Options */}
             {showAnalysisMenu && (
               <div className="absolute right-0 top-8 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-100 dark:border-slate-700 p-1.5 z-20 animate-in fade-in zoom-in-95 duration-150">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onToggleExamShield();
-                    setShowAnalysisMenu(false);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-[11.5px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-between"
-                >
-                  <span>Exam Shield</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${examShieldActive ? 'bg-emerald-100 dark:bg-blue-950 text-emerald-800 dark:text-blue-300' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>
-                    {examShieldActive ? 'Active' : 'Off'}
-                  </span>
-                </button>
                 <button
                   type="button"
                   onClick={() => {

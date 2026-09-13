@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Habit, HabitCategory, HabitPriority } from '../types';
 import { insertHabitToSupabase, toDbCategory } from '../lib/habitsApi';
+import { MAX_ACTIVE_HABITS } from '../lib/protection';
 
 interface AddHabitModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddHabit: (habit: Omit<Habit, 'id' | 'days'>) => Habit;
+  onAddHabit: (habit: Omit<Habit, 'id' | 'days'>) => Habit | null;
   userId?: string | null;
   isGuest?: boolean;
+  activeHabitCount?: number;
 }
 
 export const AddHabitModal: React.FC<AddHabitModalProps> = ({
@@ -17,16 +19,18 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   onAddHabit,
   userId = null,
   isGuest = true,
+  activeHabitCount = 0,
 }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<HabitCategory>('work');
   const [priority, setPriority] = useState<HabitPriority>('mid');
   const [purposeAnchor, setPurposeAnchor] = useState('');
   const [fallbackMicro, setFallbackMicro] = useState('');
+  const atCap = activeHabitCount >= MAX_ACTIVE_HABITS;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || atCap) return;
 
     const dbCategory = toDbCategory(category);
     const created = onAddHabit({
@@ -42,6 +46,8 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
       tags: [dbCategory],
       archived: false,
     });
+
+    if (!created) return;
 
     if (!isGuest) {
       void insertHabitToSupabase(userId, created).catch(() => {});
@@ -98,6 +104,14 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
             </div>
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-3.5 text-[13px]">
+              {atCap && (
+                <div
+                  role="alert"
+                  className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900 text-[12px] font-semibold text-amber-900 dark:text-amber-200"
+                >
+                  Maximum limit of 20 active habits reached.
+                </div>
+              )}
               {/* Habit Name */}
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1 text-[12px]">Habit Name</label>
@@ -235,10 +249,15 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                 </motion.button>
                 <motion.button
                   type="submit"
-                  whileTap={{ scale: 0.95 }}
-                  className="flex-1 py-2.5 bg-[#23C15D] hover:bg-emerald-600 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-semibold rounded-2xl shadow-md transition cursor-pointer"
+                  disabled={atCap}
+                  whileTap={atCap ? undefined : { scale: 0.95 }}
+                  className={`flex-1 py-2.5 font-semibold rounded-2xl shadow-md transition ${
+                    atCap
+                      ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                      : 'bg-[#23C15D] hover:bg-emerald-600 dark:bg-blue-600 dark:hover:bg-blue-500 text-white cursor-pointer'
+                  }`}
                 >
-                  Create Habit
+                  {atCap ? 'Limit reached' : 'Create Habit'}
                 </motion.button>
               </div>
             </form>

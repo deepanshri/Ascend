@@ -54,6 +54,17 @@ import {
   type PsychologyNotificationWindows,
 } from './lib/notifications';
 import { syncWidgetData } from './lib/widgetSync';
+import {
+  countActiveHabits,
+  getExamShieldStatus,
+  getVacationStatus,
+  isAtActiveHabitCap,
+  loadProtectionState,
+  saveProtectionState,
+  tickProtectionState,
+  toggleExamShield,
+  toggleVacation,
+} from './lib/protection';
 import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
 import { RadialFanCalendar } from './components/RadialFanCalendar';
@@ -104,22 +115,11 @@ export default function App() {
     } catch {}
   }, []);
 
-  // Exam Shield / Vacation Mode state
-  const [examShieldActive, setExamShieldActive] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('ascend_exam_shield') === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  const [vacationModeActive, setVacationModeActive] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('ascend_vacation_mode') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [protection, setProtection] = useState(() => loadProtectionState());
+  const examShieldActive = protection.examShield.active;
+  const vacationModeActive = protection.vacation.active;
+  const examShieldStatus = getExamShieldStatus(protection);
+  const vacationStatus = getVacationStatus(protection);
 
   const examShieldRef = useRef(examShieldActive);
   const vacationModeRef = useRef(vacationModeActive);
@@ -129,16 +129,8 @@ export default function App() {
   vacationModeRef.current = vacationModeActive;
 
   useEffect(() => {
-    try {
-      localStorage.setItem('ascend_exam_shield', examShieldActive ? 'true' : 'false');
-    } catch {}
-  }, [examShieldActive]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('ascend_vacation_mode', vacationModeActive ? 'true' : 'false');
-    } catch {}
-  }, [vacationModeActive]);
+    saveProtectionState(protection);
+  }, [protection]);
 
   const [notificationWindows, setNotificationWindows] = useState<PsychologyNotificationWindows>(
     () => loadNotificationWindows()
@@ -371,6 +363,8 @@ export default function App() {
       const originIso = toISODate(calendarOrigin);
       if (nowIso === originIso) return;
 
+      setProtection((prev) => tickProtectionState(prev, nowIso));
+
       if (!examShieldRef.current && !vacationModeRef.current) {
         const missed = collectMissedMomentumEvents(
           habitsRef.current,
@@ -414,6 +408,10 @@ export default function App() {
     };
   }, [calendarOrigin]);
 
+  useEffect(() => {
+    setProtection((prev) => tickProtectionState(prev, toISODate(calendarOrigin)));
+  }, [calendarOrigin]);
+
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
   const [detailHabit, setDetailHabit] = useState<Habit | null>(null);
   const [longPressedHabitId, setLongPressedHabitId] = useState<string | null>(null);
@@ -434,6 +432,28 @@ export default function App() {
     setToastNotification(message);
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     toastTimeoutRef.current = window.setTimeout(() => setToastNotification(null), 2500);
+  };
+
+  const handleToggleExamShield = () => {
+    setProtection((prev) => {
+      const result = toggleExamShield(prev);
+      if (!result.ok && result.reason) showNotification(result.reason);
+      else if (result.state.examShield.active) showNotification('Exam Shield on — miss decay paused');
+      else showNotification('Exam Shield off — 30-day cooldown started');
+      return result.state;
+    });
+  };
+
+  const handleToggleVacationMode = () => {
+    setProtection((prev) => {
+      const result = toggleVacation(prev);
+      if (result.state.vacation.active) {
+        showNotification('Vacation on — 5-day window, miss decay paused');
+      } else {
+        showNotification('Vacation off');
+      }
+      return result.state;
+    });
   };
 
   // Upgrade guest modal
@@ -541,12 +561,6 @@ export default function App() {
     }, 1500);
     return () => window.clearTimeout(timer);
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('ascend_exam_shield', examShieldActive ? 'true' : 'false');
-    } catch {}
-  }, [examShieldActive]);
 
   useEffect(() => {
     try {
@@ -727,9 +741,15 @@ export default function App() {
   const dayCompletionRates = useMemo(() => {
     return Array.from({ length: 7 }, (_, dayIdx) => {
       if (activeHabits.length === 0) return 0;
-      return calculateDailyWeightedScore(derivedHabits, dayIdx, examShieldActive, undefined, calendarOrigin) / 100;
+      return calculateDailyWeightedScore(
+        derivedHabits,
+        dayIdx,
+        examShieldActive || vacationModeActive,
+        undefined,
+        calendarOrigin
+      ) / 100;
     });
-  }, [activeHabits.length, derivedHabits, examShieldActive, calendarOrigin]);
+  }, [activeHabits.length, derivedHabits, examShieldActive, vacationModeActive, calendarOrigin]);
 
   const selectedDayCompletedCount = activeHabits.filter(
     (h) => h.days[currentDayIndex]
@@ -843,7 +863,11 @@ export default function App() {
   };
 
   // Add new habit (optimistic). Remote insert is performed by AddHabitModal.
-  const handleAddHabit = (newHabitData: Omit<Habit, 'id' | 'days' | 'microDays'>): Habit => {
+  const handleAddHabit = (newHabitData: Omit<Habit, 'id' | 'days' | 'microDays'>): Habit | null => {
+    if (isAtActiveHabitCap(habits)) {
+      showNotification('Maximum limit of 20 active habits reached.');
+      return null;
+    }
     const newHabit: Habit = {
       ...newHabitData,
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'habit-' + Date.now(),
@@ -866,6 +890,11 @@ export default function App() {
 
   // Restore archived habit
   const handleRestoreHabit = (habitId: string) => {
+    const target = habits.find((habit) => habit.id === habitId);
+    if (target?.archived && isAtActiveHabitCap(habits)) {
+      showNotification('Maximum limit of 20 active habits reached.');
+      return;
+    }
     setHabits((prev) =>
       prev.map((h) => (h.id === habitId ? { ...h, archived: false } : h))
     );
@@ -1435,8 +1464,6 @@ export default function App() {
             identityVoteCount={displayedIdentityVotes}
             userId={session.id}
             onOpenLedger={() => setIsLedgerModalOpen(true)}
-            examShieldActive={examShieldActive}
-            onToggleExamShield={() => setExamShieldActive(!examShieldActive)}
             frictionAudits={frictionAudits}
             onAddFrictionNote={handleAddFrictionNote}
             onScroll={handleMainScroll}
@@ -1454,9 +1481,11 @@ export default function App() {
             selectedInterests={selectedInterests}
             onToggleInterest={handleToggleInterest}
             examShieldActive={examShieldActive}
-            onToggleExamShield={() => setExamShieldActive(!examShieldActive)}
+            examShieldStatus={examShieldStatus}
+            onToggleExamShield={handleToggleExamShield}
             vacationModeActive={vacationModeActive}
-            onToggleVacationMode={() => setVacationModeActive(!vacationModeActive)}
+            vacationStatus={vacationStatus}
+            onToggleVacationMode={handleToggleVacationMode}
             notificationWindows={notificationWindows}
             onToggleNotificationWindow={handleToggleNotificationWindow}
             onOpenLedger={() => setIsLedgerModalOpen(true)}
@@ -1556,6 +1585,7 @@ export default function App() {
           onAddHabit={handleAddHabit}
           userId={session.id}
           isGuest={session.isGuest}
+          activeHabitCount={countActiveHabits(habits)}
         />
 
         <HabitDetailModal
