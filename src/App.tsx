@@ -1570,7 +1570,6 @@ export default function App() {
             {/* Radial Fan Calendar: date fan, momentum orb, and mascot */}
             <RadialFanCalendar
               selectedDay={selectedDay}
-              onSelectDay={handleSelectDay}
               dayCompletionRates={dayCompletionRates}
               habits={activeHabits}
               momentumScore={momentumScore}
@@ -1583,8 +1582,14 @@ export default function App() {
             <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
 
             {/* Habit List Header: "+" Button positioned directly above the habit list */}
-            <div className="flex items-center justify-end pt-1 pb-0.5 px-0.5">
-              {/* Add Habit Button: icon-only plus symbol with clean light styling */}
+            <div className="flex items-center justify-end gap-2 pt-1 pb-0.5 px-0.5">
+              <FriendsFeed
+                userId={session.id}
+                isGuest={session.isGuest}
+                userEmail={session.email}
+                userName={session.name}
+                variant="icon"
+              />
               <button
                 id="add-habit-btn-above-list"
                 type="button"
@@ -1654,14 +1659,6 @@ export default function App() {
                 ))
               )}
             </section>
-
-            <FriendsFeed
-              userId={session.id}
-              isGuest={session.isGuest}
-              userEmail={session.email}
-              userName={session.name}
-              variant="drawer"
-            />
           </motion.main>
         )}
 

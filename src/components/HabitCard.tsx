@@ -778,7 +778,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
             WebkitBackfaceVisibility: 'hidden',
             transform: 'rotateY(180deg)',
           }}
-          className="absolute inset-0 w-full h-full bg-surface text-ink rounded-2xl p-4 border-2 border-accent shadow-xl flex flex-col justify-between select-none z-10"
+          className="absolute inset-0 w-full h-full overflow-hidden bg-surface text-ink rounded-2xl p-4 border-2 border-accent shadow-xl flex flex-col justify-between select-none z-10"
         >
           <div className="flex items-center justify-between border-b border-emerald-100/90 dark:border-blue-900/60 pb-1.5">
             <div className="flex items-center space-x-1.5">
@@ -792,7 +792,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
             </span>
           </div>
 
-          <div className="py-2 flex-1 flex flex-col justify-center gap-2">
+          <div className="py-2 flex-1 min-h-0 min-w-0 flex flex-col justify-center gap-2 overflow-hidden">
             <p className="text-[13px] font-medium text-slate-800 dark:text-slate-100 leading-relaxed italic line-clamp-3">
               {habit.purposeAnchor?.trim()
                 ? `"${habit.purposeAnchor.trim()}"`
@@ -800,13 +800,13 @@ export const HabitCard: React.FC<HabitCardProps> = ({
             </p>
             {onToggleKeystone && (
               <div
-                className="flex items-center justify-between pt-1"
+                className="relative w-full min-w-0 shrink-0 flex items-center justify-between gap-2 pt-1 overflow-visible"
                 onPointerDown={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
               >
-                <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                <span className="min-w-0 truncate text-[10.5px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                   Is Keystone Habit?
                 </span>
                 <button
@@ -831,7 +831,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                 >
                   <span
                     className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${
-                      habit.isKeystone ? 'translate-x-4' : 'translate-x-0.5'
+                      habit.isKeystone ? 'translate-x-3.5' : 'translate-x-0.5'
                     } mt-px`}
                   />
                 </button>

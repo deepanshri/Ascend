@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import {
+  mergeQuoteBank,
+  resolveRotatingQuoteIndex,
+  type Quote,
+} from '../data/quotes';
 
-export interface Quote {
-  text: string;
-  author: string;
-  source: string;
-  category: string;
-  icon: string;
-}
+export type { Quote } from '../data/quotes';
 
 export const INTEREST_QUOTES: Quote[] = [
   // Movies
@@ -329,6 +329,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   Productivity: '⚡',
   'Atomic Habits': '🌱',
   Habits: '🌱',
+  Tip: '💡',
 };
 
 function iconForCategory(category: string): string {
@@ -409,16 +410,6 @@ async function fetchQuotesFromSupabase(categories: string[]): Promise<Quote[]> {
   }
 }
 
-function dailyStartIndex(length: number): number {
-  if (length <= 1) return 0;
-  const iso = new Date().toISOString().slice(0, 10);
-  let hash = 0;
-  for (let i = 0; i < iso.length; i += 1) {
-    hash = (hash * 31 + iso.charCodeAt(i)) >>> 0;
-  }
-  return hash % length;
-}
-
 interface QuoteCardProps {
   selectedInterests?: string[];
   isGuest?: boolean;
@@ -428,8 +419,9 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
   selectedInterests = [],
   isGuest = false,
 }) => {
-  const [quotes, setQuotes] = useState<Quote[]>(() => localQuotesFor(selectedInterests, isGuest));
+  const [quotes, setQuotes] = useState<Quote[]>(() => mergeQuoteBank(localQuotesFor(selectedInterests, isGuest)));
   const [quoteIndex, setQuoteIndex] = useState(0);
+  const pool = useMemo(() => mergeQuoteBank(quotes), [quotes]);
 
   useEffect(() => {
     let cancelled = false;
@@ -460,37 +452,53 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
   }, [selectedInterests, isGuest]);
 
   useEffect(() => {
-    setQuoteIndex(dailyStartIndex(quotes.length));
-  }, [quotes]);
+    const syncRotation = () => {
+      setQuoteIndex(resolveRotatingQuoteIndex(pool.length));
+    };
 
-  const handleNextQuote = () => {
-    if (quotes.length === 0) return;
-    setQuoteIndex((prev) => (prev + 1) % quotes.length);
-  };
+    syncRotation();
+    window.addEventListener('focus', syncRotation);
+    document.addEventListener('visibilitychange', syncRotation);
 
-  const currentQuote = quotes[quoteIndex % Math.max(quotes.length, 1)] || DEFAULT_HABIT_QUOTES[0];
+    return () => {
+      window.removeEventListener('focus', syncRotation);
+      document.removeEventListener('visibilitychange', syncRotation);
+    };
+  }, [pool.length]);
+
+  const currentQuote = pool[quoteIndex % Math.max(pool.length, 1)] || DEFAULT_HABIT_QUOTES[0];
+  const isTip = currentQuote.kind === 'tip' || currentQuote.category === 'Tip';
 
   return (
     <div
       id="atomic-quote-card"
       data-tour="daily-wisdom"
-      onClick={handleNextQuote}
-      title="Tap to cycle quote"
-      className="w-full rounded-xl py-2 px-3 bg-surface text-ink border border-line shadow-2xs select-none transition-all cursor-pointer hover:bg-surface-muted active:scale-[0.99]"
+      title={isTip ? 'Feature tip · rotates every 5–6 hours' : 'Quote · rotates every 5–6 hours'}
+      className="w-full rounded-xl py-2 px-3 bg-surface text-ink border border-line shadow-2xs select-none"
     >
-      <p className="text-[12px] font-medium text-slate-800 dark:text-slate-100 italic leading-snug">
-        &ldquo;{currentQuote.text}&rdquo;
-      </p>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={`${quoteIndex}-${currentQuote.text}`}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <p className="text-[12px] font-medium text-slate-800 dark:text-slate-100 italic leading-snug">
+            &ldquo;{currentQuote.text}&rdquo;
+          </p>
 
-      <div className="flex items-center justify-between mt-1 text-[10.5px]">
-        <span className="font-semibold text-emerald-900 dark:text-emerald-300">
-          — {currentQuote.author}
-        </span>
-        <span className="text-[10px] font-medium text-emerald-800/80 dark:text-emerald-400/80 flex items-center space-x-1">
-          <span>{currentQuote.icon}</span>
-          <span>{currentQuote.category}</span>
-        </span>
-      </div>
+          <div className="flex items-center justify-between mt-1 text-[10.5px]">
+            <span className="font-semibold text-emerald-900 dark:text-blue-300">
+              — {currentQuote.author}
+            </span>
+            <span className="text-[10px] font-medium text-emerald-800/80 dark:text-blue-300/80 flex items-center space-x-1">
+              <span>{currentQuote.icon}</span>
+              <span>{currentQuote.category}</span>
+            </span>
+          </div>
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 };

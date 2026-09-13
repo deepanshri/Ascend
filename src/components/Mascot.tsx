@@ -190,7 +190,7 @@ export function Mascot({
 
   return (
     <div
-      className={`mascot-shell mascot-mood-${mood}${celebrate ? ' is-celebrating' : ''}`}
+      className={`relative z-10 mascot-shell mascot-mood-${mood}${celebrate ? ' is-celebrating' : ''}`}
       aria-hidden="true"
     >
       {mood === 'excited' && <span className="mascot-aura" />}

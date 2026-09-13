@@ -17,7 +17,7 @@ interface RadialFanCalendarProps {
 
 export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
   selectedDay,
-  onSelectDay,
+  onSelectDay: _onSelectDay,
   dayCompletionRates,
   habits,
   momentumScore,
@@ -192,7 +192,7 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
 
       <div
         id="mascot-companion"
-        className="mascot-arc-slot z-0 pointer-events-none"
+        className="mascot-arc-slot z-20 pointer-events-none"
         style={{ top: mascotSlot.top, left: mascotSlot.left }}
       >
         <Mascot
@@ -241,9 +241,9 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
 
         {/* ========================================================================= */}
         {/* SEMICIRCLE ARCH OF DATE CARDS (Day 1 to Day 7)                            */}
-        {/* Tap a card to select that day; the mascot glides along the outer dot arc  */}
+        {/* Read-only date tiles; mascot sits above this layer.                     */}
         {/* ========================================================================= */}
-        <g id="fan-date-cards" className="pointer-events-auto">
+        <g id="fan-date-cards" className="pointer-events-none" style={{ pointerEvents: 'none' }}>
           {dateCards.map((card) => {
             const isActive = card.isSelected || card.isToday;
             return (
@@ -251,21 +251,8 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
                 key={card.day}
                 id={`fan-day-card-${card.day}`}
                 transform={`translate(${card.x}, ${card.y}) rotate(${card.rot})`}
-                className="cursor-pointer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectDay?.(card.day);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onSelectDay?.(card.day);
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-                aria-label={`Select ${card.isoDate || `day ${card.day}`}${card.isToday ? ', today' : card.isPast ? ', historical' : ', upcoming'}`}
-                aria-pressed={card.isSelected}
+                className="pointer-events-none cursor-default"
+                aria-hidden="true"
               >
                 {/* Crisp card background */}
                 <rect

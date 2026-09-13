@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   ensureProfileDirectory,
@@ -25,7 +26,7 @@ export interface FriendsFeedProps {
   isGuest?: boolean;
   userEmail?: string;
   userName?: string;
-  variant?: 'full' | 'drawer' | 'modal';
+  variant?: 'full' | 'drawer' | 'modal' | 'icon';
   onClose?: () => void;
 }
 
@@ -54,7 +55,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   const [activity, setActivity] = useState<FriendActivityItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<'feed' | 'pending'>('feed');
-  const [drawerOpen, setDrawerOpen] = useState(variant !== 'drawer');
+  const [drawerOpen, setDrawerOpen] = useState(variant !== 'drawer' && variant !== 'icon');
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<ProfileDirectoryHit[]>([]);
@@ -215,8 +216,16 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
               Add Friend
             </button>
           )}
-          {onClose && (
-            <button type="button" onClick={onClose} className="text-ink-muted text-lg leading-none cursor-pointer" aria-label="Close">
+          {(onClose || variant === 'icon') && (
+            <button
+              type="button"
+              onClick={() => {
+                setDrawerOpen(false);
+                onClose?.();
+              }}
+              className="text-ink-muted text-lg leading-none cursor-pointer"
+              aria-label="Close"
+            >
               ×
             </button>
           )}
@@ -468,20 +477,70 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     );
   }
 
+  const friendsModal = (
+    <AnimatePresence>
+      {(variant === 'modal' || (variant === 'icon' && drawerOpen)) && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          onClick={() => {
+            setDrawerOpen(false);
+            onClose?.();
+          }}
+        >
+          <motion.div
+            className="w-full max-w-[390px] max-h-[85vh] overflow-y-auto bg-surface rounded-2xl p-4 border border-line shadow-2xl"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {body}
+          </motion.div>
+          {addModal}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
+  if (variant === 'icon') {
+    return (
+      <>
+        <button
+          id="home-friends-btn"
+          type="button"
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Friends"
+          title="Friends"
+          className="relative w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-blue-500 text-emerald-800 dark:text-blue-400 shadow-xs hover:bg-emerald-50 dark:hover:bg-blue-950 active:scale-95 transition cursor-pointer flex items-center justify-center"
+        >
+          <svg className="w-4 h-4 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.118a7.5 7.5 0 0115 0A17.93 17.93 0 0112 21.75c-2.68 0-5.21-.584-7.5-1.632z"
+            />
+          </svg>
+          {incoming.length > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-md bg-accent text-accent-fg text-[9px] font-black flex items-center justify-center">
+              {incoming.length}
+            </span>
+          )}
+        </button>
+        {friendsModal}
+      </>
+    );
+  }
+
   if (variant === 'modal') {
     return (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs"
-        onClick={onClose}
-      >
-        <div
-          className="w-full max-w-[390px] max-h-[85vh] overflow-y-auto bg-surface rounded-3xl p-4 border border-line shadow-2xl"
-          onClick={(event) => event.stopPropagation()}
-        >
-          {body}
-        </div>
-        {addModal}
-      </div>
+      <>
+        {friendsModal}
+      </>
     );
   }
 

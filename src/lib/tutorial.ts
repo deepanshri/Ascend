@@ -68,7 +68,7 @@ const HOME_STEPS: DriveStep[] = [
     popover: {
       title: 'Daily Atomic Wisdom',
       description:
-        'Quotes are curated from your Personal interests. We match categories in the quotes library, and fall back to Productivity / Atomic Habits in Guest mode or when no category match exists. Tap the card to cycle.',
+        'Quotes and short feature tips rotate automatically every 5–6 hours. They are curated from your Personal interests, and fall back to Productivity / Atomic Habits in Guest mode or when no category match exists.',
       side: 'bottom',
       align: 'center',
     },
@@ -124,7 +124,7 @@ const SCREEN_STEPS: Record<Exclude<TutorialScreen, 'home'>, DriveStep[]> = {
       popover: {
         title: 'Daily dots vs these rings',
         description:
-          'Home’s fan dots are a week-at-a-glance of whether you showed up. These rings split the same event log by Work, Self-Improvement, and Sleep. They are not a second score — they answer “where did the week go?”',
+          'Home’s fan dots are a week-at-a-glance of whether you showed up. These rings split the same event log by Work, Self-Improvement, and Sleep. Switch Graph swaps rings for the line view — the Analysis bars stay put. Tabs filter Today, 7 days, 30 days, or the full momentum curve.',
         side: 'bottom',
         align: 'center',
       },

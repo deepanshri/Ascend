@@ -1,6 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Habit, HabitCategory, HabitCompletionEvent, IdentityEvidence, FrictionAudit, MomentumEvent } from '../types';
-import { addDaysIso, endOfIsoDate, getTodayDayIndex, getWeekDates, getWeekdayShort, toISODate } from '../utils/dates';
+import {
+  addDaysIso,
+  endOfIsoDate,
+  parseIsoDateParts,
+  resolveEventIsoDate,
+  startOfDay,
+  toISODate,
+} from '../utils/dates';
 import { countMomentumCompletedActions } from '../lib/supabase';
 import {
   activeKeystoneHabits,
@@ -9,12 +17,12 @@ import {
   MAX_KEYSTONE_HABITS,
   type KeystoneCorrelation,
 } from '../lib/keystone';
-import { readSleepSnapshot, sleepRingRate, SLEEP_TARGET_HOURS, type SleepSnapshot } from '../lib/health';
+import { readSleepSnapshot, SLEEP_TARGET_HOURS, type SleepSnapshot } from '../lib/health';
 import { buildReportCsv, downloadCsvFile } from '../lib/reportExport';
 import { FriendsFeed } from './FriendsFeed';
 import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import { calculateMomentumScore, eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
-import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from '../utils/schedule';
+import { isHabitScheduledOnIso } from '../utils/schedule';
 
 interface ReportViewProps {
   habits: Habit[];
@@ -35,7 +43,10 @@ interface ReportViewProps {
 }
 
 type TimeFilter = 'today' | 'week' | 'month' | 'momentum';
-type GraphMode = 'line' | 'bar';
+type GraphMode = 'rings' | 'line';
+
+const HISTORY_CAP_DAYS = 90;
+const VISUALIZER_EASE = [0.22, 1, 0.36, 1] as const;
 
 function formatKeystoneCorrelation(correlation: KeystoneCorrelation): string {
   const abs = Math.abs(correlation.liftPercent);
@@ -48,48 +59,70 @@ function formatKeystoneCorrelation(correlation: KeystoneCorrelation): string {
   return `On days you complete ${correlation.habitName}, overall momentum is unchanged`;
 }
 
-function categoryDayScore(habit: Habit, dayIndex: number, origin: Date = new Date()): number {
-  if (!isHabitScheduledOnDayIndex(habit, dayIndex, origin)) return -1;
-  if (!habit.days?.[dayIndex]) return 0;
-  return habit.microDays?.[dayIndex] ? 0.5 : 1;
-}
-
-function categoryRateFromDays(
-  habits: Habit[],
-  category: HabitCategory,
-  dayIndexes: number[],
-  origin: Date = new Date()
-): number {
-  const list = habits.filter((habit) => habit.category === category);
-  if (list.length === 0 || dayIndexes.length === 0) return 0;
-  let score = 0;
-  let total = 0;
-  list.forEach((habit) => {
-    dayIndexes.forEach((index) => {
-      const value = categoryDayScore(habit, index, origin);
-      if (value < 0) return;
-      total += 1;
-      score += value;
-    });
-  });
-  return total === 0 ? 0 : score / total;
-}
-
-function categoryRateFromEvents(
-  habits: Habit[],
-  events: MomentumEvent[],
-  category: HabitCategory,
-  startIso: string,
-  endIso: string
-): number {
-  const list = habits.filter((habit) => habit.category === category);
-  if (list.length === 0) return 0;
+function isoRangeInclusive(startIso: string, endIso: string): string[] {
   const dates: string[] = [];
   for (let cursor = startIso; cursor <= endIso; cursor = addDaysIso(cursor, 1)) {
     dates.push(cursor);
   }
+  return dates;
+}
+
+function weekdayNarrowFromIso(iso: string): string {
+  const parts = parseIsoDateParts(iso);
+  if (!parts) return '';
+  return new Date(parts.year, parts.month - 1, parts.day).toLocaleDateString('en-US', { weekday: 'narrow' });
+}
+
+function weekdayShortFromIso(iso: string): string {
+  const parts = parseIsoDateParts(iso);
+  if (!parts) return '';
+  return new Date(parts.year, parts.month - 1, parts.day).toLocaleDateString('en-US', { weekday: 'short' });
+}
+
+function startOfIsoMs(iso: string): number {
+  const parts = parseIsoDateParts(iso);
+  if (!parts) return 0;
+  return new Date(parts.year, parts.month - 1, parts.day).getTime();
+}
+
+function completionLogScore(type: HabitCompletionEvent['type']): number {
+  return type === 'fallback_micro' ? 0.5 : 1;
+}
+
+function habitBestScoreOnIso(
+  habitId: string,
+  iso: string,
+  momentumEvents: MomentumEvent[],
+  completionEvents: HabitCompletionEvent[]
+): number {
+  let best = 0;
+  for (const event of momentumEvents) {
+    if (event.habitId !== habitId) continue;
+    if (resolveMomentumEventDate(event) !== iso) continue;
+    best = Math.max(best, eventScore(event.eventType));
+  }
+  for (const event of completionEvents) {
+    if (event.habitId !== habitId) continue;
+    if (resolveEventIsoDate(event) !== iso) continue;
+    best = Math.max(best, completionLogScore(event.type));
+  }
+  return best;
+}
+
+function categoryRateFromLogs(
+  habits: Habit[],
+  category: HabitCategory,
+  startIso: string,
+  endIso: string,
+  momentumEvents: MomentumEvent[],
+  completionEvents: HabitCompletionEvent[]
+): number {
+  const list = habits.filter((habit) => habit.category === category && !habit.archived);
+  if (list.length === 0) return 0;
+  const dates = isoRangeInclusive(startIso, endIso);
   if (dates.length === 0) return 0;
   let score = 0;
+  let scheduledDays = 0;
   dates.forEach((iso) => {
     let weightedSum = 0;
     let weightTotal = 0;
@@ -97,15 +130,102 @@ function categoryRateFromEvents(
       if (!isHabitScheduledOnIso(habit, iso)) return;
       const weight = habitWeight(habit);
       weightTotal += weight;
-      const best = events.reduce((max, event) => {
-        if (event.habitId !== habit.id || resolveMomentumEventDate(event) !== iso) return max;
-        return Math.max(max, eventScore(event.eventType));
-      }, 0);
-      weightedSum += weight * best;
+      weightedSum += weight * habitBestScoreOnIso(habit.id, iso, momentumEvents, completionEvents);
     });
-    score += weightTotal > 0 ? weightedSum / weightTotal : 0;
+    if (weightTotal <= 0) return;
+    scheduledDays += 1;
+    score += weightedSum / weightTotal;
   });
-  return score / dates.length;
+  return scheduledDays === 0 ? 0 : score / scheduledDays;
+}
+
+function earliestLogIso(
+  momentumEvents: MomentumEvent[],
+  completionEvents: HabitCompletionEvent[],
+  todayIso: string
+): string {
+  let earliest = todayIso;
+  for (const event of momentumEvents) {
+    const iso = resolveMomentumEventDate(event);
+    if (iso && iso < earliest) earliest = iso;
+  }
+  for (const event of completionEvents) {
+    const iso = resolveEventIsoDate(event);
+    if (iso && iso < earliest) earliest = iso;
+  }
+  const cap = addDaysIso(todayIso, -(HISTORY_CAP_DAYS - 1));
+  return earliest < cap ? cap : earliest;
+}
+
+function filterLogsThroughMs(
+  iso: string,
+  endMs: number,
+  momentumEvents: MomentumEvent[],
+  completionEvents: HabitCompletionEvent[]
+): { momentum: MomentumEvent[]; completions: HabitCompletionEvent[] } {
+  return {
+    momentum: momentumEvents.filter((event) => {
+      if (resolveMomentumEventDate(event) !== iso) return false;
+      return event.timestamp < endMs;
+    }),
+    completions: completionEvents.filter((event) => {
+      if (resolveEventIsoDate(event) !== iso) return false;
+      return event.timestamp < endMs;
+    }),
+  };
+}
+
+function sleepRateForRange(
+  snapshot: SleepSnapshot,
+  startIso: string,
+  endIso: string,
+  todayIso: string
+): number {
+  if (!snapshot.hasSleepData) return 0;
+  if (startIso === endIso && startIso === todayIso && snapshot.todayHours != null) {
+    return Math.min(1, snapshot.todayHours / SLEEP_TARGET_HOURS);
+  }
+  const days = snapshot.dailyHours.filter((row) => row.isoDate >= startIso && row.isoDate <= endIso);
+  if (days.length > 0) {
+    const average = days.reduce((sum, row) => sum + row.hours, 0) / days.length;
+    return Math.min(1, average / SLEEP_TARGET_HOURS);
+  }
+  if (snapshot.weekHours != null && startIso >= addDaysIso(todayIso, -6)) {
+    return Math.min(1, snapshot.weekHours / (SLEEP_TARGET_HOURS * 7));
+  }
+  return 0;
+}
+
+function sleepHoursLabelForRange(
+  snapshot: SleepSnapshot,
+  startIso: string,
+  endIso: string,
+  todayIso: string
+): string {
+  if (startIso === endIso && startIso === todayIso) {
+    return snapshot.todayHours == null ? '—' : `${snapshot.todayHours}h`;
+  }
+  const days = snapshot.dailyHours.filter((row) => row.isoDate >= startIso && row.isoDate <= endIso);
+  if (days.length > 0) {
+    const total = days.reduce((sum, row) => sum + row.hours, 0);
+    return `${Math.round(total * 10) / 10}h`;
+  }
+  if (snapshot.weekHours != null && startIso >= addDaysIso(todayIso, -6)) {
+    return `${snapshot.weekHours}h`;
+  }
+  return '—';
+}
+
+function todayTimelineBuckets(now: Date): Array<{ label: string; endHour: number }> {
+  const hour = now.getHours();
+  const buckets = [
+    { label: '12a', endHour: 0 },
+    { label: '6a', endHour: 6 },
+    { label: '12p', endHour: 12 },
+    { label: '6p', endHour: 18 },
+  ].filter((bucket) => bucket.endHour <= hour);
+  buckets.push({ label: 'Now', endHour: Math.min(24, hour + 1) });
+  return buckets.length >= 2 ? buckets : [{ label: '12a', endHour: 0 }, { label: 'Now', endHour: 24 }];
 }
 
 function createLinePath(points: Array<{ x: number; y: number }>): string {
@@ -120,17 +240,9 @@ function createLinePath(points: Array<{ x: number; y: number }>): string {
   return d;
 }
 
-function graphXs(count: number, left = 24, right = 208): number[] {
+function graphXs(count: number, left = 24, right = 348): number[] {
   if (count <= 1) return [(left + right) / 2];
   return Array.from({ length: count }, (_, i) => left + (i / (count - 1)) * (right - left));
-}
-
-function isoRangeInclusive(startIso: string, endIso: string): string[] {
-  const dates: string[] = [];
-  for (let cursor = startIso; cursor <= endIso; cursor = addDaysIso(cursor, 1)) {
-    dates.push(cursor);
-  }
-  return dates;
 }
 
 export const ReportView: React.FC<ReportViewProps> = ({
@@ -151,7 +263,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
   completionEvents = [],
 }) => {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
-  const [graphMode, setGraphMode] = useState<GraphMode>('line');
+  const [graphMode, setGraphMode] = useState<GraphMode>('rings');
   const [downloadSuccess, setDownloadSuccess] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [remoteVoteCount, setRemoteVoteCount] = useState<number | null>(null);
@@ -166,10 +278,19 @@ export const ReportView: React.FC<ReportViewProps> = ({
     dailyHours: [],
   });
 
-  const todayIndex = getTodayDayIndex();
   const todayIso = toISODate();
   const hasSleepData = sleep.hasSleepData;
   const replicaVotes = identityVoteCount ?? evidenceList.length;
+  const windowRange = useMemo(() => {
+    if (timeFilter === 'today') return { startIso: todayIso, endIso: todayIso, title: 'Today' };
+    if (timeFilter === 'week') return { startIso: addDaysIso(todayIso, -6), endIso: todayIso, title: 'Past 7 days' };
+    if (timeFilter === 'month') return { startIso: addDaysIso(todayIso, -29), endIso: todayIso, title: 'Past 30 days' };
+    return {
+      startIso: earliestLogIso(momentumEvents, completionEvents, todayIso),
+      endIso: todayIso,
+      title: 'Momentum',
+    };
+  }, [timeFilter, todayIso, momentumEvents, completionEvents]);
 
   const keystones = useMemo(() => activeKeystoneHabits(habits), [habits]);
   const keystoneCompletionRate = useMemo(() => keystoneOverallCompletionRate(habits), [habits]);
@@ -210,22 +331,20 @@ export const ReportView: React.FC<ReportViewProps> = ({
   const ledgerVoteCount = Math.max(voteFloor, replicaVotes, remoteVoteCount ?? 0);
 
   const categoryStats = useMemo(() => {
-    const monthStart = addDaysIso(todayIso, -29);
-    const work =
-      timeFilter === 'month' || timeFilter === 'momentum'
-        ? categoryRateFromEvents(habits, momentumEvents, 'work', monthStart, todayIso)
-        : categoryRateFromDays(habits, 'work', timeFilter === 'today' ? [todayIndex] : [0, 1, 2, 3, 4, 5, 6]);
-    const self =
-      timeFilter === 'month' || timeFilter === 'momentum'
-        ? categoryRateFromEvents(habits, momentumEvents, 'self_improvement', monthStart, todayIso)
-        : categoryRateFromDays(
-            habits,
-            'self_improvement',
-            timeFilter === 'today' ? [todayIndex] : [0, 1, 2, 3, 4, 5, 6]
-          );
-    const sleepRate = sleepRingRate(sleep, timeFilter === 'today' ? 'today' : 'week');
-    return { work, self, sleep: sleepRate };
-  }, [habits, momentumEvents, timeFilter, todayIndex, todayIso, sleep]);
+    const { startIso, endIso } = windowRange;
+    return {
+      work: categoryRateFromLogs(habits, 'work', startIso, endIso, momentumEvents, completionEvents),
+      self: categoryRateFromLogs(
+        habits,
+        'self_improvement',
+        startIso,
+        endIso,
+        momentumEvents,
+        completionEvents
+      ),
+      sleep: sleepRateForRange(sleep, startIso, endIso, todayIso),
+    };
+  }, [habits, momentumEvents, completionEvents, windowRange, sleep, todayIso]);
 
   const lineGraphData = useMemo(() => {
     const toPoint = (pct: number, x: number, yMin: number, yMax: number) => ({
@@ -233,55 +352,62 @@ export const ReportView: React.FC<ReportViewProps> = ({
       y: Math.round((yMax - Math.min(1, Math.max(0, pct)) * (yMax - yMin)) * 10) / 10,
     });
     const sleepByIso = new Map<string, number>(sleep.dailyHours.map((row) => [row.isoDate, row.hours]));
-    const weekDates = getWeekDates();
-    const weekIso = weekDates.map((date) => toISODate(date));
+    const { startIso, endIso, title } = windowRange;
 
     let labels: string[] = [];
     let workRates: number[] = [];
     let selfRates: number[] = [];
     let sleepRates: number[] = [];
     let momentumRates: number[] = [];
-    let title = 'Line graph';
 
     if (timeFilter === 'today') {
-      title = 'Today';
-      const yesterdayIdx = Math.max(0, todayIndex - 1);
-      const todaySlots = yesterdayIdx === todayIndex ? [todayIndex] : [yesterdayIdx, todayIndex];
-      labels = todaySlots.map((idx) => (idx === todayIndex ? 'Today' : getWeekdayShort(idx)));
-      workRates = todaySlots.map((idx) => categoryRateFromDays(habits, 'work', [idx]));
-      selfRates = todaySlots.map((idx) => categoryRateFromDays(habits, 'self_improvement', [idx]));
-      sleepRates = todaySlots.map((idx) => {
-        const iso = weekIso[idx] ?? todayIso;
-        if (idx === todayIndex && sleep.todayHours != null) return sleep.todayHours / SLEEP_TARGET_HOURS;
-        return (sleepByIso.get(iso) ?? 0) / SLEEP_TARGET_HOURS;
+      const now = new Date();
+      const dayStart = startOfDay(now).getTime();
+      const buckets = todayTimelineBuckets(now);
+      labels = buckets.map((bucket) => bucket.label);
+      workRates = buckets.map((bucket) => {
+        const sliced = filterLogsThroughMs(todayIso, dayStart + bucket.endHour * 3_600_000, momentumEvents, completionEvents);
+        return categoryRateFromLogs(habits, 'work', todayIso, todayIso, sliced.momentum, sliced.completions);
       });
-    } else if (timeFilter === 'week') {
-      title = 'This week';
-      labels = weekDates.map((_, dayIdx) => getWeekdayShort(dayIdx).slice(0, 1));
-      workRates = weekDates.map((_, dayIdx) => categoryRateFromDays(habits, 'work', [dayIdx]));
-      selfRates = weekDates.map((_, dayIdx) => categoryRateFromDays(habits, 'self_improvement', [dayIdx]));
-      sleepRates = weekIso.map((iso) => (sleepByIso.get(iso) ?? 0) / SLEEP_TARGET_HOURS);
-    } else if (timeFilter === 'month') {
-      title = 'Last 30 days';
-      const monthIsos = isoRangeInclusive(addDaysIso(todayIso, -29), todayIso);
-      labels = monthIsos.map((iso, idx) => (idx % 6 === 0 || idx === monthIsos.length - 1 ? iso.slice(5) : ''));
-      workRates = monthIsos.map((iso) => categoryRateFromEvents(habits, momentumEvents, 'work', iso, iso));
-      selfRates = monthIsos.map((iso) =>
-        categoryRateFromEvents(habits, momentumEvents, 'self_improvement', iso, iso)
+      selfRates = buckets.map((bucket) => {
+        const sliced = filterLogsThroughMs(todayIso, dayStart + bucket.endHour * 3_600_000, momentumEvents, completionEvents);
+        return categoryRateFromLogs(habits, 'self_improvement', todayIso, todayIso, sliced.momentum, sliced.completions);
+      });
+      sleepRates = buckets.map(() =>
+        sleep.todayHours == null ? 0 : sleep.todayHours / SLEEP_TARGET_HOURS
       );
-      sleepRates = monthIsos.map((iso) => (sleepByIso.get(iso) ?? 0) / SLEEP_TARGET_HOURS);
-    } else {
-      title = 'Momentum';
-      const monthIsos = isoRangeInclusive(addDaysIso(todayIso, -29), todayIso);
-      labels = monthIsos.map((iso, idx) => (idx % 6 === 0 || idx === monthIsos.length - 1 ? iso.slice(5) : ''));
-      momentumRates = monthIsos.map(
+    } else if (timeFilter === 'momentum') {
+      const seriesIsos = isoRangeInclusive(startIso, endIso);
+      labels = seriesIsos.map((iso, idx) =>
+        idx === 0 || idx === seriesIsos.length - 1 || idx % Math.max(1, Math.ceil(seriesIsos.length / 6)) === 0
+          ? iso.slice(5)
+          : ''
+      );
+      momentumRates = seriesIsos.map(
         (iso) => calculateMomentumScore(momentumEvents, { asOf: endOfIsoDate(iso), habits }) / 100
       );
-      workRates = monthIsos.map((iso) => categoryRateFromEvents(habits, momentumEvents, 'work', iso, iso));
-      selfRates = monthIsos.map((iso) =>
-        categoryRateFromEvents(habits, momentumEvents, 'self_improvement', iso, iso)
+      workRates = seriesIsos.map((iso) =>
+        categoryRateFromLogs(habits, 'work', iso, iso, momentumEvents, completionEvents)
       );
-      sleepRates = monthIsos.map((iso) => (sleepByIso.get(iso) ?? 0) / SLEEP_TARGET_HOURS);
+      selfRates = seriesIsos.map((iso) =>
+        categoryRateFromLogs(habits, 'self_improvement', iso, iso, momentumEvents, completionEvents)
+      );
+      sleepRates = seriesIsos.map((iso) => (sleepByIso.get(iso) ?? 0) / SLEEP_TARGET_HOURS);
+    } else {
+      const seriesIsos = isoRangeInclusive(startIso, endIso);
+      labels =
+        timeFilter === 'week'
+          ? seriesIsos.map((iso) => weekdayNarrowFromIso(iso))
+          : seriesIsos.map((iso, idx) =>
+              idx % 6 === 0 || idx === seriesIsos.length - 1 ? iso.slice(5) : ''
+            );
+      workRates = seriesIsos.map((iso) =>
+        categoryRateFromLogs(habits, 'work', iso, iso, momentumEvents, completionEvents)
+      );
+      selfRates = seriesIsos.map((iso) =>
+        categoryRateFromLogs(habits, 'self_improvement', iso, iso, momentumEvents, completionEvents)
+      );
+      sleepRates = seriesIsos.map((iso) => (sleepByIso.get(iso) ?? 0) / SLEEP_TARGET_HOURS);
     }
 
     const xs = graphXs(Math.max(labels.length, 1));
@@ -304,12 +430,20 @@ export const ReportView: React.FC<ReportViewProps> = ({
       sleepPath: createLinePath(sleepPoints),
       momentumPath: createLinePath(momentumPoints),
     };
-  }, [habits, sleep.dailyHours, sleep.todayHours, timeFilter, todayIndex, todayIso, momentumEvents]);
+  }, [
+    habits,
+    sleep.dailyHours,
+    sleep.todayHours,
+    timeFilter,
+    todayIso,
+    momentumEvents,
+    completionEvents,
+    windowRange,
+  ]);
 
-  const frictionWindowMs =
-    timeFilter === 'today' ? 1 : timeFilter === 'month' ? 30 : 7;
-  const frictionCutoff = Date.now() - frictionWindowMs * 24 * 60 * 60 * 1000;
-  const frictionCutoffIso = addDaysIso(todayIso, -(frictionWindowMs - 1));
+  const rollingWeekIsos = useMemo(() => isoRangeInclusive(addDaysIso(todayIso, -6), todayIso), [todayIso]);
+  const frictionCutoff = startOfIsoMs(windowRange.startIso);
+  const frictionCutoffIso = windowRange.startIso;
 
   const windowAudits = useMemo(
     () =>
@@ -388,14 +522,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
         { label: 'SI', rate: categoryStats.self },
       ];
 
-  const sleepHoursLabel =
-    timeFilter === 'today'
-      ? sleep.todayHours == null
-        ? '—'
-        : `${sleep.todayHours}h`
-      : sleep.weekHours == null
-      ? '—'
-      : `${sleep.weekHours}h`;
+  const sleepHoursLabel = sleepHoursLabelForRange(sleep, windowRange.startIso, windowRange.endIso, todayIso);
+  const mixPercent = Math.round(
+    ((hasSleepData ? categoryStats.work + categoryStats.self + categoryStats.sleep : categoryStats.work + categoryStats.self) /
+      (hasSleepData ? 3 : 2)) *
+      100
+  );
 
   return (
     <div
@@ -439,73 +571,6 @@ export const ReportView: React.FC<ReportViewProps> = ({
         }
       />
 
-      <section data-tour="report-rings" className="relative w-full flex flex-col items-center justify-center">
-        <div className="relative w-full max-w-[340px] h-[210px] flex items-center justify-center">
-          <svg className="w-full h-full overflow-visible" viewBox="0 0 320 220">
-            <circle cx={cx} cy={cy} r={80} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
-            {ringLayout.map((ring) => (
-              <g key={ring.key}>
-                <circle cx={cx} cy={cy} r={ring.r} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth={strokeW} />
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={ring.r}
-                  fill="none"
-                  stroke={ring.color}
-                  strokeWidth={strokeW}
-                  strokeDasharray={getArc(ring.r, ring.rate)}
-                  strokeLinecap="round"
-                  transform={`rotate(-90 ${cx} ${cy})`}
-                />
-              </g>
-            ))}
-            {hasSleepData ? (
-              <>
-                <polyline points={`${cx + 38},${cy - 42} ${cx + 52},${cy - 52} ${cx + 70},${cy - 52}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
-                <circle cx={cx + 76} cy={cy - 52} r={3} fill={isDark ? '#1d4ed8' : '#166534'} />
-                <text x={cx + 84} y={cy - 48} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[12px] font-semibold">
-                  Sleep
-                </text>
-                <polyline points={`${cx - 43},${cy - 4} ${cx - 75},${cy - 4}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
-                <circle cx={cx - 81} cy={cy - 4} r={3} fill={isDark ? '#2563eb' : '#0B5938'} />
-                <text x={cx - 90} y={cy - 12} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
-                  Work /
-                </text>
-                <text x={cx - 90} y={cy + 3} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
-                  Academic
-                </text>
-                <polyline points={`${cx + 30},${cy + 8} ${cx + 72},${cy + 8}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
-                <circle cx={cx + 78} cy={cy + 8} r={3} fill={isDark ? '#3b82f6' : '#23C15D'} />
-                <text x={cx + 86} y={cy + 12} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[12px] font-semibold">
-                  Self-Improvement
-                </text>
-              </>
-            ) : (
-              <>
-                <polyline points={`${cx - 52},${cy - 6} ${cx - 84},${cy - 6}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
-                <circle cx={cx - 90} cy={cy - 6} r={3} fill={isDark ? '#2563eb' : '#0B5938'} />
-                <text x={cx - 98} y={cy - 14} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
-                  Work /
-                </text>
-                <text x={cx - 98} y={cy + 1} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
-                  Academic
-                </text>
-                <polyline points={`${cx + 34},${cy + 6} ${cx + 78},${cy + 6}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
-                <circle cx={cx + 84} cy={cy + 6} r={3} fill={isDark ? '#3b82f6' : '#23C15D'} />
-                <text x={cx + 92} y={cy + 10} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[12px] font-semibold">
-                  Self-Improvement
-                </text>
-              </>
-            )}
-          </svg>
-        </div>
-        {hasSleepData && (
-          <p className="text-[11.5px] text-slate-500 dark:text-slate-400 -mt-2">
-            Sleep logged {sleepHoursLabel} · target {SLEEP_TARGET_HOURS}h
-          </p>
-        )}
-      </section>
-
       <section data-tour="report-momentum" className="bg-[#EFF3F6] dark:bg-slate-800/80 p-1 rounded-2xl flex items-center">
         {(['today', 'week', 'month', 'momentum'] as TimeFilter[]).map((tab) => {
           const isActive = timeFilter === tab;
@@ -528,88 +593,149 @@ export const ReportView: React.FC<ReportViewProps> = ({
         })}
       </section>
 
-      <section>
-        {graphMode === 'line' ? (
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-2">
-            <div className="flex items-center justify-between text-xs px-1">
-              <span className="font-bold text-slate-800 dark:text-white">{lineGraphData.title}</span>
-              <span className="text-emerald-700 dark:text-blue-400 font-bold tabular-nums">
-                {timeFilter === 'momentum'
-                  ? momentumScore
-                  : Math.round(
-                      ((hasSleepData ? categoryStats.work + categoryStats.self + categoryStats.sleep : categoryStats.work + categoryStats.self) /
-                        (hasSleepData ? 3 : 2)) *
-                        100
-                    )}
-                {timeFilter === 'momentum' ? '' : '%'}
-              </span>
-            </div>
-            <svg key={timeFilter} className="w-full h-[155px] overflow-visible" viewBox="0 0 375 162">
-              <line x1="16" y1="36" x2="216" y2="36" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
-              <line x1="16" y1="78" x2="216" y2="78" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
-              <line x1="16" y1="120" x2="216" y2="120" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
-              {lineGraphData.labels.map((label, idx) => (
-                <text
-                  key={`${label}-${idx}`}
-                  x={lineGraphData.xs[idx]}
-                  y={155}
-                  textAnchor="middle"
-                  fill={isDark ? '#64748b' : '#94A3B8'}
-                  className="text-[9.5px] font-bold"
-                >
-                  {label}
-                </text>
-              ))}
-              {hasSleepData && !lineGraphData.showMomentum && (
-                <path d={lineGraphData.sleepPath} fill="none" stroke={isDark ? '#1d4ed8' : '#166534'} strokeWidth="2.5" strokeLinecap="round" />
-              )}
-              {lineGraphData.showMomentum ? (
-                <path d={lineGraphData.momentumPath} fill="none" stroke={isDark ? '#60a5fa' : '#15803d'} strokeWidth="2.8" strokeLinecap="round" />
-              ) : (
-                <>
-                  <path d={lineGraphData.workPath} fill="none" stroke={isDark ? '#3b82f6' : '#23C15D'} strokeWidth="2.5" strokeLinecap="round" />
-                  <path d={lineGraphData.selfPath} fill="none" stroke={isDark ? '#93c5fd' : '#4ADE80'} strokeWidth="2.5" strokeLinecap="round" />
-                </>
-              )}
-            </svg>
-          </div>
-        ) : (
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-3">
-            <span className="px-1 text-xs font-bold text-slate-800 dark:text-white">
-              {timeFilter === 'momentum' ? 'Momentum mix' : `${lineGraphData.title} breakdown`}
-            </span>
-            <div className={`grid gap-3 ${hasSleepData ? 'grid-cols-3' : 'grid-cols-2'}`}>
-              {barSeries.map((col) => {
-                const height = Math.round(col.rate * 110);
-                return (
-                  <div key={col.label} className="flex flex-col items-center">
-                    <span className="text-[11.5px] font-extrabold text-slate-800 dark:text-white tabular-nums mb-1">
-                      {Math.round(col.rate * 100)}%
-                    </span>
-                    <div className="h-[120px] w-full flex items-end justify-center">
-                      <div
-                        style={{ height: `${Math.max(4, height)}px` }}
-                        className="w-8 rounded-t-lg bg-[#23C15D] dark:bg-blue-500 transition-[height] duration-300 ease-out"
+      <section data-tour="report-rings" className="relative w-full flex flex-col items-center justify-center">
+        <div className="relative w-full min-h-[230px] flex items-center justify-center">
+          <AnimatePresence mode="wait" initial={false}>
+            {graphMode === 'rings' ? (
+              <motion.div
+                key={`rings-${timeFilter}`}
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.96 }}
+                transition={{ duration: 0.22, ease: VISUALIZER_EASE }}
+                className="relative w-full max-w-[340px] h-[210px] flex items-center justify-center"
+              >
+                <svg className="w-full h-full overflow-visible" viewBox="0 0 320 220">
+                  <circle cx={cx} cy={cy} r={80} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
+                  {ringLayout.map((ring) => (
+                    <g key={ring.key}>
+                      <circle cx={cx} cy={cy} r={ring.r} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth={strokeW} />
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={ring.r}
+                        fill="none"
+                        stroke={ring.color}
+                        strokeWidth={strokeW}
+                        strokeDasharray={getArc(ring.r, ring.rate)}
+                        strokeLinecap="round"
+                        transform={`rotate(-90 ${cx} ${cy})`}
                       />
-                    </div>
-                    <span className="mt-2 text-[11.5px] font-semibold text-slate-700 dark:text-slate-300">{col.label}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+                    </g>
+                  ))}
+                  {hasSleepData ? (
+                    <>
+                      <polyline points={`${cx + 38},${cy - 42} ${cx + 52},${cy - 52} ${cx + 70},${cy - 52}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
+                      <circle cx={cx + 76} cy={cy - 52} r={3} fill={isDark ? '#1d4ed8' : '#166534'} />
+                      <text x={cx + 84} y={cy - 48} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[12px] font-semibold">
+                        Sleep
+                      </text>
+                      <polyline points={`${cx - 43},${cy - 4} ${cx - 75},${cy - 4}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
+                      <circle cx={cx - 81} cy={cy - 4} r={3} fill={isDark ? '#2563eb' : '#0B5938'} />
+                      <text x={cx - 90} y={cy - 12} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
+                        Work /
+                      </text>
+                      <text x={cx - 90} y={cy + 3} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
+                        Academic
+                      </text>
+                      <polyline points={`${cx + 30},${cy + 8} ${cx + 72},${cy + 8}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
+                      <circle cx={cx + 78} cy={cy + 8} r={3} fill={isDark ? '#3b82f6' : '#23C15D'} />
+                      <text x={cx + 86} y={cy + 12} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[12px] font-semibold">
+                        Self-Improvement
+                      </text>
+                    </>
+                  ) : (
+                    <>
+                      <polyline points={`${cx - 52},${cy - 6} ${cx - 84},${cy - 6}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
+                      <circle cx={cx - 90} cy={cy - 6} r={3} fill={isDark ? '#2563eb' : '#0B5938'} />
+                      <text x={cx - 98} y={cy - 14} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
+                        Work /
+                      </text>
+                      <text x={cx - 98} y={cy + 1} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
+                        Academic
+                      </text>
+                      <polyline points={`${cx + 34},${cy + 6} ${cx + 78},${cy + 6}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
+                      <circle cx={cx + 84} cy={cy + 6} r={3} fill={isDark ? '#3b82f6' : '#23C15D'} />
+                      <text x={cx + 92} y={cy + 10} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[12px] font-semibold">
+                        Self-Improvement
+                      </text>
+                    </>
+                  )}
+                </svg>
+              </motion.div>
+            ) : (
+              <motion.div
+                key={`line-${timeFilter}`}
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.96 }}
+                transition={{ duration: 0.22, ease: VISUALIZER_EASE }}
+                className="w-full bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-2"
+              >
+                <div className="flex items-center justify-between text-xs px-1">
+                  <span className="font-bold text-slate-800 dark:text-white">{lineGraphData.title}</span>
+                  <span className="text-emerald-700 dark:text-blue-400 font-bold tabular-nums">
+                    {timeFilter === 'momentum' ? momentumScore : mixPercent}
+                    {timeFilter === 'momentum' ? '' : '%'}
+                  </span>
+                </div>
+                <svg className="w-full h-[155px] overflow-visible" viewBox="0 0 375 162">
+                  <line x1="16" y1="36" x2="360" y2="36" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
+                  <line x1="16" y1="78" x2="360" y2="78" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
+                  <line x1="16" y1="120" x2="360" y2="120" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
+                  {lineGraphData.labels.map((label, idx) => (
+                    <text
+                      key={`${label}-${idx}`}
+                      x={lineGraphData.xs[idx]}
+                      y={155}
+                      textAnchor="middle"
+                      fill={isDark ? '#64748b' : '#94A3B8'}
+                      className="text-[9.5px] font-bold"
+                    >
+                      {label}
+                    </text>
+                  ))}
+                  {hasSleepData && !lineGraphData.showMomentum && (
+                    <path d={lineGraphData.sleepPath} fill="none" stroke={isDark ? '#1d4ed8' : '#166534'} strokeWidth="2.5" strokeLinecap="round" />
+                  )}
+                  {lineGraphData.showMomentum ? (
+                    <path d={lineGraphData.momentumPath} fill="none" stroke={isDark ? '#60a5fa' : '#15803d'} strokeWidth="2.8" strokeLinecap="round" />
+                  ) : (
+                    <>
+                      <path d={lineGraphData.workPath} fill="none" stroke={isDark ? '#3b82f6' : '#23C15D'} strokeWidth="2.5" strokeLinecap="round" />
+                      <path d={lineGraphData.selfPath} fill="none" stroke={isDark ? '#93c5fd' : '#4ADE80'} strokeWidth="2.5" strokeLinecap="round" />
+                    </>
+                  )}
+                  {(lineGraphData.showMomentum ? lineGraphData.momentumPoints : lineGraphData.workPoints).map((point, idx) => (
+                    <circle
+                      key={`dot-${idx}`}
+                      cx={point.x}
+                      cy={point.y}
+                      r={lineGraphData.labels.length <= 8 ? 2.4 : 1.6}
+                      fill={isDark ? '#60a5fa' : '#15803d'}
+                    />
+                  ))}
+                </svg>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        {hasSleepData && graphMode === 'rings' && (
+          <p className="text-[11.5px] text-slate-500 dark:text-slate-400 -mt-2">
+            Sleep logged {sleepHoursLabel} · target {SLEEP_TARGET_HOURS}h
+          </p>
         )}
-        <div className="flex justify-end pt-1">
+        <div className="flex justify-end w-full pt-1">
           <button
             id="switch-graph-btn"
             type="button"
-            onClick={() => setGraphMode((prev) => (prev === 'line' ? 'bar' : 'line'))}
+            onClick={() => setGraphMode((prev) => (prev === 'rings' ? 'line' : 'rings'))}
             className="px-3.5 py-1.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-xs flex items-center space-x-2 text-[12px] font-semibold text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700 transition cursor-pointer active:scale-95"
           >
             <svg className="w-4 h-4 text-slate-800 dark:text-slate-200" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
             </svg>
-            <span>{graphMode === 'line' ? 'Bar breakdown' : 'Line graph'}</span>
+            <span>Switch Graph</span>
           </button>
         </div>
       </section>
@@ -689,7 +815,35 @@ export const ReportView: React.FC<ReportViewProps> = ({
           </div>
           <div>
             <h2 className="text-[16px] font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight">Analysis</h2>
-            <p className="text-[11.5px] text-slate-400 dark:text-slate-400 font-normal">Friction reasons from habit logs</p>
+            <p className="text-[11.5px] text-slate-400 dark:text-slate-400 font-normal">You vs. Your Own Past</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-xs font-bold text-slate-800 dark:text-white">{windowRange.title} mix</span>
+            <span className="text-xs font-bold text-emerald-700 dark:text-blue-400 tabular-nums">
+              {timeFilter === 'momentum' ? momentumScore : `${mixPercent}%`}
+            </span>
+          </div>
+          <div className={`grid gap-3 ${hasSleepData ? 'grid-cols-3' : 'grid-cols-2'}`}>
+            {barSeries.map((col) => {
+              const height = Math.round(col.rate * 110);
+              return (
+                <div key={col.label} className="flex flex-col items-center">
+                  <span className="text-[11.5px] font-extrabold text-slate-800 dark:text-white tabular-nums mb-1">
+                    {Math.round(col.rate * 100)}%
+                  </span>
+                  <div className="h-[120px] w-full flex items-end justify-center">
+                    <div
+                      style={{ height: `${Math.max(4, height)}px` }}
+                      className="w-8 rounded-t-lg bg-[#23C15D] dark:bg-blue-500 transition-[height] duration-300 ease-out"
+                    />
+                  </div>
+                  <span className="mt-2 text-[11.5px] font-semibold text-slate-700 dark:text-slate-300">{col.label}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -702,15 +856,26 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
         {timeFilter === 'momentum' && (
           <div className="grid grid-cols-7 gap-1.5 text-center">
-            {Array.from({ length: 7 }, (_, i) => {
-              const scheduled = habits.filter((habit) => !habit.archived && isHabitScheduledOnDayIndex(habit, i));
-              const completedCount = scheduled.filter((habit) => habit.days?.[i]).length;
-              const rate = scheduled.length > 0 ? completedCount / scheduled.length : null;
+            {rollingWeekIsos.map((iso) => {
+              const work = categoryRateFromLogs(habits, 'work', iso, iso, momentumEvents, completionEvents);
+              const self = categoryRateFromLogs(
+                habits,
+                'self_improvement',
+                iso,
+                iso,
+                momentumEvents,
+                completionEvents
+              );
+              const sleepRate = sleepRateForRange(sleep, iso, iso, todayIso);
+              const parts = hasSleepData ? [work, self, sleepRate] : [work, self];
+              const rate = parts.reduce((sum, value) => sum + value, 0) / parts.length;
               return (
-                <div key={i} className="flex flex-col items-center">
-                  <span className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1">{getWeekdayShort(i)}</span>
+                <div key={iso} className="flex flex-col items-center">
+                  <span className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                    {weekdayShortFromIso(iso).slice(0, 2)}
+                  </span>
                   <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[11px] font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
-                    {rate == null ? '—' : `${Math.round(rate * 100)}%`}
+                    {`${Math.round(rate * 100)}%`}
                   </div>
                 </div>
               );
@@ -718,6 +883,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
           </div>
         )}
 
+        <p className="text-[11.5px] text-slate-400 dark:text-slate-500 font-medium">Friction reasons from habit logs</p>
         {frictionPatterns.length === 0 && flaggedFrictionEvents.length === 0 ? (
           <p className="text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed">No friction reasons logged for this window.</p>
         ) : (
