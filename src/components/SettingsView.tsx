@@ -58,18 +58,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const archivedHabits = habits.filter((h) => h.archived);
+  const safeHabits = Array.isArray(habits) ? habits : [];
+  const archivedHabits = safeHabits.filter((h) => h.archived);
 
   const handleExportJSON = () => {
     const exportPayload = {
       exportedAt: new Date().toISOString(),
       app: 'Ascend Habit Tracker',
-      habits,
+      habits: safeHabits,
       completionEvents,
       momentumEvents,
       evidenceLedger: evidenceList,
-      totalHabits: habits.length,
-      activeHabits: habits.filter((h) => !h.archived).length,
+      totalHabits: safeHabits.length,
+      activeHabits: safeHabits.filter((h) => !h.archived).length,
       archivedHabits: archivedHabits.length,
     };
 
@@ -104,8 +105,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       'Day 7',
     ];
 
-    const rows = habits.map((h) => {
-      const dayStatuses = h.days.map((d, i) => {
+    const rows = safeHabits.map((h) => {
+      const dayStatuses = (h.days || []).map((d, i) => {
         if (!d) return 'Incomplete';
         return h.microDays?.[i] ? 'Micro-Habit (50%)' : 'Completed (100%)';
       });

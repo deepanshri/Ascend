@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
@@ -64,32 +64,57 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   const [sentGlows, setSentGlows] = useState<Set<string>>(new Set());
   const [receivedGlows, setReceivedGlows] = useState<ReceivedAffirmationGlow[]>([]);
 
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const signedIn = Boolean(userId && !isGuest && !String(userId).startsWith('guest_'));
-  const incoming = useMemo(() => (userId ? incomingPending(edges, userId) : []), [edges, userId]);
-  const outgoing = useMemo(() => (userId ? outgoingPending(edges, userId) : []), [edges, userId]);
-  const accepted = useMemo(() => edges.filter((edge) => edge.status === 'accepted'), [edges]);
+  const incoming = useMemo(
+    () => (userId && Array.isArray(edges) ? incomingPending(edges, userId) : []),
+    [edges, userId]
+  );
+  const outgoing = useMemo(
+    () => (userId && Array.isArray(edges) ? outgoingPending(edges, userId) : []),
+    [edges, userId]
+  );
+  const accepted = useMemo(() => (Array.isArray(edges) ? edges : []).filter((edge) => edge.status === 'accepted'), [edges]);
 
   const refresh = useCallback(async () => {
     if (!signedIn || !userId) {
+      if (!mountedRef.current) return;
       setEdges([]);
       setActivity([]);
       setSentGlows(new Set());
       setReceivedGlows([]);
       return;
     }
-    setLoading(true);
-    await ensureProfileDirectory(userId, userEmail, userName);
-    const nextEdges = await fetchFriendships(userId);
-    const [nextActivity, nextSent, nextReceived] = await Promise.all([
-      fetchFriendActivity(userId, nextEdges),
-      fetchSentGlowEventIds(userId),
-      fetchReceivedGlows(userId),
-    ]);
-    setEdges(nextEdges);
-    setActivity(nextActivity);
-    setSentGlows(nextSent);
-    setReceivedGlows(nextReceived);
-    setLoading(false);
+    if (mountedRef.current) setLoading(true);
+    try {
+      await ensureProfileDirectory(userId, userEmail, userName);
+      const nextEdges = (await fetchFriendships(userId)) ?? [];
+      const [nextActivity, nextSent, nextReceived] = await Promise.all([
+        fetchFriendActivity(userId, nextEdges),
+        fetchSentGlowEventIds(userId),
+        fetchReceivedGlows(userId),
+      ]);
+      if (!mountedRef.current) return;
+      setEdges(Array.isArray(nextEdges) ? nextEdges : []);
+      setActivity(Array.isArray(nextActivity) ? nextActivity : []);
+      setSentGlows(nextSent instanceof Set ? nextSent : new Set());
+      setReceivedGlows(Array.isArray(nextReceived) ? nextReceived : []);
+    } catch {
+      if (!mountedRef.current) return;
+      setEdges([]);
+      setActivity([]);
+      setSentGlows(new Set());
+      setReceivedGlows([]);
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
   }, [signedIn, userId, userEmail, userName]);
 
   useEffect(() => {
@@ -125,12 +150,17 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     let cancelled = false;
     setSearching(true);
     const timer = window.setTimeout(() => {
-      void searchProfiles(q).then((rows) => {
-        if (!cancelled) {
-          setHits(rows.filter((row) => row.id !== userId));
+      void searchProfiles(q)
+        .then((rows) => {
+          if (cancelled) return;
+          setHits((Array.isArray(rows) ? rows : []).filter((row) => row.id !== userId));
           setSearching(false);
-        }
-      });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setHits([]);
+          setSearching(false);
+        });
     }, 250);
     return () => {
       cancelled = true;
@@ -140,7 +170,9 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
 
   const flash = (message: string) => {
     setNotice(message);
-    window.setTimeout(() => setNotice(null), 2400);
+    window.setTimeout(() => {
+      if (mountedRef.current) setNotice(null);
+    }, 2400);
   };
 
   const handleRequest = async (friendId: string) => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   User,
   Calendar,
@@ -92,7 +92,12 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     return ['Movies', 'Books', 'Anime', 'Running'];
   });
 
-  const selectedInterests = propSelectedInterests || localSelectedInterests;
+  const selectedInterests = Array.isArray(propSelectedInterests)
+    ? propSelectedInterests
+    : Array.isArray(localSelectedInterests)
+      ? localSelectedInterests
+      : [];
+  const evidenceItems = Array.isArray(evidenceList) ? evidenceList : [];
 
   // "What do you want to become?" aspiration state
   const [becomingGoal, setBecomingGoal] = useState<string>(() => {
@@ -129,9 +134,20 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     } catch {}
   }, [selectedInterests]);
 
+  const toastTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToastMessage(null), 3000);
   };
 
   const handleSaveDetails = (e: React.FormEvent) => {
@@ -192,11 +208,11 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     } catch {
       showToast('Sync failed — you are offline or the cloud write did not succeed.');
     } finally {
-      setIsSyncing(false);
+      if (mountedRef.current) setIsSyncing(false);
     }
   };
 
-  const totalLifetimeExecutions = identityVoteCount ?? evidenceList.length;
+  const totalLifetimeExecutions = identityVoteCount ?? evidenceItems.length;
 
   return (
     <div

@@ -421,7 +421,10 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
 }) => {
   const [quotes, setQuotes] = useState<Quote[]>(() => mergeQuoteBank(localQuotesFor(selectedInterests, isGuest)));
   const [quoteIndex, setQuoteIndex] = useState(0);
-  const pool = useMemo(() => mergeQuoteBank(quotes), [quotes]);
+  const pool = useMemo(() => {
+    const merged = mergeQuoteBank(Array.isArray(quotes) ? quotes : []);
+    return merged.length > 0 ? merged : mergeQuoteBank([]);
+  }, [quotes]);
 
   useEffect(() => {
     let cancelled = false;

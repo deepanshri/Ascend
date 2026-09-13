@@ -109,6 +109,13 @@ import { HabitLongPressOverlay } from './components/HabitLongPressOverlay';
 import { FrictionAuditModal } from './components/FrictionAuditModal';
 import { AuthView } from './components/AuthView';
 import { OnboardingView } from './components/OnboardingView';
+import { ErrorBoundary } from './components/ErrorBoundary';
+
+const APP_TABS: readonly ActiveTab[] = ['home', 'reminders', 'report', 'personal', 'settings'];
+
+function resolveActiveTab(tab: ActiveTab | string | null | undefined): ActiveTab {
+  return APP_TABS.includes(tab as ActiveTab) ? (tab as ActiveTab) : 'home';
+}
 
 export default function App() {
   // Authentication & Session State
@@ -139,6 +146,7 @@ export default function App() {
       return false;
     }
   });
+  const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
 
   useEffect(() => {
     async function checkConnection() {
@@ -165,6 +173,11 @@ export default function App() {
       return () => mq.removeEventListener('change', onChange);
     } catch {}
   }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDark);
+    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+  }, [isDark]);
 
   const [protection, setProtection] = useState(() => loadProtectionState());
   const examShieldActive = protection.examShield.active;
@@ -409,6 +422,12 @@ export default function App() {
   }, [reminders]);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
+  const [viewResetKey, setViewResetKey] = useState(0);
+  const safeActiveTab = resolveActiveTab(activeTab);
+
+  useEffect(() => {
+    if (activeTab !== safeActiveTab) setActiveTab(safeActiveTab);
+  }, [activeTab, safeActiveTab]);
   const [calendarOrigin, setCalendarOrigin] = useState<Date>(() => startOfDay(new Date()));
   const [currentSelectedDate, setCurrentSelectedDate] = useState<string>(() => toISODate());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -1531,14 +1550,7 @@ export default function App() {
     return <OnboardingView onComplete={handleOnboardingComplete} />;
   }
 
-  // Theme styling classes (system follows OS preference)
-  const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
   const themeBgClass = isDark ? 'dark bg-canvas text-ink' : 'bg-canvas text-ink';
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDark);
-    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
-  }, [isDark]);
 
   return (
     <div
@@ -1549,9 +1561,147 @@ export default function App() {
         id="mobile-viewport"
         className="relative w-full h-full overflow-hidden"
       >
-        <AnimatePresence mode="sync" initial={false}>
-        {/* HOME TAB CONTENT */}
-        {activeTab === 'home' && (
+        <ErrorBoundary
+          resetKey={`${safeActiveTab}-${viewResetKey}`}
+          onReset={() => setViewResetKey((value) => value + 1)}
+        >
+        <div className="absolute inset-0 z-10">
+        <AnimatePresence mode="wait" initial={false}>
+        {safeActiveTab === 'reminders' ? (
+          <motion.div
+            key="tab-reminders"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 z-10"
+          >
+          <RemindersView
+            reminders={reminders ?? []}
+            onAddReminder={handleAddReminder}
+            onUpdateReminder={handleUpdateReminder}
+            onToggleComplete={handleToggleReminder}
+            onSetReminderCompleted={handleSetReminderCompleted}
+            onDeleteReminder={handleDeleteReminder}
+            onSnoozeReminder={handleSnoozeReminder}
+            onNotify={showNotification}
+            userSession={session}
+            onRemindersHydrated={(remote) => {
+              setReminders(Array.isArray(remote) ? remote : []);
+              notificationScheduler.bootReschedulePendingAlerts(Array.isArray(remote) ? remote : []);
+            }}
+            onSyncReminders={() => {
+              remindersSyncService.syncReminders(reminders ?? [], session).then((res) => {
+                setReminders(Array.isArray(res.reminders) ? res.reminders : []);
+                showNotification(
+                  res.status === 'synced'
+                    ? 'Reminders synchronized across devices'
+                    : 'Reminders saved on this device'
+                );
+              });
+            }}
+            onScroll={handleMainScroll}
+            onOpenSettings={() => setActiveTab('settings')}
+          />
+          </motion.div>
+        ) : safeActiveTab === 'report' ? (
+          <motion.div
+            key="tab-report"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 z-10"
+          >
+          <ReportView
+            habits={activeHabits ?? []}
+            evidenceList={evidenceList ?? []}
+            identityVoteCount={displayedIdentityVotes}
+            userId={session.id}
+            isGuest={session.isGuest}
+            userEmail={session.email}
+            userName={session.name}
+            onOpenLedger={() => setIsLedgerModalOpen(true)}
+            onOpenSettings={() => setActiveTab('settings')}
+            frictionAudits={frictionAudits ?? []}
+            onScroll={handleMainScroll}
+            isDark={isDark}
+            momentumScore={todayMomentumScore}
+            momentumEvents={momentumEvents ?? []}
+            completionEvents={completionEvents ?? []}
+          />
+          </motion.div>
+        ) : safeActiveTab === 'personal' ? (
+          <motion.div
+            key="tab-personal"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 z-10"
+          >
+          <PersonalView
+            userSession={session}
+            evidenceList={evidenceList ?? []}
+            identityVoteCount={displayedIdentityVotes}
+            selectedInterests={selectedInterests ?? []}
+            onToggleInterest={handleToggleInterest}
+            examShieldActive={examShieldActive}
+            examShieldStatus={examShieldStatus}
+            onToggleExamShield={handleToggleExamShield}
+            vacationModeActive={vacationModeActive}
+            vacationStatus={vacationStatus}
+            onToggleVacationMode={handleToggleVacationMode}
+            momentumScore={momentumScore}
+            onOpenSettings={() => setActiveTab('settings')}
+            onOpenLedger={() => setIsLedgerModalOpen(true)}
+            onUpgradeGuest={() => setIsUpgradeModalOpen(true)}
+            onSyncNow={async () => {
+              if (!session || session.isGuest) {
+                throw new Error('Guest sessions stay local');
+              }
+              const result = await runAuthenticatedSync(session);
+              if (!result.ok) {
+                throw new Error(result.error || 'Sync failed');
+              }
+            }}
+            onChangePassword={() => setIsPasswordModalOpen(true)}
+            onLogout={handleDeleteAccount}
+            onUpdateName={(newName) => {
+              setSession((prev) => (prev ? { ...prev, name: newName } : prev));
+            }}
+            onScroll={handleMainScroll}
+          />
+          </motion.div>
+        ) : safeActiveTab === 'settings' ? (
+          <motion.div
+            key="tab-settings"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 z-10"
+          >
+          <SettingsView
+            habits={habits ?? []}
+            evidenceList={evidenceList ?? []}
+            completionEvents={completionEvents ?? []}
+            momentumEvents={momentumEvents ?? []}
+            theme={theme}
+            onThemeChange={setTheme}
+            notificationWindows={notificationWindows}
+            onToggleNotificationWindow={handleToggleNotificationWindow}
+            onResetData={handleResetData}
+            onRestoreHabit={handleRestoreHabit}
+            onDeleteHabit={handleDeleteHabit}
+            onImportJSON={handleImportJSON}
+            onDeleteAccount={handleDeleteAccount}
+            onClearCache={handleClearCache}
+            onScroll={handleMainScroll}
+            onOpenSettings={() => setActiveTab('home')}
+          />
+          </motion.div>
+        ) : (
           <motion.main
             key="tab-home"
             initial={{ opacity: 0, y: 10 }}
@@ -1611,12 +1761,12 @@ export default function App() {
 
             {/* Habit List Cards */}
             <section id="habit-list" className="flex flex-col space-y-2.5">
-              {activeHabits.length === 0 ? (
+              {(activeHabits ?? []).length === 0 ? (
                 <div className="bg-white/80 rounded-2xl p-6 text-center text-slate-400 text-[13px] border border-slate-200/80">
                   No habits active yet. Tap &quot;+&quot; above to create one!
                 </div>
               ) : (
-                activeHabits.map((habit, habitIndex) => (
+                (activeHabits ?? []).map((habit, habitIndex) => (
                   <HabitCard
                     key={habit.id}
                     habit={habit}
@@ -1661,165 +1811,21 @@ export default function App() {
             </section>
           </motion.main>
         )}
-
-        {/* REMINDERS TAB */}
-        {activeTab === 'reminders' && (
-          <motion.div
-            key="tab-reminders"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0 z-10"
-          >
-          <RemindersView
-            reminders={reminders}
-            onAddReminder={handleAddReminder}
-            onUpdateReminder={handleUpdateReminder}
-            onToggleComplete={handleToggleReminder}
-            onSetReminderCompleted={handleSetReminderCompleted}
-            onDeleteReminder={handleDeleteReminder}
-            onSnoozeReminder={handleSnoozeReminder}
-            onNotify={showNotification}
-            userSession={session}
-            onRemindersHydrated={(remote) => {
-              setReminders(remote);
-              notificationScheduler.bootReschedulePendingAlerts(remote);
-            }}
-            onSyncReminders={() => {
-              remindersSyncService.syncReminders(reminders, session).then((res) => {
-                setReminders(res.reminders);
-                showNotification(
-                  res.status === 'synced'
-                    ? 'Reminders synchronized across devices'
-                    : 'Reminders saved on this device'
-                );
-              });
-            }}
-            onScroll={handleMainScroll}
-            onOpenSettings={() => setActiveTab('settings')}
-          />
-          </motion.div>
-        )}
-
-        {/* REPORT TAB */}
-        {activeTab === 'report' && (
-          <motion.div
-            key="tab-report"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0 z-10"
-          >
-          <ReportView
-            habits={activeHabits}
-            evidenceList={evidenceList}
-            identityVoteCount={displayedIdentityVotes}
-            userId={session.id}
-            isGuest={session.isGuest}
-            userEmail={session.email}
-            userName={session.name}
-            onOpenLedger={() => setIsLedgerModalOpen(true)}
-            onOpenSettings={() => setActiveTab('settings')}
-            frictionAudits={frictionAudits}
-            onScroll={handleMainScroll}
-            isDark={isDark}
-            momentumScore={todayMomentumScore}
-            momentumEvents={momentumEvents}
-            completionEvents={completionEvents}
-          />
-          </motion.div>
-        )}
-
-        {/* PERSONAL TAB */}
-        {activeTab === 'personal' && (
-          <motion.div
-            key="tab-personal"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0 z-10"
-          >
-          <PersonalView
-            userSession={session}
-            evidenceList={evidenceList}
-            identityVoteCount={displayedIdentityVotes}
-            selectedInterests={selectedInterests}
-            onToggleInterest={handleToggleInterest}
-            examShieldActive={examShieldActive}
-            examShieldStatus={examShieldStatus}
-            onToggleExamShield={handleToggleExamShield}
-            vacationModeActive={vacationModeActive}
-            vacationStatus={vacationStatus}
-            onToggleVacationMode={handleToggleVacationMode}
-            momentumScore={momentumScore}
-            onOpenSettings={() => setActiveTab('settings')}
-            onOpenLedger={() => setIsLedgerModalOpen(true)}
-            onUpgradeGuest={() => setIsUpgradeModalOpen(true)}
-            onSyncNow={async () => {
-              if (!session || session.isGuest) {
-                throw new Error('Guest sessions stay local');
-              }
-              const result = await runAuthenticatedSync(session);
-              if (!result.ok) {
-                throw new Error(result.error || 'Sync failed');
-              }
-            }}
-            onChangePassword={() => setIsPasswordModalOpen(true)}
-            onLogout={handleDeleteAccount}
-            onUpdateName={(newName) => {
-              setSession((prev) => (prev ? { ...prev, name: newName } : prev));
-            }}
-            onScroll={handleMainScroll}
-          />
-          </motion.div>
-        )}
-
-        {/* SETTINGS TAB */}
-        {activeTab === 'settings' && (
-          <motion.div
-            key="tab-settings"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0 z-10"
-          >
-          <SettingsView
-            habits={habits}
-            evidenceList={evidenceList}
-            completionEvents={completionEvents}
-            momentumEvents={momentumEvents}
-            theme={theme}
-            onThemeChange={setTheme}
-            notificationWindows={notificationWindows}
-            onToggleNotificationWindow={handleToggleNotificationWindow}
-            onResetData={handleResetData}
-            onRestoreHabit={handleRestoreHabit}
-            onDeleteHabit={handleDeleteHabit}
-            onImportJSON={handleImportJSON}
-            onDeleteAccount={handleDeleteAccount}
-            onClearCache={handleClearCache}
-            onScroll={handleMainScroll}
-            onOpenSettings={() => setActiveTab('home')}
-          />
-          </motion.div>
-        )}
         </AnimatePresence>
+        </div>
+        </ErrorBoundary>
 
         {/* Floating Bottom Navigation: shrinks on scroll down, pops up on scroll up */}
         <BottomNav
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
+          activeTab={safeActiveTab}
+          onTabChange={(tab) => setActiveTab(resolveActiveTab(tab))}
           pendingRemindersCount={pendingRemindersCount}
           isNavVisible={isNavVisible}
           isBlurred={Boolean(longPressedHabitId)}
         />
 
         {/* Top-Level Toast Notification */}
-        <AnimatePresence>
+        <AnimatePresence initial={false}>
           {toastNotification && (
             <motion.div
               id="ascend-toast-notification"
@@ -1946,7 +1952,7 @@ export default function App() {
         />
 
         {/* Upgrade Guest Modal */}
-        <AnimatePresence>
+        <AnimatePresence initial={false}>
         {isUpgradeModalOpen && (
           <motion.div
             className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
@@ -2048,7 +2054,7 @@ export default function App() {
         </AnimatePresence>
 
         {/* Change Password Modal */}
-        <AnimatePresence>
+        <AnimatePresence initial={false}>
         {isPasswordModalOpen && (
           <motion.div
             className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"

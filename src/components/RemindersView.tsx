@@ -60,10 +60,12 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
   useEffect(() => {
     if (!userSession || userSession.isGuest) return;
     let cancelled = false;
-    void fetchPublicReminders(userSession.id).then((remote) => {
-      if (cancelled || !remote) return;
-      onRemindersHydrated?.(remote);
-    });
+    void fetchPublicReminders(userSession.id)
+      .then((remote) => {
+        if (cancelled || !remote) return;
+        onRemindersHydrated?.(Array.isArray(remote) ? remote : []);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -121,8 +123,9 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
     setIsBottomSheetOpen(false);
   };
 
-  const activeList = reminders.filter((r) => !r.completed);
-  const completedList = reminders.filter((r) => r.completed);
+  const safeReminders = Array.isArray(reminders) ? reminders : [];
+  const activeList = safeReminders.filter((r) => !r.completed);
+  const completedList = safeReminders.filter((r) => r.completed);
 
   return (
     <div

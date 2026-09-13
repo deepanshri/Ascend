@@ -59,7 +59,12 @@ function formatKeystoneCorrelation(correlation: KeystoneCorrelation): string {
   return `On days you complete ${correlation.habitName}, overall momentum is unchanged`;
 }
 
+function asArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function isoRangeInclusive(startIso: string, endIso: string): string[] {
+  if (!startIso || !endIso || startIso > endIso) return [];
   const dates: string[] = [];
   for (let cursor = startIso; cursor <= endIso; cursor = addDaysIso(cursor, 1)) {
     dates.push(cursor);
@@ -96,12 +101,12 @@ function habitBestScoreOnIso(
   completionEvents: HabitCompletionEvent[]
 ): number {
   let best = 0;
-  for (const event of momentumEvents) {
+  for (const event of asArray(momentumEvents)) {
     if (event.habitId !== habitId) continue;
     if (resolveMomentumEventDate(event) !== iso) continue;
     best = Math.max(best, eventScore(event.eventType));
   }
-  for (const event of completionEvents) {
+  for (const event of asArray(completionEvents)) {
     if (event.habitId !== habitId) continue;
     if (resolveEventIsoDate(event) !== iso) continue;
     best = Math.max(best, completionLogScore(event.type));
@@ -117,7 +122,7 @@ function categoryRateFromLogs(
   momentumEvents: MomentumEvent[],
   completionEvents: HabitCompletionEvent[]
 ): number {
-  const list = habits.filter((habit) => habit.category === category && !habit.archived);
+  const list = asArray(habits).filter((habit) => habit.category === category && !habit.archived);
   if (list.length === 0) return 0;
   const dates = isoRangeInclusive(startIso, endIso);
   if (dates.length === 0) return 0;
@@ -145,11 +150,11 @@ function earliestLogIso(
   todayIso: string
 ): string {
   let earliest = todayIso;
-  for (const event of momentumEvents) {
+  for (const event of asArray(momentumEvents)) {
     const iso = resolveMomentumEventDate(event);
     if (iso && iso < earliest) earliest = iso;
   }
-  for (const event of completionEvents) {
+  for (const event of asArray(completionEvents)) {
     const iso = resolveEventIsoDate(event);
     if (iso && iso < earliest) earliest = iso;
   }
@@ -164,11 +169,11 @@ function filterLogsThroughMs(
   completionEvents: HabitCompletionEvent[]
 ): { momentum: MomentumEvent[]; completions: HabitCompletionEvent[] } {
   return {
-    momentum: momentumEvents.filter((event) => {
+    momentum: asArray(momentumEvents).filter((event) => {
       if (resolveMomentumEventDate(event) !== iso) return false;
       return event.timestamp < endMs;
     }),
-    completions: completionEvents.filter((event) => {
+    completions: asArray(completionEvents).filter((event) => {
       if (resolveEventIsoDate(event) !== iso) return false;
       return event.timestamp < endMs;
     }),
@@ -185,7 +190,7 @@ function sleepRateForRange(
   if (startIso === endIso && startIso === todayIso && snapshot.todayHours != null) {
     return Math.min(1, snapshot.todayHours / SLEEP_TARGET_HOURS);
   }
-  const days = snapshot.dailyHours.filter((row) => row.isoDate >= startIso && row.isoDate <= endIso);
+  const days = asArray(snapshot?.dailyHours).filter((row) => row.isoDate >= startIso && row.isoDate <= endIso);
   if (days.length > 0) {
     const average = days.reduce((sum, row) => sum + row.hours, 0) / days.length;
     return Math.min(1, average / SLEEP_TARGET_HOURS);
@@ -205,7 +210,7 @@ function sleepHoursLabelForRange(
   if (startIso === endIso && startIso === todayIso) {
     return snapshot.todayHours == null ? '—' : `${snapshot.todayHours}h`;
   }
-  const days = snapshot.dailyHours.filter((row) => row.isoDate >= startIso && row.isoDate <= endIso);
+  const days = asArray(snapshot?.dailyHours).filter((row) => row.isoDate >= startIso && row.isoDate <= endIso);
   if (days.length > 0) {
     const total = days.reduce((sum, row) => sum + row.hours, 0);
     return `${Math.round(total * 10) / 10}h`;
@@ -229,11 +234,12 @@ function todayTimelineBuckets(now: Date): Array<{ label: string; endHour: number
 }
 
 function createLinePath(points: Array<{ x: number; y: number }>): string {
-  if (points.length === 0) return '';
-  let d = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const p0 = points[i];
-    const p1 = points[i + 1];
+  const valid = asArray(points).filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  if (valid.length === 0) return '';
+  let d = `M ${valid[0].x} ${valid[0].y}`;
+  for (let i = 0; i < valid.length - 1; i += 1) {
+    const p0 = valid[i];
+    const p1 = valid[i + 1];
     const midX = p0.x + (p1.x - p0.x) * 0.5;
     d += ` C ${midX} ${p0.y}, ${midX} ${p1.y}, ${p1.x} ${p1.y}`;
   }
@@ -245,9 +251,24 @@ function graphXs(count: number, left = 24, right = 348): number[] {
   return Array.from({ length: count }, (_, i) => left + (i / (count - 1)) * (right - left));
 }
 
+const EMPTY_LINE_GRAPH = {
+  title: 'Line graph',
+  labels: [] as string[],
+  xs: [] as number[],
+  workPoints: [] as Array<{ x: number; y: number }>,
+  selfPoints: [] as Array<{ x: number; y: number }>,
+  sleepPoints: [] as Array<{ x: number; y: number }>,
+  momentumPoints: [] as Array<{ x: number; y: number }>,
+  showMomentum: false,
+  workPath: '',
+  selfPath: '',
+  sleepPath: '',
+  momentumPath: '',
+};
+
 export const ReportView: React.FC<ReportViewProps> = ({
-  habits,
-  evidenceList,
+  habits: habitsProp,
+  evidenceList: evidenceProp,
   identityVoteCount,
   userId,
   isGuest = true,
@@ -255,13 +276,18 @@ export const ReportView: React.FC<ReportViewProps> = ({
   userName = '',
   onOpenLedger,
   onOpenSettings,
-  frictionAudits,
+  frictionAudits: frictionProp,
   onScroll,
   isDark = false,
   momentumScore = 0,
-  momentumEvents = [],
-  completionEvents = [],
+  momentumEvents: momentumProp,
+  completionEvents: completionProp,
 }) => {
+  const habits = asArray(habitsProp);
+  const evidenceList = asArray(evidenceProp);
+  const frictionAudits = asArray(frictionProp);
+  const momentumEvents = asArray(momentumProp);
+  const completionEvents = asArray(completionProp);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
   const [graphMode, setGraphMode] = useState<GraphMode>('rings');
   const [downloadSuccess, setDownloadSuccess] = useState(false);
@@ -320,9 +346,26 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
   useEffect(() => {
     let cancelled = false;
-    void readSleepSnapshot(todayIso).then((snapshot) => {
-      if (!cancelled) setSleep(snapshot);
-    });
+    void readSleepSnapshot(todayIso)
+      .then((snapshot) => {
+        if (cancelled) return;
+        setSleep({
+          ...snapshot,
+          dailyHours: asArray(snapshot?.dailyHours),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSleep({
+            hasSleepData: false,
+            linked: false,
+            permissionDenied: false,
+            todayHours: null,
+            weekHours: null,
+            dailyHours: [],
+          });
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -331,27 +374,32 @@ export const ReportView: React.FC<ReportViewProps> = ({
   const ledgerVoteCount = Math.max(voteFloor, replicaVotes, remoteVoteCount ?? 0);
 
   const categoryStats = useMemo(() => {
-    const { startIso, endIso } = windowRange;
-    return {
-      work: categoryRateFromLogs(habits, 'work', startIso, endIso, momentumEvents, completionEvents),
-      self: categoryRateFromLogs(
-        habits,
-        'self_improvement',
-        startIso,
-        endIso,
-        momentumEvents,
-        completionEvents
-      ),
-      sleep: sleepRateForRange(sleep, startIso, endIso, todayIso),
-    };
+    try {
+      const { startIso, endIso } = windowRange;
+      return {
+        work: categoryRateFromLogs(habits, 'work', startIso, endIso, momentumEvents, completionEvents),
+        self: categoryRateFromLogs(
+          habits,
+          'self_improvement',
+          startIso,
+          endIso,
+          momentumEvents,
+          completionEvents
+        ),
+        sleep: sleepRateForRange(sleep, startIso, endIso, todayIso),
+      };
+    } catch {
+      return { work: 0, self: 0, sleep: 0 };
+    }
   }, [habits, momentumEvents, completionEvents, windowRange, sleep, todayIso]);
 
   const lineGraphData = useMemo(() => {
+    try {
     const toPoint = (pct: number, x: number, yMin: number, yMax: number) => ({
       x,
       y: Math.round((yMax - Math.min(1, Math.max(0, pct)) * (yMax - yMin)) * 10) / 10,
     });
-    const sleepByIso = new Map<string, number>(sleep.dailyHours.map((row) => [row.isoDate, row.hours]));
+    const sleepByIso = new Map<string, number>(asArray(sleep.dailyHours).map((row) => [row.isoDate, row.hours]));
     const { startIso, endIso, title } = windowRange;
 
     let labels: string[] = [];
@@ -430,6 +478,9 @@ export const ReportView: React.FC<ReportViewProps> = ({
       sleepPath: createLinePath(sleepPoints),
       momentumPath: createLinePath(momentumPoints),
     };
+    } catch {
+      return EMPTY_LINE_GRAPH;
+    }
   }, [
     habits,
     sleep.dailyHours,
@@ -447,7 +498,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
   const windowAudits = useMemo(
     () =>
-      frictionAudits.filter((audit) => {
+      asArray(frictionAudits).filter((audit) => {
         if (audit.loggedDate) return audit.loggedDate >= frictionCutoffIso;
         return audit.timestamp >= frictionCutoff;
       }),
@@ -683,7 +734,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                   <line x1="16" y1="36" x2="360" y2="36" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
                   <line x1="16" y1="78" x2="360" y2="78" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
                   <line x1="16" y1="120" x2="360" y2="120" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
-                  {lineGraphData.labels.map((label, idx) => (
+                  {(lineGraphData.labels || []).map((label, idx) => (
                     <text
                       key={`${label}-${idx}`}
                       x={lineGraphData.xs[idx]}
@@ -706,7 +757,10 @@ export const ReportView: React.FC<ReportViewProps> = ({
                       <path d={lineGraphData.selfPath} fill="none" stroke={isDark ? '#93c5fd' : '#4ADE80'} strokeWidth="2.5" strokeLinecap="round" />
                     </>
                   )}
-                  {(lineGraphData.showMomentum ? lineGraphData.momentumPoints : lineGraphData.workPoints).map((point, idx) => (
+                  {(lineGraphData.showMomentum
+                    ? lineGraphData.momentumPoints || []
+                    : lineGraphData.workPoints || []
+                  ).map((point, idx) => (
                     <circle
                       key={`dot-${idx}`}
                       cx={point.x}
