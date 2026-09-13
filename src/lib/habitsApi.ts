@@ -351,3 +351,47 @@ export async function fetchFrictionReasonsFromTable(
     return [];
   }
 }
+
+export interface HabitLogExportRow {
+  id: string;
+  habitId: string;
+  loggedDate: string;
+  eventType: string;
+  frictionReason: string;
+  note: string;
+  timestamp: string;
+}
+
+export async function fetchHabitLogsForExport(userId?: string | null): Promise<HabitLogExportRow[]> {
+  if (!canSync(userId) || !supabase || !userId) return [];
+  try {
+    const { data, error } = await supabase.from('habit_logs').select('*').eq('user_id', userId);
+    if (error) {
+      console.warn('habit_logs export fetch failed:', error.message);
+      return [];
+    }
+    return (data || [])
+      .map((row) => {
+        const habitId = String(row.habit_id || row.habitId || '');
+        const loggedDate = String(row.logged_date || row.date || '').slice(0, 10);
+        if (!habitId || !loggedDate) return null;
+        const timestampRaw = row.timestamp ?? row.created_at ?? row.completed_at;
+        let timestamp = '';
+        if (typeof timestampRaw === 'number') timestamp = new Date(timestampRaw).toISOString();
+        else if (typeof timestampRaw === 'string' && timestampRaw) timestamp = timestampRaw;
+        return {
+          id: String(row.id || `${habitId}-${loggedDate}`),
+          habitId,
+          loggedDate,
+          eventType: String(row.type || row.completion_type || row.event_type || ''),
+          frictionReason: String(row.friction_reason || '').trim(),
+          note: String(row.note || '').trim(),
+          timestamp,
+        } satisfies HabitLogExportRow;
+      })
+      .filter((row): row is HabitLogExportRow => row !== null);
+  } catch (err) {
+    console.warn('habit_logs export fetch offline:', err);
+    return [];
+  }
+}

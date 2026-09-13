@@ -4,4 +4,5 @@
     <string name="title_activity_main">Ascend</string>
     <string name="package_name">com.ascend.habittracker</string>
     <string name="custom_url_scheme">com.ascend.habittracker</string>
+    <string name="health_permissions_rationale">Ascend reads sleep sessions from Health Connect to power the Sleep ring on Report.</string>
 </resources>

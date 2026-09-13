@@ -1392,19 +1392,6 @@ export default function App() {
     showNotification(`Snoozed for ${minutes} minutes`);
   };
 
-  const handleAddFrictionNote = (habitName: string, note: string) => {
-    const newAudit: FrictionAudit = {
-      id: 'fa-' + Date.now(),
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      dayNumber: selectedDay,
-      habitName,
-      type: 'fallback_used',
-      note,
-      timestamp: Date.now(),
-    };
-    setFrictionAudits((prev) => [newAudit, ...prev]);
-  };
-
   // Apple-style chrome: hide header/nav on scroll down, reveal on scroll up
   const [isNavVisible, setIsNavVisible] = useState(true);
   const lastScrollYRef = useRef(0);
@@ -1687,11 +1674,11 @@ export default function App() {
             userId={session.id}
             onOpenLedger={() => setIsLedgerModalOpen(true)}
             frictionAudits={frictionAudits}
-            onAddFrictionNote={handleAddFrictionNote}
             onScroll={handleMainScroll}
             isDark={isDark}
             momentumScore={todayMomentumScore}
             momentumEvents={momentumEvents}
+            completionEvents={completionEvents}
           />
         )}
 

@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Habit, IdentityEvidence, FrictionAudit, MomentumEvent } from '../types';
-import { getTodayDayIndex, getWeekdayShort } from '../utils/dates';
+import { Habit, HabitCategory, HabitCompletionEvent, IdentityEvidence, FrictionAudit, MomentumEvent } from '../types';
+import { addDaysIso, getTodayDayIndex, getWeekDates, getWeekdayShort, toISODate } from '../utils/dates';
 import { countMomentumCompletedActions } from '../lib/supabase';
-import { weeklyFrictionPatterns } from '../lib/frictionAudit';
 import {
   activeKeystoneHabits,
   computeKeystoneCorrelation,
@@ -10,6 +9,10 @@ import {
   MAX_KEYSTONE_HABITS,
   type KeystoneCorrelation,
 } from '../lib/keystone';
+import { readSleepSnapshot, sleepRingRate, SLEEP_TARGET_HOURS, type SleepSnapshot } from '../lib/health';
+import { loadFriendsFeed } from '../lib/friends';
+import { buildReportCsv, downloadCsvFile } from '../lib/reportExport';
+import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
 
 interface ReportViewProps {
   habits: Habit[];
@@ -18,15 +21,15 @@ interface ReportViewProps {
   userId?: string | null;
   onOpenLedger: () => void;
   frictionAudits: FrictionAudit[];
-  onAddFrictionNote: (habitName: string, note: string) => void;
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
   isDark?: boolean;
   momentumScore?: number;
   momentumEvents?: MomentumEvent[];
+  completionEvents?: HabitCompletionEvent[];
 }
 
 type TimeFilter = 'today' | 'week' | 'month' | 'momentum';
-type GraphMode = 'concentric' | 'trajectory';
+type GraphMode = 'line' | 'bar';
 
 function formatKeystoneCorrelation(correlation: KeystoneCorrelation): string {
   const abs = Math.abs(correlation.liftPercent);
@@ -39,6 +42,74 @@ function formatKeystoneCorrelation(correlation: KeystoneCorrelation): string {
   return `On days you complete ${correlation.habitName}, overall momentum is unchanged`;
 }
 
+function categoryDayScore(habit: Habit, dayIndex: number): number {
+  const scheduled =
+    !habit.scheduledDays || habit.scheduledDays.length === 0 || habit.scheduledDays.includes(dayIndex);
+  if (!scheduled) return -1;
+  if (!habit.days?.[dayIndex]) return 0;
+  return habit.microDays?.[dayIndex] ? 0.5 : 1;
+}
+
+function categoryRateFromDays(habits: Habit[], category: HabitCategory, dayIndexes: number[]): number {
+  const list = habits.filter((habit) => habit.category === category);
+  if (list.length === 0 || dayIndexes.length === 0) return 0;
+  let score = 0;
+  let total = 0;
+  list.forEach((habit) => {
+    dayIndexes.forEach((index) => {
+      const value = categoryDayScore(habit, index);
+      if (value < 0) return;
+      total += 1;
+      score += value;
+    });
+  });
+  return total === 0 ? 0 : score / total;
+}
+
+function categoryRateFromEvents(
+  habits: Habit[],
+  events: MomentumEvent[],
+  category: HabitCategory,
+  startIso: string,
+  endIso: string
+): number {
+  const list = habits.filter((habit) => habit.category === category);
+  if (list.length === 0) return 0;
+  const dates: string[] = [];
+  for (let cursor = startIso; cursor <= endIso; cursor = addDaysIso(cursor, 1)) {
+    dates.push(cursor);
+  }
+  if (dates.length === 0) return 0;
+  let score = 0;
+  dates.forEach((iso) => {
+    let weightedSum = 0;
+    let weightTotal = 0;
+    list.forEach((habit) => {
+      const weight = habitWeight(habit);
+      weightTotal += weight;
+      const best = events.reduce((max, event) => {
+        if (event.habitId !== habit.id || resolveMomentumEventDate(event) !== iso) return max;
+        return Math.max(max, eventScore(event.eventType));
+      }, 0);
+      weightedSum += weight * best;
+    });
+    score += weightTotal > 0 ? weightedSum / weightTotal : 0;
+  });
+  return score / dates.length;
+}
+
+function createLinePath(points: Array<{ x: number; y: number }>): string {
+  if (points.length === 0) return '';
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p0 = points[i];
+    const p1 = points[i + 1];
+    const midX = p0.x + (p1.x - p0.x) * 0.5;
+    d += ` C ${midX} ${p0.y}, ${midX} ${p1.y}, ${p1.x} ${p1.y}`;
+  }
+  return d;
+}
+
 export const ReportView: React.FC<ReportViewProps> = ({
   habits,
   evidenceList,
@@ -46,54 +117,31 @@ export const ReportView: React.FC<ReportViewProps> = ({
   userId,
   onOpenLedger,
   frictionAudits,
-  onAddFrictionNote,
   onScroll,
   isDark = false,
-  momentumScore = 63,
+  momentumScore = 0,
   momentumEvents = [],
+  completionEvents = [],
 }) => {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
-  const [graphMode, setGraphMode] = useState<GraphMode>('concentric');
+  const [graphMode, setGraphMode] = useState<GraphMode>('line');
   const [downloadSuccess, setDownloadSuccess] = useState(false);
-  const [showAnalysisMenu, setShowAnalysisMenu] = useState(false);
-  const [showFrictionModal, setShowFrictionModal] = useState(false);
-  const [newNoteHabit, setNewNoteHabit] = useState('');
-  const [newNoteText, setNewNoteText] = useState('');
+  const [exporting, setExporting] = useState(false);
   const [remoteVoteCount, setRemoteVoteCount] = useState<number | null>(null);
   const [voteFloor, setVoteFloor] = useState(0);
   const [keystoneExpanded, setKeystoneExpanded] = useState(false);
-
-  // Category completion rates based on current habits & events
-  const categoryStats = useMemo(() => {
-    const workHabits = habits.filter((h) => h.category === 'work');
-    const selfHabits = habits.filter((h) => h.category === 'self_improvement');
-    const sleepHabits = selfHabits;
-
-    const getRate = (list: Habit[]) => {
-      if (list.length === 0) return 0.75;
-      const totalChecks = list.reduce((sum, h) => {
-        const full = h.days.filter(Boolean).length;
-        const micro = (h.microDays || []).filter(Boolean).length * 0.5;
-        return sum + full + micro;
-      }, 0);
-      const maxChecks = list.length * 7;
-      return Math.min(0.95, Math.max(0.35, totalChecks / maxChecks));
-    };
-
-    return {
-      work: getRate(workHabits),
-      sleep: getRate(sleepHabits),
-      self: getRate(selfHabits),
-    };
-  }, [habits]);
+  const [sleep, setSleep] = useState<SleepSnapshot>({
+    hasSleepData: false,
+    linked: false,
+    permissionDenied: false,
+    todayHours: null,
+    weekHours: null,
+    dailyHours: [],
+  });
 
   const todayIndex = getTodayDayIndex();
-
-  // Habits accomplished vs total habits
-  const accomplishedHabitsCount = useMemo(() => {
-    return habits.filter((h) => Boolean(h.days?.[todayIndex])).length;
-  }, [habits, todayIndex]);
-  const totalHabitsCount = habits.length;
+  const todayIso = toISODate();
+  const hasSleepData = sleep.hasSleepData;
   const replicaVotes = identityVoteCount ?? evidenceList.length;
 
   const keystones = useMemo(() => activeKeystoneHabits(habits), [habits]);
@@ -106,6 +154,8 @@ export const ReportView: React.FC<ReportViewProps> = ({
       })),
     [keystones, habits, momentumEvents]
   );
+
+  const friends = useMemo(() => loadFriendsFeed(), []);
 
   useEffect(() => {
     setVoteFloor((prev) => Math.max(prev, replicaVotes, remoteVoteCount ?? 0));
@@ -122,177 +172,174 @@ export const ReportView: React.FC<ReportViewProps> = ({
     };
   }, [userId, replicaVotes]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void readSleepSnapshot(todayIso).then((snapshot) => {
+      if (!cancelled) setSleep(snapshot);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [todayIso]);
+
   const ledgerVoteCount = Math.max(voteFloor, replicaVotes, remoteVoteCount ?? 0);
 
-  // Trajectory Multi-Line Graph Data (matches the 3 concentric rings)
+  const categoryStats = useMemo(() => {
+    const monthStart = addDaysIso(todayIso, -29);
+    const work =
+      timeFilter === 'month' || timeFilter === 'momentum'
+        ? categoryRateFromEvents(habits, momentumEvents, 'work', monthStart, todayIso)
+        : categoryRateFromDays(habits, 'work', timeFilter === 'today' ? [todayIndex] : [0, 1, 2, 3, 4, 5, 6]);
+    const self =
+      timeFilter === 'month' || timeFilter === 'momentum'
+        ? categoryRateFromEvents(habits, momentumEvents, 'self_improvement', monthStart, todayIso)
+        : categoryRateFromDays(
+            habits,
+            'self_improvement',
+            timeFilter === 'today' ? [todayIndex] : [0, 1, 2, 3, 4, 5, 6]
+          );
+    const sleepRate = sleepRingRate(sleep, timeFilter === 'today' ? 'today' : 'week');
+    return { work, self, sleep: sleepRate };
+  }, [habits, momentumEvents, timeFilter, todayIndex, todayIso, sleep]);
+
   const lineGraphData = useMemo(() => {
-    const workHabits = habits.filter((h) => h.category === 'work');
-    const selfHabits = habits.filter((h) => h.category === 'self_improvement');
-    const sleepHabits = selfHabits;
-
-    // X coordinates across 7 days
     const xs = [24, 54, 84, 114, 144, 176, 208];
+    const weekIso = getWeekDates().map((date) => toISODate(date));
+    const toPoint = (pct: number, x: number, yMin: number, yMax: number) => ({
+      x,
+      y: Math.round((yMax - Math.min(1, Math.max(0, pct)) * (yMax - yMin)) * 10) / 10,
+    });
 
-    // Default trend trajectories
-    const defaultSleep = [64, 70, 74, 80, 78, 85, 88];
-    const defaultWork = [48, 55, 66, 75, 72, 80, 84];
-    const defaultSelf = [40, 46, 54, 62, 65, 70, 75];
-
-    const computePoints = (
-      habitList: Habit[],
-      defaults: number[],
-      yMin: number,
-      yMax: number
-    ) => {
-      return xs.map((x, dayIdx) => {
-        let pct = defaults[dayIdx] / 100;
-        if (habitList.length > 0) {
-          const full = habitList.filter((h) => h.days?.[dayIdx]).length;
-          const micro = (habitList.filter((h) => h.microDays?.[dayIdx]).length || 0) * 0.5;
-          const dayPct = (full + micro) / habitList.length;
-          pct = Math.min(0.96, Math.max(0.25, dayPct * 0.65 + (defaults[dayIdx] / 100) * 0.35));
-        }
-        const y = yMax - pct * (yMax - yMin);
-        return { x, y: Math.round(y * 10) / 10 };
-      });
-    };
-
-    const sleepPoints = computePoints(sleepHabits, defaultSleep, 22, 98);
-    const workPoints = computePoints(workHabits, defaultWork, 48, 122);
-    const selfPoints = computePoints(selfHabits, defaultSelf, 72, 140);
-
-    const createPath = (pts: { x: number; y: number }[]) => {
-      if (pts.length === 0) return '';
-      let d = `M ${pts[0].x} ${pts[0].y}`;
-      for (let i = 0; i < pts.length - 1; i++) {
-        const p0 = pts[i];
-        const p1 = pts[i + 1];
-        const cp1x = p0.x + (p1.x - p0.x) * 0.5;
-        const cp1y = p0.y;
-        const cp2x = p1.x - (p1.x - p0.x) * 0.5;
-        const cp2y = p1.y;
-        d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p1.x} ${p1.y}`;
-      }
-      return d;
-    };
+    const workPoints = xs.map((x, dayIdx) =>
+      toPoint(categoryRateFromDays(habits, 'work', [dayIdx]), x, 48, 122)
+    );
+    const selfPoints = xs.map((x, dayIdx) =>
+      toPoint(categoryRateFromDays(habits, 'self_improvement', [dayIdx]), x, 72, 140)
+    );
+    const sleepByIso = new Map<string, number>(sleep.dailyHours.map((row) => [row.isoDate, row.hours]));
+    const sleepPoints = xs.map((x, dayIdx) => {
+      const hours = sleepByIso.get(weekIso[dayIdx] ?? '') ?? 0;
+      return toPoint(hours / SLEEP_TARGET_HOURS, x, 22, 98);
+    });
 
     return {
-      sleepPoints,
       workPoints,
       selfPoints,
-      sleepPath: createPath(sleepPoints),
-      workPath: createPath(workPoints),
-      selfPath: createPath(selfPoints),
+      sleepPoints,
+      workPath: createLinePath(workPoints),
+      selfPath: createLinePath(selfPoints),
+      sleepPath: createLinePath(sleepPoints),
     };
-  }, [habits]);
+  }, [habits, sleep.dailyHours]);
 
-  const frictionPatterns = useMemo(() => weeklyFrictionPatterns(frictionAudits), [frictionAudits]);
-  const flaggedFrictionEvents = useMemo(() => {
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    return frictionAudits
-      .filter((audit) => audit.type === 'missed' && audit.timestamp >= weekAgo && (audit.reason || audit.note))
-      .slice(0, 6);
-  }, [frictionAudits]);
+  const frictionWindowMs =
+    timeFilter === 'today' ? 1 : timeFilter === 'month' ? 30 : 7;
+  const frictionCutoff = Date.now() - frictionWindowMs * 24 * 60 * 60 * 1000;
+  const frictionCutoffIso = addDaysIso(todayIso, -(frictionWindowMs - 1));
 
-  // Improvements data for Analysis section (matches the design)
-  const analysisData = useMemo(() => {
-    if (timeFilter === 'today') {
-      return [
-        { label: 'Work', prev: 58, curr: 82, delta: 24 },
-        { label: 'Sleep', prev: 64, curr: 82, delta: 18 },
-        { label: 'Self-Improvement', prev: 60, curr: 92, delta: 32 },
-        { label: 'Overall', prev: 61, curr: 88, delta: 27 },
-      ];
+  const windowAudits = useMemo(
+    () =>
+      frictionAudits.filter((audit) => {
+        if (audit.loggedDate) return audit.loggedDate >= frictionCutoffIso;
+        return audit.timestamp >= frictionCutoff;
+      }),
+    [frictionAudits, frictionCutoff, frictionCutoffIso]
+  );
+
+  const frictionPatterns = useMemo(() => {
+    const counts = new Map<string, number>();
+    windowAudits.forEach((audit) => {
+      const reason = (audit.reason || audit.note || '').trim();
+      if (!reason) return;
+      counts.set(reason, (counts.get(reason) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [windowAudits]);
+  const flaggedFrictionEvents = useMemo(
+    () =>
+      windowAudits
+        .filter((audit) => (audit.reason || audit.note || '').trim().length > 0)
+        .slice(0, 8),
+    [windowAudits]
+  );
+
+  const handleDownloadCSV = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const csv = await buildReportCsv({
+        userId,
+        habits,
+        momentumEvents,
+        localLogs: completionEvents,
+      });
+      downloadCsvFile(`ascend-report-${timeFilter}-${todayIso}.csv`, csv);
+      setDownloadSuccess(true);
+      window.setTimeout(() => setDownloadSuccess(false), 2400);
+    } finally {
+      setExporting(false);
     }
-    if (timeFilter === 'week') {
-      return [
-        { label: 'Work', prev: 62, curr: 85, delta: 23 },
-        { label: 'Sleep', prev: 70, curr: 84, delta: 14 },
-        { label: 'Self-Improvement', prev: 65, curr: 90, delta: 25 },
-        { label: 'Overall', prev: 66, curr: 86, delta: 20 },
-      ];
-    }
-    // month
-    return [
-      { label: 'Work', prev: 54, curr: 86, delta: 32 },
-      { label: 'Sleep', prev: 60, curr: 82, delta: 22 },
-      { label: 'Self-Improvement', prev: 55, curr: 94, delta: 39 },
-      { label: 'Overall', prev: 56, curr: 87, delta: 31 },
-    ];
-  }, [timeFilter]);
-
-  // CSV Exporter
-  const handleDownloadCSV = () => {
-    setDownloadSuccess(true);
-    setTimeout(() => setDownloadSuccess(false), 2400);
-
-    const headers = ['Category', 'Previous_Week_Score', 'This_Week_Score', 'Improvement_Pct', 'Active_Habits', 'Evidence_Votes'];
-    const rows = analysisData.map((item) => [
-      `"${item.label}"`,
-      item.prev,
-      item.curr,
-      `"+${item.delta}%"`,
-      habits.length,
-      ledgerVoteCount,
-    ]);
-
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `ascend-report-${timeFilter}-${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
-  const handleNoteSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newNoteText.trim()) return;
-    onAddFrictionNote(newNoteHabit || habits[0]?.name || 'Routine', newNoteText.trim());
-    setNewNoteText('');
-    setNewNoteHabit('');
-    setShowFrictionModal(false);
-  };
-
-  // Concentric Rings Geometry
   const cx = 160;
   const cy = 110;
-  const outerR = 56;
-  const middleR = 43;
-  const innerR = 30;
   const strokeW = 7.5;
-
   const getArc = (radius: number, percent: number) => {
     const circumference = 2 * Math.PI * radius;
-    const strokeDasharray = `${circumference * percent} ${circumference * (1 - percent)}`;
-    return { circumference, strokeDasharray };
+    const clamped = Math.min(1, Math.max(0, percent));
+    return `${circumference * clamped} ${circumference * (1 - clamped)}`;
   };
 
-  const outerArc = getArc(outerR, 0.72);
-  const middleArc = getArc(middleR, 0.84);
-  const innerArc = getArc(innerR, 0.65);
+  const ringLayout = hasSleepData
+    ? [
+        { key: 'sleep', label: 'Sleep', r: 56, rate: categoryStats.sleep, color: isDark ? '#1d4ed8' : '#166534' },
+        { key: 'work', label: 'Work / Academic', r: 43, rate: categoryStats.work, color: isDark ? '#3b82f6' : '#23C15D' },
+        { key: 'self', label: 'Self-Improvement', r: 30, rate: categoryStats.self, color: isDark ? '#93c5fd' : '#4ADE80' },
+      ]
+    : [
+        { key: 'work', label: 'Work / Academic', r: 52, rate: categoryStats.work, color: isDark ? '#3b82f6' : '#23C15D' },
+        { key: 'self', label: 'Self-Improvement', r: 34, rate: categoryStats.self, color: isDark ? '#93c5fd' : '#4ADE80' },
+      ];
+
+  const barSeries = hasSleepData
+    ? [
+        { label: 'Work', rate: categoryStats.work },
+        { label: 'SI', rate: categoryStats.self },
+        { label: 'Sleep', rate: categoryStats.sleep },
+      ]
+    : [
+        { label: 'Work', rate: categoryStats.work },
+        { label: 'SI', rate: categoryStats.self },
+      ];
+
+  const sleepHoursLabel =
+    timeFilter === 'today'
+      ? sleep.todayHours == null
+        ? '—'
+        : `${sleep.todayHours}h`
+      : sleep.weekHours == null
+      ? '—'
+      : `${sleep.weekHours}h`;
 
   return (
-    <div id="report-screen" onScroll={onScroll} className="absolute inset-0 px-4.5 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-28 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none max-w-md mx-auto">
-      {/* Top Header Section */}
+    <div
+      id="report-screen"
+      onScroll={onScroll}
+      className="absolute inset-0 px-4.5 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-28 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none max-w-md mx-auto"
+    >
       <section className="flex items-start justify-between pt-1">
         <div>
-          <h1 className="text-[32px] font-black text-slate-900 dark:text-white tracking-tight leading-none">
-            Report
-          </h1>
-          <p className="text-[13px] text-slate-500 dark:text-slate-400 font-normal mt-1">
-            Your progress, in perspective.
-          </p>
+          <h1 className="text-[32px] font-black text-slate-900 dark:text-white tracking-tight leading-none">Report</h1>
+          <p className="text-[13px] text-slate-500 dark:text-slate-400 font-normal mt-1">Your progress, in perspective.</p>
         </div>
-
-        {/* Download Report (CSV) Button */}
         <button
           id="download-report-csv-btn"
           type="button"
-          onClick={handleDownloadCSV}
-          className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2 px-3 flex items-center space-x-2.5 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 active:scale-95 transition cursor-pointer"
+          onClick={() => void handleDownloadCSV()}
+          disabled={exporting}
+          className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2 px-3 flex items-center space-x-2.5 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 active:scale-95 transition cursor-pointer disabled:opacity-60"
           title="Download Report (CSV)"
         >
           <div className="w-5 h-5 flex items-center justify-center text-slate-800 dark:text-slate-200 shrink-0">
@@ -308,7 +355,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
           </div>
           <div className="text-left leading-[1.1]">
             <div className="text-[11.5px] font-bold text-slate-900 dark:text-white">
-              {downloadSuccess ? 'Exported' : 'Download'}
+              {exporting ? 'Exporting' : downloadSuccess ? 'Exported' : 'Download'}
             </div>
             <div className="text-[11.5px] font-bold text-slate-900 dark:text-white">Report</div>
             <div className="text-[9.5px] text-slate-400 dark:text-slate-500 font-medium">(CSV)</div>
@@ -316,319 +363,142 @@ export const ReportView: React.FC<ReportViewProps> = ({
         </button>
       </section>
 
-      {/* Upper Graph Section */}
-      <section className="relative w-full">
-        {graphMode === 'concentric' ? (
-          <div className="relative w-full flex flex-col items-center justify-center">
-            {/* SVG Concentric Donut / Radial Ring Visualization */}
-            <div className="relative w-full max-w-[340px] h-[210px] flex items-center justify-center">
-              <svg className="w-full h-full overflow-visible" viewBox="0 0 320 220">
-                {/* Subtle outer guideline circles */}
-                <circle cx={cx} cy={cy} r={80} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
-                <circle cx={cx} cy={cy} r={outerR} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth={strokeW} />
-                <circle cx={cx} cy={cy} r={middleR} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth={strokeW} />
-                <circle cx={cx} cy={cy} r={innerR} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth={strokeW} />
-
-                {/* Outer Ring: Sleep */}
+      <section className="relative w-full flex flex-col items-center justify-center">
+        <div className="relative w-full max-w-[340px] h-[210px] flex items-center justify-center">
+          <svg className="w-full h-full overflow-visible" viewBox="0 0 320 220">
+            <circle cx={cx} cy={cy} r={80} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
+            {ringLayout.map((ring) => (
+              <g key={ring.key}>
+                <circle cx={cx} cy={cy} r={ring.r} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth={strokeW} />
                 <circle
                   cx={cx}
                   cy={cy}
-                  r={outerR}
+                  r={ring.r}
                   fill="none"
-                  stroke={isDark ? '#1d4ed8' : '#166534'}
+                  stroke={ring.color}
                   strokeWidth={strokeW}
-                  strokeDasharray={outerArc.strokeDasharray}
+                  strokeDasharray={getArc(ring.r, ring.rate)}
                   strokeLinecap="round"
                   transform={`rotate(-90 ${cx} ${cy})`}
                 />
+              </g>
+            ))}
+            {hasSleepData ? (
+              <>
+                <polyline points={`${cx + 38},${cy - 42} ${cx + 52},${cy - 52} ${cx + 70},${cy - 52}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
+                <circle cx={cx + 76} cy={cy - 52} r={3} fill={isDark ? '#1d4ed8' : '#166534'} />
+                <text x={cx + 84} y={cy - 48} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[12px] font-semibold">
+                  Sleep
+                </text>
+                <polyline points={`${cx - 43},${cy - 4} ${cx - 75},${cy - 4}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
+                <circle cx={cx - 81} cy={cy - 4} r={3} fill={isDark ? '#2563eb' : '#0B5938'} />
+                <text x={cx - 90} y={cy - 12} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
+                  Work /
+                </text>
+                <text x={cx - 90} y={cy + 3} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
+                  Academic
+                </text>
+                <polyline points={`${cx + 30},${cy + 8} ${cx + 72},${cy + 8}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
+                <circle cx={cx + 78} cy={cy + 8} r={3} fill={isDark ? '#3b82f6' : '#23C15D'} />
+                <text x={cx + 86} y={cy + 12} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[12px] font-semibold">
+                  Self-Improvement
+                </text>
+              </>
+            ) : (
+              <>
+                <polyline points={`${cx - 52},${cy - 6} ${cx - 84},${cy - 6}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
+                <circle cx={cx - 90} cy={cy - 6} r={3} fill={isDark ? '#2563eb' : '#0B5938'} />
+                <text x={cx - 98} y={cy - 14} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
+                  Work /
+                </text>
+                <text x={cx - 98} y={cy + 1} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[11.5px] font-semibold" textAnchor="end">
+                  Academic
+                </text>
+                <polyline points={`${cx + 34},${cy + 6} ${cx + 78},${cy + 6}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />
+                <circle cx={cx + 84} cy={cy + 6} r={3} fill={isDark ? '#3b82f6' : '#23C15D'} />
+                <text x={cx + 92} y={cy + 10} fill={isDark ? '#f8fafc' : '#1e293b'} className="text-[12px] font-semibold">
+                  Self-Improvement
+                </text>
+              </>
+            )}
+          </svg>
+        </div>
+        {hasSleepData && (
+          <p className="text-[11.5px] text-slate-500 dark:text-slate-400 -mt-2">
+            Sleep logged {sleepHoursLabel} · target {SLEEP_TARGET_HOURS}h
+          </p>
+        )}
+      </section>
 
-                {/* Middle Ring: Work / Academic */}
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={middleR}
-                  fill="none"
-                  stroke={isDark ? '#3b82f6' : '#23C15D'}
-                  strokeWidth={strokeW}
-                  strokeDasharray={middleArc.strokeDasharray}
-                  strokeLinecap="round"
-                  transform={`rotate(-90 ${cx} ${cy})`}
-                />
-
-                {/* Inner Ring: Self-Improvement */}
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={innerR}
-                  fill="none"
-                  stroke={isDark ? '#93c5fd' : '#4ADE80'}
-                  strokeWidth={strokeW}
-                  strokeDasharray={innerArc.strokeDasharray}
-                  strokeLinecap="round"
-                  transform={`rotate(-90 ${cx} ${cy})`}
-                />
-
-                {/* --- CALLOUT GUIDELINES & POINTER LABELS --- */}
-
-                {/* Callout 1: Sleep (Top Right) */}
-                <g className="cursor-default">
-                  <polyline
-                    points={`${cx + 38},${cy - 42} ${cx + 52},${cy - 52} ${cx + 70},${cy - 52}`}
-                    fill="none"
-                    stroke={isDark ? '#64748b' : '#CBD5E1'}
-                    strokeWidth="1.2"
-                  />
-                  <circle cx={cx + 76} cy={cy - 52} r={3} fill={isDark ? '#1d4ed8' : '#166534'} />
-                  <text
-                    x={cx + 84}
-                    y={cy - 48}
-                    fill={isDark ? '#f8fafc' : '#1e293b'}
-                    className="text-[12px] font-semibold"
-                    textAnchor="start"
-                  >
-                    Sleep
-                  </text>
-                </g>
-
-                {/* Callout 2: Work / Academic (Left) */}
-                <g className="cursor-default">
-                  <polyline
-                    points={`${cx - 43},${cy - 4} ${cx - 75},${cy - 4}`}
-                    fill="none"
-                    stroke={isDark ? '#64748b' : '#CBD5E1'}
-                    strokeWidth="1.2"
-                  />
-                  <circle cx={cx - 81} cy={cy - 4} r={3} fill={isDark ? '#2563eb' : '#0B5938'} />
-                  <text
-                    x={cx - 90}
-                    y={cy - 12}
-                    fill={isDark ? '#f8fafc' : '#1e293b'}
-                    className="text-[11.5px] font-semibold"
-                    textAnchor="end"
-                  >
-                    Work /
-                  </text>
-                  <text
-                    x={cx - 90}
-                    y={cy + 3}
-                    fill={isDark ? '#f8fafc' : '#1e293b'}
-                    className="text-[11.5px] font-semibold"
-                    textAnchor="end"
-                  >
-                    Academic
-                  </text>
-                </g>
-
-                {/* Callout 3: Self-Improvement (Right) */}
-                <g className="cursor-default">
-                  <polyline
-                    points={`${cx + 30},${cy + 8} ${cx + 72},${cy + 8}`}
-                    fill="none"
-                    stroke={isDark ? '#64748b' : '#CBD5E1'}
-                    strokeWidth="1.2"
-                  />
-                  <circle cx={cx + 78} cy={cy + 8} r={3} fill={isDark ? '#3b82f6' : '#23C15D'} />
-                  <text
-                    x={cx + 86}
-                    y={cy + 12}
-                    fill={isDark ? '#f8fafc' : '#1e293b'}
-                    className="text-[12px] font-semibold"
-                    textAnchor="start"
-                  >
-                    Self-Improvement
-                  </text>
-                </g>
-              </svg>
-            </div>
-          </div>
-        ) : (
-          /* Alternative Graph: 3-Line Trajectory Graph matching the 3 Concentric Rings */
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-2 animate-in fade-in duration-200">
+      <section>
+        {graphMode === 'line' ? (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-2">
             <div className="flex items-center justify-between text-xs px-1">
-              <span className="font-bold text-slate-800 dark:text-white">Momentum Trajectory</span>
-              <span className="text-emerald-700 dark:text-blue-400 font-bold">
-                {Math.round(((categoryStats.work + categoryStats.sleep + categoryStats.self) / 3) * 100)}% Consistency
+              <span className="font-bold text-slate-800 dark:text-white">Line graph</span>
+              <span className="text-emerald-700 dark:text-blue-400 font-bold tabular-nums">
+                {Math.round(
+                  ((hasSleepData ? categoryStats.work + categoryStats.self + categoryStats.sleep : categoryStats.work + categoryStats.self) /
+                    (hasSleepData ? 3 : 2)) *
+                    100
+                )}
+                %
               </span>
             </div>
             <svg className="w-full h-[155px] overflow-visible" viewBox="0 0 375 162">
-              {/* Subtle background horizontal guidelines */}
               <line x1="16" y1="36" x2="216" y2="36" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
               <line x1="16" y1="78" x2="216" y2="78" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
               <line x1="16" y1="120" x2="216" y2="120" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
-
-              {/* Day markers along the bottom */}
-              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, idx) => {
-                const xs = [24, 54, 84, 114, 144, 176, 208];
-                return (
-                  <text
-                    key={idx}
-                    x={xs[idx]}
-                    y={155}
-                    textAnchor="middle"
-                    fill={isDark ? '#64748b' : '#94A3B8'}
-                    className="text-[9.5px] font-bold select-none"
-                  >
-                    {day}
-                  </text>
-                );
-              })}
-
-              {/* Line 1: Sleep (matching Outer Ring) */}
-              <path
-                d={lineGraphData.sleepPath}
-                fill="none"
-                stroke={isDark ? '#1d4ed8' : '#166534'}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <circle
-                cx={lineGraphData.sleepPoints[6].x}
-                cy={lineGraphData.sleepPoints[6].y}
-                r={3.5}
-                fill={isDark ? '#1d4ed8' : '#166534'}
-                stroke="#FFF"
-                strokeWidth="1.5"
-              />
-              {/* Callout: Sleep with guide line, dot, and text label */}
-              <g className="cursor-default">
-                <polyline
-                  points={`${lineGraphData.sleepPoints[6].x},${lineGraphData.sleepPoints[6].y} 228,${lineGraphData.sleepPoints[6].y - 5} 244,${lineGraphData.sleepPoints[6].y - 5}`}
-                  fill="none"
-                  stroke={isDark ? '#64748b' : '#CBD5E1'}
-                  strokeWidth="1.2"
-                />
-                <circle
-                  cx={250}
-                  cy={lineGraphData.sleepPoints[6].y - 5}
-                  r={3}
-                  fill={isDark ? '#1d4ed8' : '#166534'}
-                />
-                <text
-                  x={258}
-                  y={lineGraphData.sleepPoints[6].y - 1}
-                  fill={isDark ? '#f8fafc' : '#1e293b'}
-                  className="text-[12px] font-semibold"
-                  textAnchor="start"
-                >
-                  Sleep
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, idx) => (
+                <text key={`${day}-${idx}`} x={[24, 54, 84, 114, 144, 176, 208][idx]} y={155} textAnchor="middle" fill={isDark ? '#64748b' : '#94A3B8'} className="text-[9.5px] font-bold">
+                  {day}
                 </text>
-              </g>
-
-              {/* Line 2: Work / Academic (matching Middle Ring) */}
-              <path
-                d={lineGraphData.workPath}
-                fill="none"
-                stroke={isDark ? '#3b82f6' : '#23C15D'}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <circle
-                cx={lineGraphData.workPoints[6].x}
-                cy={lineGraphData.workPoints[6].y}
-                r={3.5}
-                fill={isDark ? '#3b82f6' : '#23C15D'}
-                stroke="#FFF"
-                strokeWidth="1.5"
-              />
-              {/* Callout: Work / Academic with guide line, dot, and text label */}
-              <g className="cursor-default">
-                <polyline
-                  points={`${lineGraphData.workPoints[6].x},${lineGraphData.workPoints[6].y} 228,${lineGraphData.workPoints[6].y} 242,${lineGraphData.workPoints[6].y}`}
-                  fill="none"
-                  stroke={isDark ? '#64748b' : '#CBD5E1'}
-                  strokeWidth="1.2"
-                />
-                <circle
-                  cx={248}
-                  cy={lineGraphData.workPoints[6].y}
-                  r={3}
-                  fill={isDark ? '#2563eb' : '#0B5938'}
-                />
-                <text
-                  x={256}
-                  y={lineGraphData.workPoints[6].y - 6}
-                  fill={isDark ? '#f8fafc' : '#1e293b'}
-                  className="text-[11.5px] font-semibold"
-                  textAnchor="start"
-                >
-                  Work /
-                </text>
-                <text
-                  x={256}
-                  y={lineGraphData.workPoints[6].y + 7}
-                  fill={isDark ? '#f8fafc' : '#1e293b'}
-                  className="text-[11.5px] font-semibold"
-                  textAnchor="start"
-                >
-                  Academic
-                </text>
-              </g>
-
-              {/* Line 3: Self-Improvement (matching Inner Ring) */}
-              <path
-                d={lineGraphData.selfPath}
-                fill="none"
-                stroke={isDark ? '#93c5fd' : '#4ADE80'}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <circle
-                cx={lineGraphData.selfPoints[6].x}
-                cy={lineGraphData.selfPoints[6].y}
-                r={3.5}
-                fill={isDark ? '#93c5fd' : '#4ADE80'}
-                stroke="#FFF"
-                strokeWidth="1.5"
-              />
-              {/* Callout: Self-Improvement with guide line, dot, and text label */}
-              <g className="cursor-default">
-                <polyline
-                  points={`${lineGraphData.selfPoints[6].x},${lineGraphData.selfPoints[6].y} 228,${lineGraphData.selfPoints[6].y + 5} 242,${lineGraphData.selfPoints[6].y + 5}`}
-                  fill="none"
-                  stroke={isDark ? '#64748b' : '#CBD5E1'}
-                  strokeWidth="1.2"
-                />
-                <circle
-                  cx={248}
-                  cy={lineGraphData.selfPoints[6].y + 5}
-                  r={3}
-                  fill={isDark ? '#3b82f6' : '#23C15D'}
-                />
-                <text
-                  x={256}
-                  y={lineGraphData.selfPoints[6].y + 9}
-                  fill={isDark ? '#f8fafc' : '#1e293b'}
-                  className="text-[11.5px] font-semibold"
-                  textAnchor="start"
-                >
-                  Self-Improvement
-                </text>
-              </g>
+              ))}
+              {hasSleepData && (
+                <path d={lineGraphData.sleepPath} fill="none" stroke={isDark ? '#1d4ed8' : '#166534'} strokeWidth="2.5" strokeLinecap="round" />
+              )}
+              <path d={lineGraphData.workPath} fill="none" stroke={isDark ? '#3b82f6' : '#23C15D'} strokeWidth="2.5" strokeLinecap="round" />
+              <path d={lineGraphData.selfPath} fill="none" stroke={isDark ? '#93c5fd' : '#4ADE80'} strokeWidth="2.5" strokeLinecap="round" />
             </svg>
           </div>
+        ) : (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-3">
+            <span className="px-1 text-xs font-bold text-slate-800 dark:text-white">Bar breakdown</span>
+            <div className={`grid gap-3 ${hasSleepData ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              {barSeries.map((col) => {
+                const height = Math.round(col.rate * 110);
+                return (
+                  <div key={col.label} className="flex flex-col items-center">
+                    <span className="text-[11.5px] font-extrabold text-slate-800 dark:text-white tabular-nums mb-1">
+                      {Math.round(col.rate * 100)}%
+                    </span>
+                    <div className="h-[120px] w-full flex items-end justify-center">
+                      <div
+                        style={{ height: `${Math.max(4, height)}px` }}
+                        className="w-8 rounded-t-lg bg-[#23C15D] dark:bg-blue-500"
+                      />
+                    </div>
+                    <span className="mt-2 text-[11.5px] font-semibold text-slate-700 dark:text-slate-300">{col.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
-
-        {/* Switch Graph Button (Aligned to the right) */}
         <div className="flex justify-end pt-1">
           <button
             id="switch-graph-btn"
             type="button"
-            onClick={() => setGraphMode((prev) => (prev === 'concentric' ? 'trajectory' : 'concentric'))}
+            onClick={() => setGraphMode((prev) => (prev === 'line' ? 'bar' : 'line'))}
             className="px-3.5 py-1.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-xs flex items-center space-x-2 text-[12px] font-semibold text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700 transition cursor-pointer active:scale-95"
           >
-            {/* Swap horizontal arrows icon */}
             <svg className="w-4 h-4 text-slate-800 dark:text-slate-200" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
             </svg>
-            <span>Switch Graph</span>
+            <span>{graphMode === 'line' ? 'Bar breakdown' : 'Line graph'}</span>
           </button>
         </div>
       </section>
 
-      {/* Identity Evidence Ledger: COUNT(*) of full|fallback momentum_events */}
       <section>
         <button
           type="button"
@@ -636,16 +506,11 @@ export const ReportView: React.FC<ReportViewProps> = ({
           onClick={onOpenLedger}
           className="w-full bg-white dark:bg-slate-900 rounded-2xl p-3.5 px-4 border border-slate-100 dark:border-slate-800 shadow-xs flex items-center justify-between cursor-pointer hover:border-slate-200 dark:hover:border-slate-700 transition"
         >
-          <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tracking-tight">
-            Identity Evidence ledger
-          </span>
-          <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tabular-nums">
-            {ledgerVoteCount} votes
-          </span>
+          <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tracking-tight">Identity Evidence ledger</span>
+          <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tabular-nums">{ledgerVoteCount} votes</span>
         </button>
       </section>
 
-      {/* Keystone habits: collapsed status + real correlation when expanded */}
       <section>
         <button
           type="button"
@@ -661,9 +526,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tracking-tight">
-                  Keystone
-                </span>
+                <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tracking-tight">Keystone</span>
                 {keystones.length > 0 && (
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 dark:bg-blue-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] dark:shadow-[0_0_8px_rgba(96,165,250,0.9)]" />
                 )}
@@ -678,12 +541,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
               <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tabular-nums">
                 {keystoneCompletionRate == null ? '—' : `${keystoneCompletionRate}%`}
               </span>
-              <svg
-                className={`w-4 h-4 text-slate-400 transition-transform ${keystoneExpanded ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className={`w-4 h-4 text-slate-400 transition-transform ${keystoneExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M19 9l-7 7-7-7" />
               </svg>
             </div>
@@ -698,9 +556,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
             ) : (
               keystoneStats.map(({ habit, correlation }) => (
                 <p key={habit.id} className="text-[12.5px] text-slate-700 dark:text-slate-200 leading-relaxed">
-                  {correlation
-                    ? formatKeystoneCorrelation(correlation)
-                    : 'Building correlation data...'}
+                  {correlation ? formatKeystoneCorrelation(correlation) : 'Building correlation data...'}
                 </p>
               ))
             )}
@@ -708,18 +564,10 @@ export const ReportView: React.FC<ReportViewProps> = ({
         )}
       </section>
 
-      {/* Segmented Time Filter (Today / Week / Month / Momentum) */}
       <section className="bg-[#EFF3F6] dark:bg-slate-800/80 p-1 rounded-2xl flex items-center">
         {(['today', 'week', 'month', 'momentum'] as TimeFilter[]).map((tab) => {
           const isActive = timeFilter === tab;
-          const label =
-            tab === 'today'
-              ? 'Today'
-              : tab === 'week'
-              ? 'Week'
-              : tab === 'month'
-              ? 'Month'
-              : '⚡ Momentum';
+          const label = tab === 'today' ? 'Today' : tab === 'week' ? 'Week' : tab === 'month' ? 'Month' : '⚡ Momentum';
           return (
             <button
               key={tab}
@@ -738,291 +586,92 @@ export const ReportView: React.FC<ReportViewProps> = ({
         })}
       </section>
 
-      {/* MOMENTUM TAB VIEW */}
-      {timeFilter === 'momentum' ? (
-        <section className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-100 dark:border-slate-800 shadow-xs space-y-4 animate-in fade-in duration-200">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-blue-950/60 flex items-center justify-center text-emerald-700 dark:text-blue-400 font-black text-base shrink-0">
-                ⚡
-              </div>
-              <div>
-                <h2 className="text-[16px] font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight">
-                  Momentum Engine Audit
-                </h2>
-                <p className="text-[11.5px] text-slate-400 dark:text-slate-400 font-normal">
-                  Continuous habit velocity & anti-fragile compounding
-                </p>
-              </div>
-            </div>
+      <section className="bg-white dark:bg-slate-900 rounded-2xl p-4.5 border border-slate-100 dark:border-slate-800 shadow-xs space-y-4">
+        <div className="flex items-center space-x-2.5">
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-blue-950/60 flex items-center justify-center text-emerald-800 dark:text-blue-400 shrink-0">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
           </div>
-
-          {/* Central Score Dial */}
-          <div className="py-2 flex flex-col items-center justify-center text-center">
-            <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-emerald-50 via-white to-emerald-100 dark:from-slate-800 dark:via-slate-900 dark:to-blue-950 border-3 border-[#23C15D] dark:border-blue-500 shadow-md flex flex-col items-center justify-center">
-              <span className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">
-                {momentumScore}
-              </span>
-              <span className="text-[9.5px] font-bold text-emerald-700 dark:text-blue-400 uppercase tracking-widest mt-1">
-                / 100
-              </span>
-            </div>
-            <p className="mt-2.5 text-[12.5px] font-bold text-emerald-800 dark:text-blue-400">
-              {momentumScore >= 80
-                ? 'Apex Velocity: Your daily compounding is fully optimized!'
-                : momentumScore >= 50
-                ? 'Strong Steady Velocity: Daily habits compounding reliably.'
-                : 'Building Velocity: Micro-habits will rapidly accelerate your score.'}
-            </p>
-          </div>
-
-          {/* Core Velocity Mechanics */}
-          <div className="space-y-2.5 text-xs pt-1">
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <span className="text-base">🎯</span>
-                <div>
-                  <p className="font-bold text-slate-800 dark:text-white">Active Habit Execution</p>
-                  <p className="text-[10.5px] text-slate-500 dark:text-slate-400">Full habits = 1.0 • Micro-habits = 0.5</p>
-                </div>
-              </div>
-              <span className="font-extrabold text-slate-900 dark:text-white tabular-nums">
-                {accomplishedHabitsCount} / {totalHabitsCount} Today
-              </span>
-            </div>
-          </div>
-
-          {/* 7-Day Habit Completion Matrix */}
-          <div className="pt-2">
-            <h4 className="text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2">
-              7-Day Velocity Matrix
-            </h4>
-            <div className="grid grid-cols-7 gap-1.5 text-center">
-              {Array.from({ length: 7 }, (_, i) => {
-                const dayNum = i + 1;
-                const isPastOrToday = i <= todayIndex;
-                const completedCount = habits.filter((h) => h.days?.[i]).length;
-                const rate = habits.length > 0 ? completedCount / habits.length : 0;
-                const color =
-                  !isPastOrToday
-                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
-                    : rate > 0.70
-                    ? 'bg-emerald-500 text-white'
-                    : rate >= 0.40
-                    ? 'bg-emerald-200 text-emerald-900 dark:bg-blue-600 dark:text-white'
-                    : 'bg-orange-400 text-white';
-
-                return (
-                  <div key={dayNum} className="flex flex-col items-center">
-                    <span className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1">
-                      {getWeekdayShort(i)}
-                    </span>
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-[11px] font-extrabold shadow-2xs ${color}`}>
-                      {isPastOrToday ? Math.round(rate * 100) + '%' : '—'}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      ) : (
-        /* Analysis Card */
-        <section className="bg-white dark:bg-slate-900 rounded-2xl p-4.5 border border-slate-100 dark:border-slate-800 shadow-xs space-y-4">
-        {/* Analysis Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            {/* Rounded Icon Box with Trending Up Arrow */}
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-blue-950/60 flex items-center justify-center text-emerald-800 dark:text-blue-400 shrink-0">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-[16px] font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight">
-                Analysis
-              </h2>
-              <p className="text-[11.5px] text-slate-400 dark:text-slate-400 font-normal">
-                How you improved from the previous week
-              </p>
-            </div>
-          </div>
-
-          {/* Three Dots Menu Button */}
-          <div className="relative">
-            <button
-              id="analysis-menu-btn"
-              type="button"
-              onClick={() => setShowAnalysisMenu(!showAnalysisMenu)}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
-              aria-label="Options"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <circle cx="5" cy="12" r="2" />
-                <circle cx="12" cy="12" r="2" />
-                <circle cx="19" cy="12" r="2" />
-              </svg>
-            </button>
-
-            {/* Dropdown Options */}
-            {showAnalysisMenu && (
-              <div className="absolute right-0 top-8 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-100 dark:border-slate-700 p-1.5 z-20 animate-in fade-in zoom-in-95 duration-150">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowFrictionModal(true);
-                    setShowAnalysisMenu(false);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-[11.5px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
-                >
-                  + Add Reflection Note
-                </button>
-              </div>
-            )}
+          <div>
+            <h2 className="text-[16px] font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight">Analysis</h2>
+            <p className="text-[11.5px] text-slate-400 dark:text-slate-400 font-normal">Friction reasons from habit logs</p>
           </div>
         </div>
 
-        {/* Grouped Comparison Bar Chart */}
-        <div className="pt-2 pb-1">
-          <div className="grid grid-cols-4 gap-2">
-            {analysisData.map((col) => {
-              const prevHeight = Math.max(28, (col.prev / 100) * 96);
-              const currHeight = Math.max(36, (col.curr / 100) * 110);
+        {timeFilter === 'momentum' && (
+          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+            <span className="text-[12.5px] font-bold text-slate-700 dark:text-slate-200">Momentum score</span>
+            <span className="text-[18px] font-black text-slate-900 dark:text-white tabular-nums">{momentumScore}</span>
+          </div>
+        )}
 
+        {timeFilter === 'momentum' && (
+          <div className="grid grid-cols-7 gap-1.5 text-center">
+            {Array.from({ length: 7 }, (_, i) => {
+              const completedCount = habits.filter((habit) => habit.days?.[i]).length;
+              const rate = habits.length > 0 ? completedCount / habits.length : 0;
               return (
-                <div key={col.label} className="flex flex-col items-center">
-                  {/* Bars & Delta Container anchored to a shared bottom baseline */}
-                  <div className="h-[136px] w-full flex flex-col items-center justify-end">
-                    {/* Improvement Percentage Indicator at Top */}
-                    <span className="text-[11.5px] font-extrabold text-emerald-600 dark:text-blue-400 mb-1.5 tracking-tight flex items-center">
-                      ↑ {col.delta}%
-                    </span>
-
-                    {/* Dual Bars: Previous Week & This Week */}
-                    <div className="flex items-end space-x-1.5">
-                      {/* Previous Week Bar */}
-                      <div
-                        style={{ height: `${prevHeight}px` }}
-                        className="w-5 sm:w-6 bg-[#E5E9ED] dark:bg-slate-700 rounded-t-lg rounded-b-sm transition-all duration-500"
-                        title={`Previous week: ${col.prev}%`}
-                      />
-                      {/* This Week Bar */}
-                      <div
-                        style={{ height: `${currHeight}px` }}
-                        className="w-5 sm:w-6 bg-[#23C15D] dark:bg-blue-500 rounded-t-lg rounded-b-sm transition-all duration-500 shadow-xs"
-                        title={`This week: ${col.curr}%`}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Category Label: Pushed down below the shared baseline */}
-                  <div className="mt-2.5 min-h-[32px] flex items-start justify-center text-center">
-                    <span
-                      className={`leading-tight ${
-                        col.label === 'Self-Improvement'
-                          ? 'text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 max-w-[85px]'
-                          : 'text-[11.5px] font-semibold text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      {col.label}
-                    </span>
+                <div key={i} className="flex flex-col items-center">
+                  <span className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1">{getWeekdayShort(i)}</span>
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[11px] font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+                    {habits.length === 0 ? '—' : `${Math.round(rate * 100)}%`}
                   </div>
                 </div>
               );
             })}
           </div>
-        </div>
+        )}
 
-        {/* Chart Legend at bottom of card */}
-        <div className="flex items-center justify-start space-x-6 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11.5px]">
-          <div className="flex items-center space-x-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#A8B3BD] dark:bg-slate-600" />
-            <span className="text-slate-500 dark:text-slate-400 font-medium">Previous week</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#23C15D] dark:bg-blue-500" />
-            <span className="text-slate-700 dark:text-slate-200 font-semibold">This week</span>
-          </div>
-        </div>
-
-        {(frictionPatterns.length > 0 || flaggedFrictionEvents.length > 0) && (
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              Friction this week
-            </p>
-            {frictionPatterns.length > 0 ? (
-              <div className="flex flex-col gap-1.5">
-                {frictionPatterns.map((pattern) => (
-                  <div
-                    key={pattern.reason}
-                    className="px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 text-[12px] text-amber-900 dark:text-amber-200 font-semibold"
-                  >
-                    {pattern.reason} was cited {pattern.count}x this week
-                  </div>
-                ))}
+        {frictionPatterns.length === 0 && flaggedFrictionEvents.length === 0 ? (
+          <p className="text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed">No friction reasons logged for this window.</p>
+        ) : (
+          <div className="space-y-2">
+            {frictionPatterns.map((pattern) => (
+              <div
+                key={pattern.reason}
+                className="px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 text-[12px] text-amber-900 dark:text-amber-200 font-semibold"
+              >
+                {pattern.reason} was cited {pattern.count}x
               </div>
-            ) : null}
-            {flaggedFrictionEvents.length > 0 ? (
-              <ul className="space-y-1">
-                {flaggedFrictionEvents.map((event) => (
-                  <li
-                    key={event.id}
-                    className="text-[11.5px] text-slate-500 dark:text-slate-400"
-                  >
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">{event.habitName}</span>
-                    {' · '}
-                    {event.reason || event.note}
-                    {event.date ? ` · ${event.date}` : ''}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            ))}
+            {flaggedFrictionEvents.map((event) => (
+              <p key={event.id} className="text-[11.5px] text-slate-500 dark:text-slate-400">
+                <span className="font-semibold text-slate-700 dark:text-slate-200">{event.habitName}</span>
+                {' · '}
+                {event.reason || event.note}
+                {event.loggedDate ? ` · ${event.loggedDate}` : event.date ? ` · ${event.date}` : ''}
+              </p>
+            ))}
           </div>
         )}
       </section>
-      )}
 
-      {/* Reflection Note Modal */}
-      {showFrictionModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full p-4 border border-slate-100 dark:border-slate-800 shadow-xl space-y-3 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[14px] font-bold text-slate-900 dark:text-white">Add Reflection Note</h3>
-              <button
-                type="button"
-                onClick={() => setShowFrictionModal(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg leading-none cursor-pointer"
+      <section className="bg-white dark:bg-slate-900 rounded-2xl p-4.5 border border-slate-100 dark:border-slate-800 shadow-xs space-y-3">
+        <h2 className="text-[16px] font-extrabold text-slate-900 dark:text-white tracking-tight">Friends Feed</h2>
+        {friends.length === 0 ? (
+          <p className="text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
+            No friends yet. Add accountability buddies from Personal.
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {friends.map((friend) => (
+              <div
+                key={friend.id}
+                className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 flex items-center justify-between"
               >
-                ×
-              </button>
-            </div>
-            <form onSubmit={handleNoteSubmit} className="space-y-2.5">
-              <input
-                type="text"
-                placeholder="Habit or context (e.g. Sleep / Deep Work)"
-                value={newNoteHabit}
-                onChange={(e) => setNewNoteHabit(e.target.value)}
-                className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[12px] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:focus:ring-blue-500"
-              />
-              <textarea
-                rows={3}
-                required
-                placeholder="What went well or caused friction? How did you adapt?"
-                value={newNoteText}
-                onChange={(e) => setNewNoteText(e.target.value)}
-                className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[12px] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:focus:ring-blue-500 resize-none"
-              />
-              <button
-                type="submit"
-                className="w-full py-2 bg-emerald-700 hover:bg-emerald-600 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-xl text-[12px] font-bold cursor-pointer"
-              >
-                Save Reflection
-              </button>
-            </form>
+                <div className="flex items-center space-x-2">
+                  <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center justify-center">
+                    {friend.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="font-semibold text-[13px] text-slate-800 dark:text-slate-200">{friend.name}</span>
+                </div>
+                <span className="text-[12px] font-bold text-slate-600 dark:text-slate-300 tabular-nums">{friend.momentum}</span>
+              </div>
+            ))}
           </div>
-        </div>
-      )}
+        )}
+      </section>
     </div>
   );
 };
