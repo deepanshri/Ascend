@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
+import { MotionModal } from './MotionModal';
+import { tapPress } from '../lib/motionPresets';
 import { StandaloneReminder, UserSession } from '../types';
 import { reminderNotificationIds, weekdayFromIsoDate } from '../lib/notifications';
 import { upsertPublicReminder } from '../lib/supabase';
@@ -89,27 +91,13 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && reminder && (
-        <motion.div
-          id="edit-reminder-modal-overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45 dark:bg-slate-950/60 backdrop-blur-[8px]"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-        >
-          <motion.div
-            id="edit-reminder-modal-card"
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.98 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="relative w-full max-w-[390px] max-h-[min(92dvh,740px)] bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-y-auto"
-          >
+    <MotionModal
+      isOpen={Boolean(isOpen && reminder)}
+      onClose={onClose}
+      overlayId="edit-reminder-modal-overlay"
+      cardId="edit-reminder-modal-card"
+      cardClassName="p-6"
+    >
         <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
           <div>
             <h2 className="text-[17px] font-bold text-slate-900 dark:text-white leading-tight">Edit Reminder</h2>
@@ -220,7 +208,7 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
           <div className="pt-2 flex space-x-2.5">
             <motion.button
               type="button"
-              whileTap={{ scale: 0.95 }}
+              whileTap={tapPress}
               onClick={onClose}
               className="flex-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
             >
@@ -228,16 +216,13 @@ export const EditReminderModal: React.FC<EditReminderModalProps> = ({
             </motion.button>
             <motion.button
               type="submit"
-              whileTap={{ scale: 0.95 }}
+              whileTap={tapPress}
               className="flex-1 py-2.5 rounded-2xl bg-[#22C55E] dark:bg-[#3B82F6] text-white font-semibold hover:bg-emerald-600 dark:hover:bg-blue-500 shadow-md transition cursor-pointer"
             >
               Save Changes
             </motion.button>
           </div>
         </form>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </MotionModal>
   );
 };

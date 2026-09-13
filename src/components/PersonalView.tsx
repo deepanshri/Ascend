@@ -17,8 +17,12 @@ import {
   HelpCircle,
   Shield,
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import { IdentityEvidence, UserSession } from '../types';
 import { FriendsFeed } from './FriendsFeed';
+import { FloatingToast } from './FloatingToast';
+import { MotionModal } from './MotionModal';
+import { tapPress } from '../lib/motionPresets';
 import { Mascot } from './Mascot';
 import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import type { ProtectionModeStatus } from '../lib/protection';
@@ -220,16 +224,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       onScroll={onScroll}
       className={`absolute inset-0 px-4 ${SCREEN_INSET_CLASS} pb-24 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none`}
     >
-      {/* Toast Feedback */}
-      {toastMessage && (
-        <div
-          role="status"
-          className="sticky top-2 z-50 mx-auto w-fit px-4 py-1.5 rounded-2xl text-[12px] font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white border-2 border-[#23C15D] dark:border-blue-500 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200 flex items-center space-x-2"
-        >
-          <span className="text-[#23C15D] font-bold">✓</span>
-          <span>{toastMessage}</span>
-        </div>
-      )}
+      <FloatingToast message={toastMessage} />
 
       <ScreenHeader
         title="Personal"
@@ -580,9 +575,12 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       {/* ================= MODALS ================= */}
 
       {/* 1. EDIT PERSONAL DETAILS MODAL */}
-      {isEditDetailsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="relative w-full max-w-[390px] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 space-y-4">
+      <MotionModal
+        isOpen={isEditDetailsOpen}
+        onClose={() => setIsEditDetailsOpen(false)}
+        overlayClassName="bg-slate-900/40 backdrop-blur-xs"
+        cardClassName="p-5 space-y-4"
+      >
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">
                 Edit Personal Details
@@ -650,29 +648,32 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
               </div>
 
               <div className="pt-2 flex space-x-2">
-                <button
+                <motion.button
                   type="button"
+                  whileTap={tapPress}
                   onClick={() => setIsEditDetailsOpen(false)}
                   className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer"
                 >
                   Cancel
-                </button>
-                <button
+                </motion.button>
+                <motion.button
                   type="submit"
+                  whileTap={tapPress}
                   className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer"
                 >
                   Save Changes
-                </button>
+                </motion.button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </MotionModal>
 
       {/* 2. "WHAT DO YOU WANT TO BECOME?" MODAL */}
-      {isBecomingModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="relative w-full max-w-[390px] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 space-y-4">
+      <MotionModal
+        isOpen={isBecomingModalOpen}
+        onClose={() => setIsBecomingModalOpen(false)}
+        overlayClassName="bg-slate-900/40 backdrop-blur-xs"
+        cardClassName="p-5 space-y-4"
+      >
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center space-x-2">
                 <Target className="w-5 h-5 text-emerald-600" />
@@ -702,40 +703,42 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
               />
 
               <div className="pt-2 flex space-x-2">
-                <button
+                <motion.button
                   type="button"
+                  whileTap={tapPress}
                   onClick={() => setIsBecomingModalOpen(false)}
                   className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer"
                 >
                   Cancel
-                </button>
-                <button
+                </motion.button>
+                <motion.button
                   type="submit"
+                  whileTap={tapPress}
                   className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer"
                 >
                   Save Identity
-                </button>
+                </motion.button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </MotionModal>
 
-      {isFriendModalOpen && (
-        <FriendsFeed
-          userId={userSession.id}
-          isGuest={userSession.isGuest}
-          userEmail={userSession.email}
-          userName={name || userSession.name}
-          variant="modal"
-          onClose={() => setIsFriendModalOpen(false)}
-        />
-      )}
+      <FriendsFeed
+        userId={userSession.id}
+        isGuest={userSession.isGuest}
+        userEmail={userSession.email}
+        userName={name || userSession.name}
+        variant="modal"
+        isOpen={isFriendModalOpen}
+        onClose={() => setIsFriendModalOpen(false)}
+      />
 
       {/* 4. HELP & FEEDBACK MODAL */}
-      {isHelpModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="relative w-full max-w-[390px] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 space-y-4 max-h-[85vh] overflow-y-auto">
+      <MotionModal
+        isOpen={isHelpModalOpen}
+        onClose={() => setIsHelpModalOpen(false)}
+        overlayClassName="bg-slate-900/40 backdrop-blur-xs"
+        cardClassName="p-5 space-y-4"
+      >
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center space-x-2">
                 <HelpCircle className="w-5 h-5 text-emerald-600" />
@@ -792,10 +795,11 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                   placeholder="Tell us what you'd like to improve or see added..."
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-[12px] outline-none focus:border-emerald-500"
                 />
-                <button
+                <motion.button
                   type="submit"
+                  whileTap={feedbackSent ? undefined : tapPress}
                   disabled={feedbackSent}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center space-x-2 transition cursor-pointer"
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center space-x-2 cursor-pointer"
                 >
                   {feedbackSent ? (
                     <>
@@ -808,12 +812,10 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                       <span>Submit Feedback</span>
                     </>
                   )}
-                </button>
+                </motion.button>
               </form>
             </div>
-          </div>
-        </div>
-      )}
+      </MotionModal>
     </div>
   );
 };

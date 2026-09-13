@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { StandaloneReminder } from '../types';
 
 interface ReminderLongPressOverlayProps {
@@ -64,9 +64,13 @@ export const ReminderLongPressOverlay: React.FC<ReminderLongPressOverlayProps> =
   };
 
   return (
-    <div
+    <motion.div
       id="reminder-long-press-overlay-root"
-      className="fixed inset-0 z-50 overflow-hidden select-none"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      className="fixed inset-0 z-50 overflow-hidden select-none transform-gpu"
     >
       {/* 1. Whole screen backdrop blur */}
       <motion.div
@@ -227,6 +231,6 @@ export const ReminderLongPressOverlay: React.FC<ReminderLongPressOverlayProps> =
           </div>
         </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 };

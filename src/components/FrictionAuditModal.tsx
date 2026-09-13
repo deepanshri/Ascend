@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
+import { MotionModal } from './MotionModal';
+import { tapPress } from '../lib/motionPresets';
 import { FRICTION_REASON_CHIPS } from '../lib/frictionAudit';
 
 interface FrictionAuditModalProps {
@@ -31,27 +33,14 @@ export const FrictionAuditModal: React.FC<FrictionAuditModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          id="friction-audit-overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45 dark:bg-slate-950/60 backdrop-blur-[8px]"
-        >
-          <motion.div
-            id="friction-audit-card"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="friction-audit-title"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 16 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="relative w-full max-w-[340px] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col"
-          >
+    <MotionModal
+      isOpen={isOpen}
+      onClose={onSkip}
+      overlayId="friction-audit-overlay"
+      cardId="friction-audit-card"
+      cardClassName="p-5 max-w-[340px]"
+      closeOnBackdrop={false}
+    >
             <h3
               id="friction-audit-title"
               className="text-[17px] font-bold text-slate-900 dark:text-white leading-snug"
@@ -93,25 +82,24 @@ export const FrictionAuditModal: React.FC<FrictionAuditModalProps> = ({
                 className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[13px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6]"
               />
               <div className="flex space-x-2">
-                <button
+                <motion.button
                   type="button"
+                  whileTap={tapPress}
                   onClick={onSkip}
-                  className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-[13px] rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition cursor-pointer"
+                  className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-[13px] rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
                 >
                   Skip
-                </button>
-                <button
+                </motion.button>
+                <motion.button
                   type="submit"
+                  whileTap={!customNote.trim() ? undefined : tapPress}
                   disabled={!customNote.trim()}
-                  className="flex-1 py-2.5 bg-[#22C55E] dark:bg-[#3B82F6] text-white font-bold text-[13px] rounded-2xl hover:bg-emerald-600 dark:hover:bg-blue-500 active:scale-95 transition cursor-pointer disabled:opacity-50"
+                  className="flex-1 py-2.5 bg-[#22C55E] dark:bg-[#3B82F6] text-white font-bold text-[13px] rounded-2xl hover:bg-emerald-600 dark:hover:bg-blue-500 cursor-pointer disabled:opacity-50"
                 >
                   Save
-                </button>
+                </motion.button>
               </div>
             </form>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </MotionModal>
   );
 };

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
+import { MotionModal } from './MotionModal';
+import { tapPress } from '../lib/motionPresets';
 import { IdentityEvidence, HabitCategory } from '../types';
 
 interface IdentityLedgerModalProps {
@@ -37,25 +39,12 @@ export const IdentityLedgerModal: React.FC<IdentityLedgerModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-    <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <MotionModal
+      isOpen={isOpen}
+      onClose={onClose}
+      overlayClassName="bg-slate-900/40 backdrop-blur-sm"
+      cardClassName="p-5 overflow-hidden"
     >
-      <motion.div
-        className="relative w-full max-w-[390px] max-h-[85vh] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-hidden"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 16 }}
-        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      >
         {/* Header */}
         <div className="flex justify-between items-start pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center space-x-2.5">
@@ -177,17 +166,15 @@ export const IdentityLedgerModal: React.FC<IdentityLedgerModalProps> = ({
             </div>
           </form>
         ) : (
-          <button
+          <motion.button
             type="button"
+            whileTap={tapPress}
             onClick={() => setIsAdding(true)}
-            className="mt-3 w-full py-2.5 bg-emerald-50 dark:bg-blue-950/50 text-emerald-800 dark:text-blue-300 font-semibold text-[13px] rounded-2xl hover:bg-emerald-100 dark:hover:bg-blue-900/60 transition cursor-pointer flex items-center justify-center space-x-1.5 border border-emerald-200/60 dark:border-blue-800"
+            className="mt-3 w-full py-2.5 bg-emerald-50 dark:bg-blue-950/50 text-emerald-800 dark:text-blue-300 font-semibold text-[13px] rounded-2xl hover:bg-emerald-100 dark:hover:bg-blue-900/60 cursor-pointer flex items-center justify-center space-x-1.5 border border-emerald-200/60 dark:border-blue-800"
           >
             <span>+ Cast Manual Identity Vote</span>
-          </button>
+          </motion.button>
         )}
-      </motion.div>
-    </motion.div>
-      )}
-    </AnimatePresence>
+    </MotionModal>
   );
 };

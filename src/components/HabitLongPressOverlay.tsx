@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
+import { motion } from 'motion/react';
 import { Habit } from '../types';
+import { overlayFade, sheetMotion } from '../lib/motionPresets';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
@@ -66,16 +68,20 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
   const tagFullName = habitCategoryLabel(habit.category);
 
   return (
-    <div
+    <motion.div
       id="habit-long-press-overlay-root"
-      className="fixed inset-0 z-50 overflow-hidden select-none"
+      initial={overlayFade.initial}
+      animate={overlayFade.animate}
+      exit={overlayFade.exit}
+      transition={overlayFade.transition}
+      className="fixed inset-0 z-50 overflow-hidden select-none transform-gpu"
     >
       {/* 1. Whole screen backdrop blur */}
       <div
         id="habit-long-press-dimming-backdrop"
         onClick={onClose}
         aria-label="Dismiss long press menu"
-        className="fixed inset-0 bg-slate-950/45 dark:bg-black/70 backdrop-blur-md transition-opacity duration-200 animate-in fade-in cursor-pointer"
+        className="fixed inset-0 bg-slate-950/45 dark:bg-black/70 backdrop-blur-md cursor-pointer"
       />
 
       {/* 2. Spotlighted card container positioned above blur */}
@@ -87,12 +93,16 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
           width: `${cardWidth}px`,
           zIndex: 51,
         }}
-        className="relative transition-all duration-200"
+        className="relative"
       >
         {/* Action context menu: Mark Missed, Edit Habit, Archive */}
-        <div
+        <motion.div
           id={`habit-${habit.id}-action-options`}
-          className={`absolute right-0 flex flex-wrap items-center justify-end gap-2 z-52 animate-in fade-in zoom-in-95 duration-200 ${
+          initial={sheetMotion.initial}
+          animate={sheetMotion.animate}
+          exit={sheetMotion.exit}
+          transition={sheetMotion.transition}
+          className={`absolute right-0 flex flex-wrap items-center justify-end gap-2 z-52 transform-gpu ${
             showButtonsBelow ? 'top-full mt-3' : '-top-13'
           }`}
           onClick={(e) => e.stopPropagation()}
@@ -150,12 +160,12 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
             </svg>
             <span>Archive</span>
           </button>
-        </div>
+        </motion.div>
 
         {/* The Pressed Habit Card: completely visible and sharp */}
         <div
           onClick={(e) => e.stopPropagation()}
-          className="relative bg-white dark:bg-slate-900 rounded-2xl p-4 border border-emerald-300 dark:border-blue-500 shadow-2xl ring-3 ring-emerald-500/40 dark:ring-blue-500/40 flex flex-col justify-between cursor-default transition-all duration-200 animate-in zoom-in-95"
+          className="relative bg-white dark:bg-slate-900 rounded-2xl p-4 border border-emerald-300 dark:border-blue-500 shadow-2xl ring-3 ring-emerald-500/40 dark:ring-blue-500/40 flex flex-col justify-between cursor-default"
         >
           <div className="flex items-start justify-between">
             <div className="min-w-0 pr-2">
@@ -244,6 +254,6 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };

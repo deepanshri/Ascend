@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
+import { MotionModal } from './MotionModal';
+import { tapPress } from '../lib/motionPresets';
 import { Habit, HabitCategory, HabitPriority } from '../types';
 import { insertHabitToSupabase, toDbCategory } from '../lib/habitsApi';
 import { MAX_ACTIVE_HABITS } from '../lib/protection';
@@ -97,27 +99,13 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          id="add-habit-modal-overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45 dark:bg-slate-950/60 backdrop-blur-[8px]"
-        >
-          <motion.div
-            id="add-habit-modal-card"
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.98 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="relative w-full max-w-[390px] max-h-[min(92dvh,740px)] bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-y-auto"
-          >
+    <MotionModal
+      isOpen={isOpen}
+      onClose={onClose}
+      overlayId="add-habit-modal-overlay"
+      cardId="add-habit-modal-card"
+      cardClassName="p-6"
+    >
             {/* Modal Header */}
             <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
@@ -312,7 +300,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
               <div className="pt-2 flex space-x-2.5">
                 <motion.button
                   type="button"
-                  whileTap={{ scale: 0.95 }}
+                  whileTap={tapPress}
                   onClick={onClose}
                   className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
                 >
@@ -321,7 +309,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                 <motion.button
                   type="submit"
                   disabled={atCap}
-                  whileTap={atCap ? undefined : { scale: 0.95 }}
+                  whileTap={atCap ? undefined : tapPress}
                   className={`flex-1 py-2.5 font-semibold rounded-2xl shadow-md transition ${
                     atCap
                       ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
@@ -332,9 +320,6 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                 </motion.button>
               </div>
             </form>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </MotionModal>
   );
 };

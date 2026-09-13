@@ -17,6 +17,9 @@ import {
   type ReceivedAffirmationGlow,
 } from '../lib/friends';
 import { formatFriendCodeDisplay, isValidFriendCode, normalizeFriendCode } from '../utils/friendCode';
+import { useKeyboardInset } from '../hooks/useKeyboardInset';
+import { overlayFade, sheetMotion, tapPress } from '../lib/motionPresets';
+import { FloatingToast } from './FloatingToast';
 
 export interface FriendsFeedProps {
   userId?: string | null;
@@ -24,6 +27,7 @@ export interface FriendsFeedProps {
   userEmail?: string;
   userName?: string;
   variant?: 'full' | 'drawer' | 'modal' | 'icon';
+  isOpen?: boolean;
   onClose?: () => void;
 }
 
@@ -46,6 +50,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   userEmail = '',
   userName = '',
   variant = 'full',
+  isOpen,
   onClose,
 }) => {
   const [edges, setEdges] = useState<FriendEdge[]>([]);
@@ -69,6 +74,8 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     };
   }, []);
 
+  const modalVisible = variant === 'modal' ? Boolean(isOpen ?? true) : variant === 'icon' && drawerOpen;
+  const keyboardInset = useKeyboardInset(modalVisible);
   const signedIn = Boolean(userId && !isGuest && !String(userId).startsWith('guest_'));
   const accepted = useMemo(
     () => (Array.isArray(edges) ? edges : []).filter((edge) => edge.status === 'accepted'),
@@ -238,14 +245,15 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
               <p className="text-[26px] font-black tracking-[0.18em] text-ink tabular-nums">
                 {friendCode ? formatFriendCodeDisplay(friendCode) : '------'}
               </p>
-              <button
+              <motion.button
                 type="button"
+                whileTap={friendCode ? tapPress : undefined}
                 onClick={() => void handleCopyCode()}
                 disabled={!friendCode}
                 className="px-3 py-2 rounded-xl bg-[#22C55E] dark:bg-[#3B82F6] text-white text-[12px] font-bold cursor-pointer disabled:opacity-50 shrink-0"
               >
                 {copied ? 'Copied' : 'Copy Code'}
-              </button>
+              </motion.button>
             </div>
           </div>
 
@@ -266,21 +274,16 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
                 placeholder="A3K9Q2"
                 className="flex-1 px-3.5 py-2 rounded-xl border border-line bg-surface-muted text-ink text-[14px] font-bold tracking-[0.18em] uppercase outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6]"
               />
-              <button
+              <motion.button
                 type="submit"
+                whileTap={connecting ? undefined : tapPress}
                 disabled={connecting || !isValidFriendCode(normalizeFriendCode(connectCode))}
                 className="px-3.5 py-2 rounded-xl bg-[#22C55E] dark:bg-[#3B82F6] text-white text-[12px] font-bold cursor-pointer disabled:opacity-50 shrink-0"
               >
                 {connecting ? '…' : 'Connect'}
-              </button>
+              </motion.button>
             </div>
           </form>
-
-          {notice && (
-            <p className={`text-[12px] font-semibold ${noticeTone === 'error' ? 'text-rose-600 dark:text-rose-400' : 'text-accent'}`}>
-              {notice}
-            </p>
-          )}
 
           <div className="space-y-2">
             <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Friends ({accepted.length})</p>
@@ -383,30 +386,36 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
           </svg>
         </button>
         {drawerOpen && <div className="px-4 pb-4">{body}</div>}
+        <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
       </section>
     );
   }
 
   const friendsModal = (
     <AnimatePresence>
-      {(variant === 'modal' || (variant === 'icon' && drawerOpen)) && (
+      {modalVisible && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-900/40 backdrop-blur-xs transform-gpu"
+          initial={overlayFade.initial}
+          animate={overlayFade.animate}
+          exit={overlayFade.exit}
+          transition={overlayFade.transition}
+          style={{
+            paddingTop: 'max(1rem, env(safe-area-inset-top))',
+            paddingBottom: `max(1rem, calc(1rem + ${keyboardInset}px))`,
+          }}
           onClick={() => {
             setDrawerOpen(false);
             onClose?.();
           }}
         >
           <motion.div
-            className="w-full max-w-[390px] max-h-[85vh] overflow-y-auto bg-surface rounded-2xl p-4 border border-line shadow-2xl"
-            initial={{ opacity: 0, y: 16, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 12, scale: 0.98 }}
-            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full max-w-[390px] overflow-y-auto overscroll-y-contain bg-surface rounded-2xl p-4 border border-line shadow-2xl transform-gpu will-change-transform"
+            initial={sheetMotion.initial}
+            animate={sheetMotion.animate}
+            exit={sheetMotion.exit}
+            transition={sheetMotion.transition}
+            style={{ maxHeight: `min(740px, calc(100dvh - ${keyboardInset + 32}px))` }}
             onClick={(event) => event.stopPropagation()}
           >
             {body}
@@ -419,13 +428,14 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   if (variant === 'icon') {
     return (
       <>
-        <button
+        <motion.button
           id="home-friends-btn"
           type="button"
+          whileTap={tapPress}
           onClick={() => setDrawerOpen(true)}
           aria-label="Friends"
           title="Friends"
-          className="relative w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-blue-500 text-emerald-800 dark:text-blue-400 shadow-xs hover:bg-emerald-50 dark:hover:bg-blue-950 active:scale-95 transition cursor-pointer flex items-center justify-center"
+          className="relative w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-blue-500 text-emerald-800 dark:text-blue-400 shadow-xs hover:bg-emerald-50 dark:hover:bg-blue-950 cursor-pointer flex items-center justify-center"
         >
           <svg className="w-4 h-4 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -434,15 +444,26 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
               d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.118a7.5 7.5 0 0115 0A17.93 17.93 0 0112 21.75c-2.68 0-5.21-.584-7.5-1.632z"
             />
           </svg>
-        </button>
+        </motion.button>
         {friendsModal}
+        <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
       </>
     );
   }
 
   if (variant === 'modal') {
-    return friendsModal;
+    return (
+      <>
+        {friendsModal}
+        <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
+      </>
+    );
   }
 
-  return <section className="bg-surface rounded-2xl p-4.5 border border-line shadow-xs space-y-3">{body}</section>;
+  return (
+    <section className="bg-surface rounded-2xl p-4.5 border border-line shadow-xs space-y-3">
+      {body}
+      <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
+    </section>
+  );
 };

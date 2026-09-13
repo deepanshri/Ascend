@@ -1,5 +1,7 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
+import { MotionModal } from './MotionModal';
+import { tapPress } from '../lib/motionPresets';
 import { Habit } from '../types';
 import { deleteHabitCascade } from '../lib/habitsApi';
 
@@ -21,24 +23,14 @@ export const DeleteHabitConfirmModal: React.FC<DeleteHabitConfirmModalProps> = (
   isGuest = true,
 }) => {
   return (
-    <AnimatePresence>
-      {isOpen && habit && (
-        <motion.div
-          id="delete-habit-confirm-overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45 dark:bg-slate-950/60 backdrop-blur-[8px]"
-        >
-          <motion.div
-            id="delete-habit-confirm-card"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 16 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="relative w-full max-w-[340px] bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col"
-          >
+    <MotionModal
+      isOpen={Boolean(isOpen && habit)}
+      onClose={onClose}
+      overlayId="delete-habit-confirm-overlay"
+      cardId="delete-habit-confirm-card"
+      cardClassName="p-6 max-w-[340px]"
+      closeOnBackdrop={false}
+    >
             <div className="text-center">
               <div className="w-12 h-12 mx-auto rounded-full bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-3">
                 <svg className="w-6 h-6 stroke-[2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -51,7 +43,7 @@ export const DeleteHabitConfirmModal: React.FC<DeleteHabitConfirmModalProps> = (
               </h3>
 
               <p className="mt-1 text-[13.5px] font-semibold text-slate-800 dark:text-slate-200">
-                {habit.name}
+                {habit?.name}
               </p>
 
               <div className="mt-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-left">
@@ -59,23 +51,25 @@ export const DeleteHabitConfirmModal: React.FC<DeleteHabitConfirmModalProps> = (
                   Purpose
                 </span>
                 <p className="text-[12.5px] text-slate-600 dark:text-slate-300 italic leading-relaxed">
-                  "{habit.purposeAnchor || habit.identityStatement || 'No specific purpose provided.'}"
+                  "{habit?.purposeAnchor || habit?.identityStatement || 'No specific purpose provided.'}"
                 </p>
               </div>
             </div>
 
             <div className="mt-5 flex space-x-3">
-              <button
+              <motion.button
                 type="button"
                 id="delete-habit-cancel-btn"
+                whileTap={tapPress}
                 onClick={onClose}
-                className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[13px] rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition cursor-pointer"
+                className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[13px] rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
               >
                 No
-              </button>
-              <button
+              </motion.button>
+              <motion.button
                 type="button"
                 id="delete-habit-confirm-btn"
+                whileTap={tapPress}
                 onClick={() => {
                   if (!habit) return;
                   if (!isGuest) {
@@ -83,14 +77,11 @@ export const DeleteHabitConfirmModal: React.FC<DeleteHabitConfirmModalProps> = (
                   }
                   onConfirm();
                 }}
-                className="flex-1 py-2.5 bg-rose-600 text-white font-bold text-[13px] rounded-xl hover:bg-rose-700 active:scale-95 shadow-md shadow-rose-600/20 transition cursor-pointer"
+                className="flex-1 py-2.5 bg-rose-600 text-white font-bold text-[13px] rounded-xl hover:bg-rose-700 shadow-md shadow-rose-600/20 cursor-pointer"
               >
                 Yes
-              </button>
+              </motion.button>
             </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </MotionModal>
   );
 };

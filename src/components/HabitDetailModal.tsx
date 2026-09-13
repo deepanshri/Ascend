@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
+import { MotionModal } from './MotionModal';
+import { tapPress } from '../lib/motionPresets';
 import { Habit, HabitCategory, HabitPriority } from '../types';
 import { MAX_KEYSTONE_HABITS } from '../lib/keystone';
 import { normalizeScheduledDays, scheduleTypeFromDays } from '../utils/schedule';
@@ -82,27 +84,14 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && habit && (
-    <motion.div
-      id="habit-detail-modal-overlay"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-xs"
+    <MotionModal
+      isOpen={Boolean(isOpen && habit)}
+      onClose={onClose}
+      overlayId="habit-detail-modal-overlay"
+      cardId="habit-detail-modal-card"
+      overlayClassName="bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-xs"
+      cardClassName="p-5 max-w-[380px]"
     >
-      <motion.div
-        id="habit-detail-modal-card"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 16 }}
-        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-        className="relative w-full max-w-[380px] max-h-[min(92dvh,740px)] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-y-auto"
-      >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div>
@@ -291,25 +280,24 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
           </button>
 
           <div className="flex space-x-2">
-            <button
+            <motion.button
               type="button"
+              whileTap={tapPress}
               onClick={onClose}
               className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium text-[11.5px] rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
             >
               Cancel
-            </button>
-            <button
+            </motion.button>
+            <motion.button
               type="button"
+              whileTap={tapPress}
               onClick={handleSave}
               className="px-4 py-1.5 bg-[#22C55E] hover:bg-emerald-600 dark:bg-[#3B82F6] dark:hover:bg-blue-500 text-white font-semibold text-[11.5px] rounded-2xl shadow-xs cursor-pointer"
             >
               Save
-            </button>
+            </motion.button>
           </div>
         </div>
-      </motion.div>
-    </motion.div>
-      )}
-    </AnimatePresence>
+    </MotionModal>
   );
 };

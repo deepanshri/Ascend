@@ -1,5 +1,7 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
+import { MotionModal } from './MotionModal';
+import { tapPress } from '../lib/motionPresets';
 import { StandaloneReminder } from '../types';
 
 interface DeleteReminderConfirmModalProps {
@@ -16,27 +18,14 @@ export const DeleteReminderConfirmModal: React.FC<DeleteReminderConfirmModalProp
   onConfirm,
 }) => {
   return (
-    <AnimatePresence>
-      {isOpen && reminder && (
-        <motion.div
-          id="delete-reminder-confirm-overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.18, ease: 'easeOut' }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-        >
-          <motion.div
-            id="delete-reminder-confirm-card"
-            initial={{ scale: 0.92, opacity: 0, y: 12 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.92, opacity: 0, y: 12 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-            className="relative w-full max-w-[340px] bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col"
-          >
+    <MotionModal
+      isOpen={Boolean(isOpen && reminder)}
+      onClose={onClose}
+      overlayId="delete-reminder-confirm-overlay"
+      cardId="delete-reminder-confirm-card"
+      overlayClassName="bg-slate-900/40 backdrop-blur-xs"
+      cardClassName="p-6 max-w-[340px]"
+    >
             <div className="text-center">
               <motion.div
                 initial={{ scale: 0.8 }}
@@ -58,11 +47,11 @@ export const DeleteReminderConfirmModal: React.FC<DeleteReminderConfirmModalProp
               </h3>
 
               <p className="mt-1.5 text-[14px] font-semibold text-slate-800 dark:text-slate-200">
-                {reminder.title}
+                {reminder?.title}
               </p>
 
               <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                {reminder.date} {reminder.time ? `at ${reminder.time}` : ''}
+                {reminder?.date} {reminder?.time ? `at ${reminder.time}` : ''}
               </p>
             </div>
 
@@ -70,7 +59,7 @@ export const DeleteReminderConfirmModal: React.FC<DeleteReminderConfirmModalProp
               <motion.button
                 type="button"
                 id="delete-reminder-cancel-btn"
-                whileTap={{ scale: 0.94 }}
+                whileTap={tapPress}
                 onClick={onClose}
                 className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[13px] rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
               >
@@ -79,7 +68,7 @@ export const DeleteReminderConfirmModal: React.FC<DeleteReminderConfirmModalProp
               <motion.button
                 type="button"
                 id="delete-reminder-confirm-btn"
-                whileTap={{ scale: 0.94 }}
+                whileTap={tapPress}
                 onClick={() => {
                   onConfirm();
                   onClose();
@@ -89,9 +78,6 @@ export const DeleteReminderConfirmModal: React.FC<DeleteReminderConfirmModalProp
                 Yes, Delete
               </motion.button>
             </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </MotionModal>
   );
 };

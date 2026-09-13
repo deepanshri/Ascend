@@ -21,6 +21,7 @@ import { readSleepSnapshot, SLEEP_TARGET_HOURS, type SleepSnapshot } from '../li
 import { buildReportCsv, downloadCsvFile } from '../lib/reportExport';
 import { FriendsFeed } from './FriendsFeed';
 import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
+import { tapPress } from '../lib/motionPresets';
 import { calculateMomentumScore, eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
 import { isHabitScheduledOnIso } from '../utils/schedule';
 
@@ -592,12 +593,13 @@ export const ReportView: React.FC<ReportViewProps> = ({
         titleClassName="text-[32px] font-black text-slate-900 dark:text-white tracking-tight leading-none"
         onOpenSettings={onOpenSettings}
         actions={
-          <button
+          <motion.button
             id="download-report-csv-btn"
             type="button"
+            whileTap={exporting ? undefined : tapPress}
             onClick={() => void handleDownloadCSV()}
             disabled={exporting}
-            className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2 px-3 flex items-center space-x-2.5 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 active:scale-95 transition cursor-pointer disabled:opacity-60"
+            className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2 px-3 flex items-center space-x-2.5 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer disabled:opacity-60"
             title="Download Report (CSV)"
           >
             <div className="w-5 h-5 flex items-center justify-center text-slate-800 dark:text-slate-200 shrink-0">
@@ -618,7 +620,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
               <div className="text-[11.5px] font-bold text-slate-900 dark:text-white">Report</div>
               <div className="text-[9.5px] text-slate-400 dark:text-slate-500 font-medium">(CSV)</div>
             </div>
-          </button>
+          </motion.button>
         }
       />
 
@@ -627,19 +629,27 @@ export const ReportView: React.FC<ReportViewProps> = ({
           const isActive = timeFilter === tab;
           const label = tab === 'today' ? 'Today' : tab === 'week' ? 'Week' : tab === 'month' ? 'Month' : '⚡ Momentum';
           return (
-            <button
+            <motion.button
               key={tab}
               id={`filter-tab-${tab}`}
               type="button"
+              whileTap={tapPress}
               onClick={() => setTimeFilter(tab)}
-              className={`flex-1 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-xl transition-all duration-200 cursor-pointer text-center ${
+              className={`relative flex-1 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-xl cursor-pointer text-center ${
                 isActive
-                  ? 'bg-white dark:bg-blue-600 text-emerald-800 dark:text-white shadow-xs'
+                  ? 'text-emerald-800 dark:text-white'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
               }`}
             >
-              {label}
-            </button>
+              {isActive && (
+                <motion.div
+                  layoutId="report-filter-pill"
+                  className="absolute inset-0 bg-white dark:bg-blue-600 rounded-xl shadow-xs"
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                />
+              )}
+              <span className="relative z-10">{label}</span>
+            </motion.button>
           );
         })}
       </section>
@@ -654,7 +664,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.96 }}
                 transition={{ duration: 0.22, ease: VISUALIZER_EASE }}
-                className="relative w-full max-w-[340px] h-[210px] flex items-center justify-center"
+                className="relative w-full max-w-[340px] h-[210px] flex items-center justify-center transform-gpu"
               >
                 <svg className="w-full h-full overflow-visible" viewBox="0 0 320 220">
                   <circle cx={cx} cy={cy} r={80} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
@@ -721,7 +731,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.96 }}
                 transition={{ duration: 0.22, ease: VISUALIZER_EASE }}
-                className="w-full bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-2"
+                className="w-full bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-2 transform-gpu"
               >
                 <div className="flex items-center justify-between text-xs px-1">
                   <span className="font-bold text-slate-800 dark:text-white">{lineGraphData.title}</span>
@@ -780,31 +790,33 @@ export const ReportView: React.FC<ReportViewProps> = ({
           </p>
         )}
         <div className="flex justify-end w-full pt-1">
-          <button
+          <motion.button
             id="switch-graph-btn"
             type="button"
+            whileTap={tapPress}
             onClick={() => setGraphMode((prev) => (prev === 'rings' ? 'line' : 'rings'))}
-            className="px-3.5 py-1.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-xs flex items-center space-x-2 text-[12px] font-semibold text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700 transition cursor-pointer active:scale-95"
+            className="px-3.5 py-1.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-xs flex items-center space-x-2 text-[12px] font-semibold text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer"
           >
             <svg className="w-4 h-4 text-slate-800 dark:text-slate-200" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
             </svg>
             <span>Switch Graph</span>
-          </button>
+          </motion.button>
         </div>
       </section>
 
       <section>
-        <button
+        <motion.button
           type="button"
+          whileTap={tapPress}
           id="identity-evidence-ledger-card"
           data-tour="report-ledger"
           onClick={onOpenLedger}
-          className="w-full bg-white dark:bg-slate-900 rounded-2xl p-3.5 px-4 border border-slate-100 dark:border-slate-800 shadow-xs flex items-center justify-between cursor-pointer hover:border-slate-200 dark:hover:border-slate-700 transition"
+          className="w-full bg-white dark:bg-slate-900 rounded-2xl p-3.5 px-4 border border-slate-100 dark:border-slate-800 shadow-xs flex items-center justify-between cursor-pointer hover:border-slate-200 dark:hover:border-slate-700"
         >
           <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tracking-tight">Identity Evidence ledger</span>
           <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tabular-nums">{ledgerVoteCount} votes</span>
-        </button>
+        </motion.button>
       </section>
 
       <section>

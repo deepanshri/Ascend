@@ -5,6 +5,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  --keyboard-inset: 0px;
   --ascend-canvas: #f4f7f5;
   --ascend-surface: #ffffff;
   --ascend-surface-muted: #e8eef0;
@@ -87,6 +88,8 @@ html, body, #root {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 #app-main-content,

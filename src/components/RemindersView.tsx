@@ -8,6 +8,7 @@ import { CreateReminderModal } from './CreateReminderModal';
 import { EditReminderModal } from './EditReminderModal';
 import { DeleteReminderConfirmModal } from './DeleteReminderConfirmModal';
 import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
+import { tapPress } from '../lib/motionPresets';
 
 interface RemindersViewProps {
   reminders: StandaloneReminder[];
@@ -94,7 +95,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
             id="new-reminder-btn"
             type="button"
             whileHover={{ scale: 1.08 }}
-            whileTap={{ scale: 0.88 }}
+            whileTap={tapPress}
             transition={{ type: 'spring', damping: 15, stiffness: 400 }}
             onClick={() => setIsCreateOpen(true)}
             aria-label="New Reminder"
@@ -185,8 +186,9 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
 
         {completedList.length > 0 && (
           <section className="space-y-2 pt-1">
-            <button
+            <motion.button
               type="button"
+              whileTap={tapPress}
               aria-expanded={completedOpen}
               onClick={() => setCompletedOpen((prev) => !prev)}
               className="w-full flex items-center justify-between px-1 py-1 cursor-pointer"
@@ -196,16 +198,18 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
               </span>
               <span className="flex items-center gap-1 text-[10.5px] text-slate-400 font-medium">
                 {completedOpen ? 'Hide' : 'Show'}
-                <svg
-                  className={`w-3.5 h-3.5 transition-transform ${completedOpen ? 'rotate-180' : ''}`}
+                <motion.svg
+                  animate={{ rotate: completedOpen ? 180 : 0 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="w-3.5 h-3.5"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M19 9l-7 7-7-7" />
-                </svg>
+                </motion.svg>
               </span>
-            </button>
+            </motion.button>
 
             <AnimatePresence initial={false}>
               {completedOpen && (
@@ -214,8 +218,8 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-                  className="overflow-hidden space-y-2.5"
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="overflow-hidden space-y-2.5 transform-gpu"
                 >
                   {completedList.map((rem) => (
                     <motion.div
@@ -253,52 +257,51 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
         onAddReminder={onAddReminder}
       />
 
-      {longPressedReminder && (
-        <ReminderLongPressOverlay
-          reminder={longPressedReminder}
-          rect={longPressedRect}
-          onClose={() => {
-            setLongPressedReminder(null);
-            setLongPressedRect(null);
-          }}
-          onOpenEdit={(r) => {
-            setLongPressedReminder(null);
-            setEditingReminder(r);
-          }}
-          onOpenDeleteConfirm={(r) => {
-            setLongPressedReminder(null);
-            setDeletingReminder(r);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {longPressedReminder && (
+          <ReminderLongPressOverlay
+            key="reminder-long-press"
+            reminder={longPressedReminder}
+            rect={longPressedRect}
+            onClose={() => {
+              setLongPressedReminder(null);
+              setLongPressedRect(null);
+            }}
+            onOpenEdit={(r) => {
+              setLongPressedReminder(null);
+              setEditingReminder(r);
+            }}
+            onOpenDeleteConfirm={(r) => {
+              setLongPressedReminder(null);
+              setDeletingReminder(r);
+            }}
+          />
+        )}
+      </AnimatePresence>
 
-      {editingReminder && (
-        <EditReminderModal
-          isOpen={Boolean(editingReminder)}
-          reminder={editingReminder}
-          userSession={userSession}
-          onClose={() => setEditingReminder(null)}
-          onSave={(id, updates) => {
-            if (onUpdateReminder) {
-              onUpdateReminder(id, updates);
-            }
-          }}
-        />
-      )}
+      <EditReminderModal
+        isOpen={Boolean(editingReminder)}
+        reminder={editingReminder}
+        userSession={userSession}
+        onClose={() => setEditingReminder(null)}
+        onSave={(id, updates) => {
+          if (onUpdateReminder) {
+            onUpdateReminder(id, updates);
+          }
+        }}
+      />
 
-      {deletingReminder && (
-        <DeleteReminderConfirmModal
-          isOpen={Boolean(deletingReminder)}
-          reminder={deletingReminder}
-          onClose={() => setDeletingReminder(null)}
-          onConfirm={() => {
-            if (deletingReminder) {
-              onDeleteReminder(deletingReminder.id);
-              setDeletingReminder(null);
-            }
-          }}
-        />
-      )}
+      <DeleteReminderConfirmModal
+        isOpen={Boolean(deletingReminder)}
+        reminder={deletingReminder}
+        onClose={() => setDeletingReminder(null)}
+        onConfirm={() => {
+          if (deletingReminder) {
+            onDeleteReminder(deletingReminder.id);
+            setDeletingReminder(null);
+          }
+        }}
+      />
     </div>
   );
 };
