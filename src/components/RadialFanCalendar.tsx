@@ -20,6 +20,7 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
   dayCompletionRates,
   habits,
   momentumScore,
+  isCelebrating = false,
   isDark = false,
   originDate,
 }) => {
@@ -181,7 +182,21 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
       className="relative w-full max-w-[360px] mx-auto h-[215px] pt-1 pb-1 overflow-visible select-none cursor-default"
     >
       {/* Ambient background soft radial glow centered on momentum */}
-      <div className="absolute left-1/2 -translate-x-1/2 top-14 w-60 h-32 bg-emerald-100/30 dark:bg-blue-900/20 rounded-full blur-2xl pointer-events-none" />
+      <div className="absolute left-1/2 -translate-x-1/2 top-14 w-60 h-32 bg-accent-soft/40 rounded-full blur-2xl pointer-events-none z-0" />
+
+      <div
+        id="mascot-companion"
+        className="mascot-arc-slot z-0 pointer-events-none"
+        style={{ top: mascotSlot.top, left: mascotSlot.left }}
+      >
+        <Mascot
+          size={56}
+          angle={mascotAngleFromMomentum(momentumScore)}
+          momentumScore={momentumScore}
+          celebrate={isCelebrating}
+          animate
+        />
+      </div>
 
       {/* ========================================================================= */}
       {/* UNIFIED SVG CANVAS: Everything is mathematically locked to (cx, cy)       */}
@@ -189,7 +204,7 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
       {/* weird artifact shadows.                                                   */}
       {/* ========================================================================= */}
       <svg
-        className="w-full h-full overflow-visible pointer-events-none select-none"
+        className="relative z-10 w-full h-full overflow-visible pointer-events-none select-none"
         fill="none"
         viewBox="0 0 360 215"
       >
@@ -466,18 +481,6 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
           </text>
         </g>
       </svg>
-
-      <div
-        id="mascot-companion"
-        className="mascot-arc-slot"
-        style={{ top: mascotSlot.top, left: mascotSlot.left }}
-      >
-        <Mascot
-          size={56}
-          angle={mascotAngleFromMomentum(momentumScore)}
-          animate
-        />
-      </div>
     </section>
   );
 };

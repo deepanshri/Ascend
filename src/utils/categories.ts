@@ -14,7 +14,7 @@ export function habitCategoryBadge(category: HabitCategory): string {
 
 export function habitCategoryTagClass(category: HabitCategory): string {
   if (category === 'work') {
-    return 'bg-green-50 text-green-700 border-green-200/90 dark:bg-green-950/50 dark:text-green-300 dark:border-green-800';
+    return 'bg-emerald-100 text-emerald-950 border-emerald-400 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-400';
   }
-  return 'bg-teal-50 text-teal-800 border-teal-200/90 dark:bg-teal-950/50 dark:text-teal-300 dark:border-teal-800';
+  return 'bg-teal-100 text-teal-950 border-teal-500 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-400';
 }

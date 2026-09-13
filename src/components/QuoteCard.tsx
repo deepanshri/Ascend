@@ -476,7 +476,7 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
       data-tour="daily-wisdom"
       onClick={handleNextQuote}
       title="Tap to cycle quote"
-      className="w-full rounded-xl py-2 px-3 bg-emerald-50/40 dark:bg-slate-800/40 border border-emerald-200/50 dark:border-slate-700/60 shadow-2xs select-none transition-all cursor-pointer hover:bg-emerald-50/70 dark:hover:bg-slate-800/70 active:scale-[0.99]"
+      className="w-full rounded-xl py-2 px-3 bg-surface text-ink border border-line shadow-2xs select-none transition-all cursor-pointer hover:bg-surface-muted active:scale-[0.99]"
     >
       <p className="text-[12px] font-medium text-slate-800 dark:text-slate-100 italic leading-snug">
         &ldquo;{currentQuote.text}&rdquo;

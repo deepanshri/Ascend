@@ -397,6 +397,8 @@ export default function App() {
   const [calendarOrigin, setCalendarOrigin] = useState<Date>(() => startOfDay(new Date()));
   const [currentSelectedDate, setCurrentSelectedDate] = useState<string>(() => toISODate());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [mascotCelebrate, setMascotCelebrate] = useState(false);
+  const mascotCelebrateTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const rollForwardIfMidnightPassed = () => {
@@ -599,6 +601,14 @@ export default function App() {
       localStorage.setItem('ascend_theme', theme);
     } catch {}
   }, [theme]);
+
+  useEffect(() => {
+    return () => {
+      if (mascotCelebrateTimerRef.current != null) {
+        window.clearTimeout(mascotCelebrateTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const dark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
@@ -970,6 +980,14 @@ export default function App() {
       setFrictionAudits((prevAudits) => [newAudit, ...prevAudits]);
     }
     showNotification('Completed');
+    if (mascotCelebrateTimerRef.current != null) {
+      window.clearTimeout(mascotCelebrateTimerRef.current);
+    }
+    setMascotCelebrate(true);
+    mascotCelebrateTimerRef.current = window.setTimeout(() => {
+      setMascotCelebrate(false);
+      mascotCelebrateTimerRef.current = null;
+    }, 400);
   };
 
   // GESTURE / TAP ACTION: Toggle Fallback Mode for Today (Does NOT mark complete; allows cancel / revert)
@@ -1458,9 +1476,12 @@ export default function App() {
 
   // Theme styling classes (system follows OS preference)
   const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
-  const themeBgClass = isDark
-    ? 'dark bg-slate-950 text-slate-100'
-    : 'bg-[#F8FAF9] text-slate-900';
+  const themeBgClass = isDark ? 'dark bg-canvas text-ink' : 'bg-canvas text-ink';
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDark);
+    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+  }, [isDark]);
 
   return (
     <div
@@ -1472,7 +1493,7 @@ export default function App() {
         className="relative w-full h-full overflow-hidden"
       >
         <header
-          className={`absolute top-0 left-0 right-0 z-30 px-4 pt-[max(0.25rem,env(safe-area-inset-top))] bg-[#F8FAF9]/95 dark:bg-slate-950/95 backdrop-blur-md ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
+          className={`absolute top-0 left-0 right-0 z-30 px-4 pt-[max(0.25rem,env(safe-area-inset-top))] bg-canvas backdrop-blur-md ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
           style={{
             transform: isNavVisible ? 'translateY(0)' : 'translateY(-100%)',
             transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -1556,7 +1577,7 @@ export default function App() {
               dayCompletionRates={dayCompletionRates}
               habits={activeHabits}
               momentumScore={momentumScore}
-              isCelebrating={false}
+              isCelebrating={mascotCelebrate}
               isDark={isDark}
               originDate={calendarOrigin}
             />

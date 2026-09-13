@@ -8,10 +8,14 @@ export type MascotAngle =
   | 'right'
   | 'frontRight';
 
+export type MascotMood = 'excited' | 'focused' | 'tired';
+
 interface MascotProps {
   size?: number;
   angle?: MascotAngle;
   animate?: boolean;
+  momentumScore?: number;
+  celebrate?: boolean;
 }
 
 /** Map a 0–100 momentum score to the mascot's facing angle. */
@@ -23,10 +27,18 @@ export function mascotAngleFromMomentum(score: number): MascotAngle {
   return 'frontRight';
 }
 
+export function mascotMoodFromMomentum(score: number): MascotMood {
+  if (score >= 75) return 'excited';
+  if (score >= 40) return 'focused';
+  return 'tired';
+}
+
 export function Mascot({
   size = 88,
   angle = 'front',
   animate = true,
+  momentumScore,
+  celebrate = false,
 }: MascotProps) {
   const uid = useId().replace(/:/g, '');
   const capeGrad = `mascot-cape-${uid}`;
@@ -35,20 +47,19 @@ export function Mascot({
   const cheekGrad = `mascot-cheek-${uid}`;
   const shadowBlur = `mascot-shadow-${uid}`;
 
+  const mood = mascotMoodFromMomentum(Number.isFinite(momentumScore) ? Number(momentumScore) : 50);
   const isBack = angle === 'back';
   const facingLeft = angle === 'left' || angle === 'frontLeft';
   const facingRight = angle === 'right' || angle === 'frontRight';
   const sideView = angle === 'left' || angle === 'right';
-
   const bodyRx = sideView ? 27.5 : 33.5;
 
-  return (
+  const svg = (
     <svg
       width={size}
       height={size}
       viewBox="0 0 100 100"
       overflow="visible"
-      className={animate ? 'mascot-float' : undefined}
       aria-hidden="true"
       focusable="false"
     >
@@ -79,7 +90,6 @@ export function Mascot({
         </filter>
       </defs>
 
-      {/* Ground shadow */}
       <ellipse
         cx="50"
         cy="86"
@@ -90,7 +100,6 @@ export function Mascot({
         filter={`url(#${shadowBlur})`}
       />
 
-      {/* Cape / wings — hide the far side when turned */}
       {!facingLeft && (
         <path
           d="M 78 40 C 98 47, 106 57, 100 63 C 94 68, 85 67, 79 62 Z"
@@ -114,7 +123,6 @@ export function Mascot({
         </>
       ) : (
         <>
-          {/* Body */}
           <ellipse
             cx="50"
             cy="47"
@@ -125,7 +133,6 @@ export function Mascot({
             strokeWidth="0.8"
           />
 
-          {/* Arms — hidden in full side profile */}
           {!sideView && (
             <>
               <ellipse cx="17" cy="65" rx="8" ry="6" fill="#F4F5F6" />
@@ -133,7 +140,6 @@ export function Mascot({
             </>
           )}
 
-          {/* Feet */}
           <ellipse cx="38" cy="84" rx="6.5" ry="4" fill="#334B74" />
           <ellipse cx="62" cy="84" rx="6.5" ry="4" fill="#334B74" />
 
@@ -165,7 +171,7 @@ export function Mascot({
               <circle cx="29" cy="54" r="7.5" fill={`url(#${cheekGrad})`} />
               <circle cx="71" cy="54" r="7.5" fill={`url(#${cheekGrad})`} />
               <path
-                d="M 41 58 Q 50 67 59 58"
+                d={mood === 'tired' ? 'M 41 62 Q 50 58 59 62' : 'M 41 58 Q 50 67 59 58'}
                 fill="none"
                 stroke="#151B28"
                 strokeWidth="1.8"
@@ -176,5 +182,29 @@ export function Mascot({
         </>
       )}
     </svg>
+  );
+
+  if (!animate) {
+    return svg;
+  }
+
+  return (
+    <div
+      className={`mascot-shell mascot-mood-${mood}${celebrate ? ' is-celebrating' : ''}`}
+      aria-hidden="true"
+    >
+      {mood === 'excited' && <span className="mascot-aura" />}
+      <div className="mascot-drift-x">
+        <div className="mascot-float-y">
+          <div className="mascot-tilt">
+            <div className="mascot-celebrate-layer">
+              <div className="mascot-breathe">
+                <div className="mascot-posture">{svg}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

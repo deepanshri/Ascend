@@ -554,16 +554,16 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                 backfaceVisibility: 'hidden',
                 WebkitBackfaceVisibility: 'hidden',
               }}
-              className={`relative bg-white dark:bg-slate-900 rounded-2xl p-4 border flex flex-col justify-between transition-all duration-200 ${
+              className={`relative bg-surface text-ink rounded-2xl p-4 border flex flex-col justify-between transition-all duration-200 ${
                 isLongPressed
-                  ? 'scale-[1.025] shadow-2xl ring-2 ring-emerald-500/60 dark:ring-blue-500/60 border-emerald-300 dark:border-blue-400'
+                  ? 'scale-[1.025] shadow-2xl ring-2 ring-accent border-accent'
                   : celebration === 'fallback'
-                  ? 'shadow-sm border-amber-400 dark:border-amber-400 ring-1 ring-amber-400/50 dark:ring-amber-400/40 bg-amber-50/30 dark:bg-amber-950/20'
+                  ? 'shadow-sm border-amber-500 ring-1 ring-amber-500 bg-amber-100 dark:bg-amber-950'
                   : isFallbackActive && !isTodayDone
-                  ? 'shadow-sm border-emerald-400/80 dark:border-blue-400/80 ring-1 ring-emerald-400/40 dark:ring-blue-400/40 bg-emerald-50/20 dark:bg-blue-950/20 active:scale-[0.995]'
+                  ? 'shadow-sm border-accent ring-1 ring-accent bg-accent-soft active:scale-[0.995]'
                   : habit.isKeystone
-                  ? 'shadow-[0_0_16px_rgba(16,185,129,0.28)] dark:shadow-[0_0_18px_rgba(59,130,246,0.32)] border-emerald-300/90 dark:border-blue-400/70 ring-1 ring-emerald-400/35 dark:ring-blue-400/35 active:scale-[0.995]'
-                  : 'shadow-sm border-slate-100/90 dark:border-slate-800 active:scale-[0.995]'
+                  ? 'shadow-sm border-accent ring-1 ring-accent active:scale-[0.995]'
+                  : 'shadow-sm border-line active:scale-[0.995]'
               }`}
             >
               <div className="flex items-start justify-between">
@@ -573,8 +573,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                     <h3
                       className={`text-[14px] font-bold tracking-tight truncate ${
                         isShowingFallback
-                          ? 'text-emerald-800 dark:text-blue-300'
-                          : 'text-slate-800 dark:text-white'
+                          ? 'text-accent'
+                          : 'text-ink'
                       }`}
                       title={isShowingFallback ? `Fallback: ${habitDisplayName} (Normal: ${habit.name})` : habit.name}
                     >
@@ -744,7 +744,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
             WebkitBackfaceVisibility: 'hidden',
             transform: 'rotateY(180deg)',
           }}
-          className="absolute inset-0 w-full h-full bg-white dark:bg-slate-900 rounded-2xl p-4 border-2 border-[#23C15D] dark:border-blue-500 shadow-xl flex flex-col justify-between select-none z-10"
+          className="absolute inset-0 w-full h-full bg-surface text-ink rounded-2xl p-4 border-2 border-accent shadow-xl flex flex-col justify-between select-none z-10"
         >
           <div className="flex items-center justify-between border-b border-emerald-100/90 dark:border-blue-900/60 pb-1.5">
             <div className="flex items-center space-x-1.5">
