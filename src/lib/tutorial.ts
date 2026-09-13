@@ -166,7 +166,7 @@ const SCREEN_STEPS: Record<Exclude<TutorialScreen, 'home'>, DriveStep[]> = {
       popover: {
         title: 'Friends stay mutual and private',
         description:
-          'Both people must accept. You can cancel a request or unfriend anytime. The feed is activity only — no rankings, no scores, no “who reacted most.” An Affirmation Glow is a private nod between two people.',
+          'Share your 6-character friend code or enter theirs to connect immediately — no request to accept. Unfriend anytime. The feed is activity only — no rankings. An Affirmation Glow is a private nod between two people.',
         side: 'top',
         align: 'start',
       },

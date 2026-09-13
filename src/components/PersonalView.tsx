@@ -491,7 +491,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
         )}
       </section>
 
-      {/* CARD 4: ADD A FRIEND */}
+      {/* CARD 4: FRIENDS */}
       <section
         data-tour="personal-friends"
         className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm flex items-center justify-between"
@@ -502,10 +502,10 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
           </div>
           <div className="min-w-0">
             <h2 className="text-[16px] font-bold text-slate-900 dark:text-white leading-snug">
-              Add a Friend
+              Friends
             </h2>
             <p className="text-[12px] text-slate-400 dark:text-slate-400 mt-0.5">
-              Connect and grow together.
+              Share your 6-digit code to connect instantly.
             </p>
           </div>
         </div>
@@ -513,7 +513,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
           type="button"
           onClick={() => setIsFriendModalOpen(true)}
           className="w-10 h-10 rounded-full bg-[#E8F8EE] dark:bg-emerald-950 text-[#165B33] dark:text-emerald-300 flex items-center justify-center hover:scale-105 active:scale-95 transition cursor-pointer shrink-0 border border-emerald-100 dark:border-emerald-800/40 shadow-xs"
-          title="Add a friend"
+          title="Open friends"
         >
           <Plus className="w-5 h-5 stroke-[2.5]" />
         </button>

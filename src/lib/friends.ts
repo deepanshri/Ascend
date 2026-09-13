@@ -1,3 +1,4 @@
+import { generateFriendCode, isValidFriendCode, normalizeFriendCode } from '../utils/friendCode';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export type FriendStatus = 'pending' | 'accepted';
@@ -66,24 +67,130 @@ function stageUnlockedAt(previousVotes: number, nextVotes: number): number | nul
   return null;
 }
 
-export async function ensureProfileDirectory(userId: string, email?: string, name?: string): Promise<void> {
-  if (!canUse(userId) || !supabase) return;
+export async function ensureFriendCode(userId: string, existing?: string | null): Promise<string> {
+  const current = normalizeFriendCode(existing || '');
+  if (isValidFriendCode(current)) return current;
+  return generateFriendCode(userId || 'guest');
+}
+
+export async function fetchOwnFriendCode(userId: string): Promise<string> {
+  if (!canUse(userId) || !supabase) return generateFriendCode(userId);
+  try {
+    const { data } = await supabase.from('profiles').select('friend_code').eq('id', userId).maybeSingle();
+    const stored = typeof data?.friend_code === 'string' ? data.friend_code : null;
+    const code = await ensureFriendCode(userId, stored);
+    if (code && code !== stored) {
+      await supabase.from('profiles').update({ friend_code: code }).eq('id', userId);
+    }
+    return code;
+  } catch {
+    return generateFriendCode(userId);
+  }
+}
+
+export async function ensureProfileDirectory(userId: string, email?: string, name?: string): Promise<string> {
+  if (!canUse(userId) || !supabase) return generateFriendCode(userId || 'guest');
   const username = (email || '').split('@')[0]?.trim() || undefined;
   const displayName = (name || '').trim() || username;
   try {
     const { data } = await supabase
       .from('profiles')
-      .select('id, username, email, display_name')
+      .select('id, username, email, display_name, friend_code')
       .eq('id', userId)
       .maybeSingle();
-    await supabase.from('profiles').upsert({
-      id: userId,
-      email: data?.email || email || null,
-      username: data?.username || username || null,
-      display_name: data?.display_name || displayName || null,
-    });
+    let friendCode = await ensureFriendCode(userId, data?.friend_code as string | null | undefined);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const payload = {
+        id: userId,
+        email: data?.email || email || null,
+        username: data?.username || username || null,
+        display_name: data?.display_name || displayName || null,
+        friend_code: friendCode,
+      };
+      const { error } = await supabase.from('profiles').upsert(payload);
+      if (!error) return friendCode;
+      if (error.code === '23505') {
+        friendCode = generateFriendCode(`${userId}:${attempt + 1}`);
+        continue;
+      }
+      if (/friend_code/i.test(error.message)) {
+        await supabase.from('profiles').upsert({
+          id: userId,
+          email: payload.email,
+          username: payload.username,
+          display_name: payload.display_name,
+        });
+        return friendCode;
+      }
+      break;
+    }
+    return friendCode;
   } catch {
-    // Offline / missing table: FriendsFeed shows an empty signed-in state.
+    return generateFriendCode(userId);
+  }
+}
+
+export async function connectByFriendCode(
+  userId: string,
+  rawCode: string
+): Promise<{ ok: boolean; message: string }> {
+  if (!canUse(userId) || !supabase) return { ok: false, message: 'Sign in to connect with a friend code.' };
+  const code = normalizeFriendCode(rawCode);
+  if (!isValidFriendCode(code)) {
+    return { ok: false, message: 'Enter a 6-character friend code.' };
+  }
+
+  const ownCode = await fetchOwnFriendCode(userId);
+  if (code === ownCode) {
+    return { ok: false, message: 'You cannot connect with your own code.' };
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('connect_by_friend_code', { input_code: code });
+    if (!error && data && typeof data === 'object') {
+      const payload = data as { ok?: boolean; message?: string };
+      return {
+        ok: Boolean(payload.ok),
+        message: String(payload.message || (payload.ok ? 'You are now friends.' : 'Could not connect.')),
+      };
+    }
+
+    const { data: peer, error: lookupError } = await supabase
+      .from('profiles')
+      .select('id, display_name, username, friend_code')
+      .eq('friend_code', code)
+      .maybeSingle();
+    if (lookupError || !peer?.id) {
+      return { ok: false, message: 'No profile uses that code.' };
+    }
+    if (String(peer.id) === userId) {
+      return { ok: false, message: 'You cannot connect with your own code.' };
+    }
+
+    const existing = await fetchFriendships(userId);
+    const overlap = existing.find((edge) => edge.peerId === String(peer.id));
+    if (overlap?.status === 'accepted') return { ok: true, message: 'Already connected.' };
+    if (overlap) {
+      const { error: upgradeError } = await supabase
+        .from('friends')
+        .update({ status: 'accepted' })
+        .eq('id', overlap.id);
+      if (upgradeError) return { ok: false, message: 'Could not connect.' };
+      return { ok: true, message: 'You are now friends.' };
+    }
+
+    const { error: insertError } = await supabase.from('friends').insert({
+      user_id: userId,
+      friend_id: String(peer.id),
+      status: 'accepted',
+    });
+    if (insertError) {
+      console.warn('friend code connect failed:', insertError.message);
+      return { ok: false, message: 'Could not connect.' };
+    }
+    return { ok: true, message: 'You are now friends.' };
+  } catch {
+    return { ok: false, message: 'Could not connect.' };
   }
 }
 
@@ -103,7 +210,7 @@ export async function searchProfiles(query: string): Promise<ProfileDirectoryHit
         email: String(row.email || ''),
         displayName: displayNameFromProfile(row),
       }))
-      .filter((row) => row.id);
+      .filter((row: ProfileDirectoryHit) => Boolean(row.id));
   } catch {
     return [];
   }
@@ -231,10 +338,22 @@ export async function respondToFriendRequest(edgeId: string, status: 'accepted' 
   }
 }
 
-/** Cancel an outgoing pending request or remove an accepted friendship. RLS already allows either party to delete. */
-export async function removeFriendship(edgeId: string): Promise<boolean> {
+/** Remove an accepted friendship for both parties. RLS already allows either side to delete. */
+export async function removeFriendship(
+  edgeId: string,
+  pair?: { userId: string; peerId: string }
+): Promise<boolean> {
   if (!supabase) return false;
   try {
+    if (pair?.userId && pair.peerId) {
+      const { error } = await supabase
+        .from('friends')
+        .delete()
+        .or(
+          `and(user_id.eq.${pair.userId},friend_id.eq.${pair.peerId}),and(user_id.eq.${pair.peerId},friend_id.eq.${pair.userId})`
+        );
+      return !error;
+    }
     const { error } = await supabase.from('friends').delete().eq('id', edgeId);
     return !error;
   } catch {
