@@ -71,6 +71,7 @@ import {
   toggleExamShield,
   toggleVacation,
 } from './lib/protection';
+import { canEnableKeystone, countActiveKeystones, MAX_KEYSTONE_HABITS } from './lib/keystone';
 import {
   createMissedFrictionAudit,
   enqueueFrictionPrompts,
@@ -1016,8 +1017,13 @@ export default function App() {
       showNotification('Maximum limit of 20 active habits reached.');
       return null;
     }
+    let payload = newHabitData;
+    if (payload.isKeystone && !canEnableKeystone(habits)) {
+      showNotification(`You already have ${MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.`);
+      payload = { ...payload, isKeystone: false };
+    }
     const newHabit: Habit = {
-      ...newHabitData,
+      ...payload,
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'habit-' + Date.now(),
       days: [false, false, false, false, false, false, false],
       microDays: [false, false, false, false, false, false, false],
@@ -1062,10 +1068,25 @@ export default function App() {
 
   // Update habit
   const handleUpdateHabit = (updatedHabit: Habit) => {
+    let next = updatedHabit;
+    if (next.isKeystone && !canEnableKeystone(habits, next.id)) {
+      showNotification(`You already have ${MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.`);
+      next = { ...next, isKeystone: false };
+    }
     setHabits((prev) =>
-      prev.map((h) => (h.id === updatedHabit.id ? updatedHabit : h))
+      prev.map((h) => (h.id === next.id ? next : h))
     );
-    setDetailHabit(updatedHabit);
+    setDetailHabit(next);
+  };
+
+  const handleToggleKeystone = (habitId: string, nextValue: boolean) => {
+    if (nextValue && !canEnableKeystone(habits, habitId)) {
+      showNotification(`You already have ${MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.`);
+      return;
+    }
+    setHabits((prev) =>
+      prev.map((habit) => (habit.id === habitId ? { ...habit, isKeystone: nextValue } : habit))
+    );
   };
 
   // Reset to an empty local workspace (no demo habits)
@@ -1618,6 +1639,8 @@ export default function App() {
                       setLongPressedRect(null);
                       setDeleteConfirmHabit(h);
                     }}
+                    onToggleKeystone={handleToggleKeystone}
+                    keystoneAtCap={!habit.isKeystone && countActiveKeystones(habits) >= MAX_KEYSTONE_HABITS}
                   />
                 ))
               )}
@@ -1668,6 +1691,7 @@ export default function App() {
             onScroll={handleMainScroll}
             isDark={isDark}
             momentumScore={todayMomentumScore}
+            momentumEvents={momentumEvents}
           />
         )}
 
@@ -1789,6 +1813,7 @@ export default function App() {
           userId={session.id}
           isGuest={session.isGuest}
           activeHabitCount={countActiveHabits(habits)}
+          activeKeystoneCount={countActiveKeystones(habits)}
         />
 
         <HabitDetailModal
@@ -1799,6 +1824,7 @@ export default function App() {
           onUpdateHabit={handleUpdateHabit}
           onArchiveHabit={handleArchiveHabit}
           todayIndex={todayDayIndex}
+          activeKeystoneCount={countActiveKeystones(habits)}
         />
 
         <DeleteHabitConfirmModal

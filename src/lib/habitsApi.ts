@@ -50,6 +50,7 @@ export function rowToHabit(row: Record<string, unknown>): Habit | null {
         : undefined,
     intervalDays: row.interval_days != null ? Number(row.interval_days) : undefined,
     weeklyTargetCount: row.weekly_target_count != null ? Number(row.weekly_target_count) : undefined,
+    isKeystone: Boolean(row.is_keystone ?? row.isKeystone),
   };
 }
 
@@ -76,6 +77,7 @@ export function habitToRow(habit: Habit, userId: string) {
     scheduled_days: habit.scheduledDays ?? null,
     interval_days: habit.intervalDays ?? null,
     weekly_target_count: habit.weeklyTargetCount ?? null,
+    is_keystone: Boolean(habit.isKeystone),
     updated_at: new Date().toISOString(),
   };
 }

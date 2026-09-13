@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Habit, HabitCategory, HabitPriority } from '../types';
+import { MAX_KEYSTONE_HABITS } from '../lib/keystone';
 
 interface HabitDetailModalProps {
   habit: Habit | null;
@@ -9,6 +10,7 @@ interface HabitDetailModalProps {
   onUpdateHabit: (updated: Habit) => void;
   onArchiveHabit?: (habitId: string) => void;
   todayIndex?: number;
+  activeKeystoneCount?: number;
 }
 
 export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
@@ -17,17 +19,39 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   onClose,
   onDeleteHabit,
   onUpdateHabit,
+  activeKeystoneCount = 0,
 }) => {
+  const [name, setName] = useState('');
+  const [priority, setPriority] = useState<HabitPriority>('mid');
+  const [purpose, setPurpose] = useState('');
+  const [fallback, setFallback] = useState('');
+  const [category, setCategory] = useState<HabitCategory>('self_improvement');
+  const [isKeystone, setIsKeystone] = useState(false);
+  const [keystoneWarning, setKeystoneWarning] = useState(false);
+
+  useEffect(() => {
+    if (!habit || !isOpen) return;
+    setName(habit.name);
+    setPriority(habit.priority || 'mid');
+    setPurpose(habit.purposeAnchor || '');
+    setFallback(habit.fallbackMicroHabit || '');
+    setCategory(habit.category === 'work' ? 'work' : 'self_improvement');
+    setIsKeystone(Boolean(habit.isKeystone));
+    setKeystoneWarning(false);
+  }, [habit, isOpen]);
+
   if (!isOpen || !habit) return null;
 
-  const initialCategory: HabitCategory =
-    habit.category === 'work' ? 'work' : 'self_improvement';
+  const othersAtCap = !habit.isKeystone && activeKeystoneCount >= MAX_KEYSTONE_HABITS;
 
-  const [name, setName] = useState(habit.name);
-  const [priority, setPriority] = useState<HabitPriority>(habit.priority || 'mid');
-  const [purpose, setPurpose] = useState(habit.purposeAnchor || '');
-  const [fallback, setFallback] = useState(habit.fallbackMicroHabit || '');
-  const [category, setCategory] = useState<HabitCategory>(initialCategory);
+  const handleKeystoneToggle = () => {
+    if (!isKeystone && othersAtCap) {
+      setKeystoneWarning(true);
+      return;
+    }
+    setKeystoneWarning(false);
+    setIsKeystone((prev) => !prev);
+  };
 
   const handleSave = () => {
     onUpdateHabit({
@@ -38,6 +62,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
       fallbackMicroHabit: fallback.trim(),
       tags: [category === 'work' ? 'W' : 'SI'],
       category,
+      isKeystone: isKeystone && !othersAtCap,
     });
     onClose();
   };
@@ -193,6 +218,37 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                 Self Improvement
               </button>
             </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between">
+              <label htmlFor="edit-keystone-toggle" className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                Is Keystone Habit?
+              </label>
+              <button
+                id="edit-keystone-toggle"
+                type="button"
+                role="switch"
+                aria-checked={isKeystone}
+                onClick={handleKeystoneToggle}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition ${
+                  isKeystone
+                    ? 'bg-emerald-500 dark:bg-blue-500 border-emerald-500 dark:border-blue-500'
+                    : 'bg-slate-200 dark:bg-slate-700 border-slate-200 dark:border-slate-600'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition ${
+                    isKeystone ? 'translate-x-5' : 'translate-x-0.5'
+                  } mt-px`}
+                />
+              </button>
+            </div>
+            {keystoneWarning && (
+              <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-amber-700 dark:text-amber-300">
+                You already have {MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.
+              </p>
+            )}
           </div>
         </div>
 

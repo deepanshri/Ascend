@@ -26,6 +26,8 @@ interface HabitCardProps {
   onDismissLongPress?: () => void;
   onOpenEdit: (habit: Habit) => void;
   onOpenDeleteConfirm: (habit: Habit) => void;
+  onToggleKeystone?: (habitId: string, next: boolean) => void;
+  keystoneAtCap?: boolean;
 }
 
 export const HabitCard: React.FC<HabitCardProps> = ({
@@ -40,11 +42,13 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   onCompleteToday,
   onToggleFallbackMode,
   onResetToday,
-  onNotify: _onNotify,
+  onNotify,
   onLongPress,
   onDismissLongPress,
   onOpenEdit: _onOpenEdit,
   onOpenDeleteConfirm: _onOpenDeleteConfirm,
+  onToggleKeystone,
+  keystoneAtCap = false,
 }) => {
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -557,6 +561,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                   ? 'shadow-sm border-amber-400 dark:border-amber-400 ring-1 ring-amber-400/50 dark:ring-amber-400/40 bg-amber-50/30 dark:bg-amber-950/20'
                   : isFallbackActive && !isTodayDone
                   ? 'shadow-sm border-emerald-400/80 dark:border-blue-400/80 ring-1 ring-emerald-400/40 dark:ring-blue-400/40 bg-emerald-50/20 dark:bg-blue-950/20 active:scale-[0.995]'
+                  : habit.isKeystone
+                  ? 'shadow-[0_0_16px_rgba(16,185,129,0.28)] dark:shadow-[0_0_18px_rgba(59,130,246,0.32)] border-emerald-300/90 dark:border-blue-400/70 ring-1 ring-emerald-400/35 dark:ring-blue-400/35 active:scale-[0.995]'
                   : 'shadow-sm border-slate-100/90 dark:border-slate-800 active:scale-[0.995]'
               }`}
             >
@@ -588,6 +594,14 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                           : 'bg-[#86efac]'
                       }`}
                     />
+                    {habit.isKeystone && (
+                      <span
+                        title="Keystone habit"
+                        className="shrink-0 text-[9px] font-black uppercase tracking-wide text-emerald-700 dark:text-blue-300 bg-emerald-50 dark:bg-blue-950/70 border border-emerald-300/80 dark:border-blue-500/50 rounded-md px-1 py-0.5"
+                      >
+                        K
+                      </span>
+                    )}
                   </div>
 
               {/* 7-Day Consistency Checkboxes */}
@@ -744,12 +758,51 @@ export const HabitCard: React.FC<HabitCardProps> = ({
             </span>
           </div>
 
-          <div className="py-2 flex-1 flex flex-col justify-center">
+          <div className="py-2 flex-1 flex flex-col justify-center gap-2">
             <p className="text-[13px] font-medium text-slate-800 dark:text-slate-100 leading-relaxed italic line-clamp-3">
               {habit.purposeAnchor?.trim()
                 ? `"${habit.purposeAnchor.trim()}"`
                 : 'No purpose anchor set yet. Long press to edit.'}
             </p>
+            {onToggleKeystone && (
+              <div
+                className="flex items-center justify-between pt-1"
+                onPointerDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  Is Keystone Habit?
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(habit.isKeystone)}
+                  aria-label="Is Keystone Habit?"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const next = !habit.isKeystone;
+                    if (next && keystoneAtCap) {
+                      onNotify('You already have 2 keystone habits. Unflag one before adding another.');
+                      return;
+                    }
+                    onToggleKeystone(habit.id, next);
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border transition ${
+                    habit.isKeystone
+                      ? 'bg-emerald-500 dark:bg-blue-500 border-emerald-500 dark:border-blue-500'
+                      : 'bg-slate-200 dark:bg-slate-700 border-slate-200 dark:border-slate-600'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${
+                      habit.isKeystone ? 'translate-x-4' : 'translate-x-0.5'
+                    } mt-px`}
+                  />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between text-[10.5px] text-slate-400 dark:text-slate-400 pt-1.5 border-t border-slate-100 dark:border-slate-800">

@@ -50,6 +50,7 @@ export interface Habit {
   scheduledDays?: number[]; // [0, 2, 4] for Mon/Wed/Fri (0 = Day 1 ... 6 = Day 7)
   intervalDays?: number; // every X days
   weeklyTargetCount?: number; // X times per week
+  isKeystone?: boolean;
 }
 
 export interface IdentityEvidence {

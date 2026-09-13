@@ -142,3 +142,6 @@ create trigger auto_confirm_auth_user
 alter table if exists public.habit_logs
   add column if not exists friction_reason text;
 
+alter table if exists public.habits
+  add column if not exists is_keystone boolean not null default false;
+

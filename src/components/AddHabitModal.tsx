@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Habit, HabitCategory, HabitPriority } from '../types';
 import { insertHabitToSupabase, toDbCategory } from '../lib/habitsApi';
 import { MAX_ACTIVE_HABITS } from '../lib/protection';
+import { MAX_KEYSTONE_HABITS } from '../lib/keystone';
 
 interface AddHabitModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface AddHabitModalProps {
   userId?: string | null;
   isGuest?: boolean;
   activeHabitCount?: number;
+  activeKeystoneCount?: number;
 }
 
 export const AddHabitModal: React.FC<AddHabitModalProps> = ({
@@ -20,13 +22,32 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   userId = null,
   isGuest = true,
   activeHabitCount = 0,
+  activeKeystoneCount = 0,
 }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<HabitCategory>('work');
   const [priority, setPriority] = useState<HabitPriority>('mid');
   const [purposeAnchor, setPurposeAnchor] = useState('');
   const [fallbackMicro, setFallbackMicro] = useState('');
+  const [isKeystone, setIsKeystone] = useState(false);
+  const [keystoneWarning, setKeystoneWarning] = useState(false);
   const atCap = activeHabitCount >= MAX_ACTIVE_HABITS;
+  const keystoneCapReached = activeKeystoneCount >= MAX_KEYSTONE_HABITS;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setIsKeystone(false);
+    setKeystoneWarning(false);
+  }, [isOpen]);
+
+  const handleKeystoneToggle = () => {
+    if (!isKeystone && keystoneCapReached) {
+      setKeystoneWarning(true);
+      return;
+    }
+    setKeystoneWarning(false);
+    setIsKeystone((prev) => !prev);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +66,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
       scheduleType: 'daily',
       tags: [dbCategory],
       archived: false,
+      isKeystone: isKeystone && !keystoneCapReached,
     });
 
     if (!created) return;
@@ -62,6 +84,8 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     setFallbackMicro('');
     setPriority('mid');
     setCategory('work');
+    setIsKeystone(false);
+    setKeystoneWarning(false);
     onClose();
   };
 
@@ -239,6 +263,40 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                 <p className="text-[10.5px] text-slate-400 mt-1">
                   Triggered automatically when swiping left on the habit card.
                 </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="add-keystone-toggle" className="font-semibold text-slate-700 dark:text-slate-200 text-[12px]">
+                    Is Keystone Habit?
+                  </label>
+                  <button
+                    id="add-keystone-toggle"
+                    type="button"
+                    role="switch"
+                    aria-checked={isKeystone}
+                    onClick={handleKeystoneToggle}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition ${
+                      isKeystone
+                        ? 'bg-emerald-500 dark:bg-blue-500 border-emerald-500 dark:border-blue-500'
+                        : 'bg-slate-200 dark:bg-slate-700 border-slate-200 dark:border-slate-600'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition ${
+                        isKeystone ? 'translate-x-5' : 'translate-x-0.5'
+                      } mt-px`}
+                    />
+                  </button>
+                </div>
+                <p className="text-[10.5px] text-slate-400 mt-1">
+                  At most {MAX_KEYSTONE_HABITS} active keystones. These drive correlation on Report.
+                </p>
+                {keystoneWarning && (
+                  <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-amber-700 dark:text-amber-300">
+                    You already have {MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.
+                  </p>
+                )}
               </div>
 
               {/* Actions */}

@@ -1,8 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Habit, IdentityEvidence, FrictionAudit } from '../types';
+import { Habit, IdentityEvidence, FrictionAudit, MomentumEvent } from '../types';
 import { getTodayDayIndex, getWeekdayShort } from '../utils/dates';
 import { countMomentumCompletedActions } from '../lib/supabase';
 import { weeklyFrictionPatterns } from '../lib/frictionAudit';
+import {
+  activeKeystoneHabits,
+  computeKeystoneCorrelation,
+  keystoneOverallCompletionRate,
+  MAX_KEYSTONE_HABITS,
+  type KeystoneCorrelation,
+} from '../lib/keystone';
 
 interface ReportViewProps {
   habits: Habit[];
@@ -15,10 +22,22 @@ interface ReportViewProps {
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
   isDark?: boolean;
   momentumScore?: number;
+  momentumEvents?: MomentumEvent[];
 }
 
 type TimeFilter = 'today' | 'week' | 'month' | 'momentum';
 type GraphMode = 'concentric' | 'trajectory';
+
+function formatKeystoneCorrelation(correlation: KeystoneCorrelation): string {
+  const abs = Math.abs(correlation.liftPercent);
+  if (correlation.liftPercent > 0) {
+    return `On days you complete ${correlation.habitName}, your overall momentum is +${abs}% higher`;
+  }
+  if (correlation.liftPercent < 0) {
+    return `On days you complete ${correlation.habitName}, your overall momentum is ${abs}% lower`;
+  }
+  return `On days you complete ${correlation.habitName}, overall momentum is unchanged`;
+}
 
 export const ReportView: React.FC<ReportViewProps> = ({
   habits,
@@ -31,6 +50,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
   onScroll,
   isDark = false,
   momentumScore = 63,
+  momentumEvents = [],
 }) => {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
   const [graphMode, setGraphMode] = useState<GraphMode>('concentric');
@@ -41,6 +61,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
   const [newNoteText, setNewNoteText] = useState('');
   const [remoteVoteCount, setRemoteVoteCount] = useState<number | null>(null);
   const [voteFloor, setVoteFloor] = useState(0);
+  const [keystoneExpanded, setKeystoneExpanded] = useState(false);
 
   // Category completion rates based on current habits & events
   const categoryStats = useMemo(() => {
@@ -74,6 +95,17 @@ export const ReportView: React.FC<ReportViewProps> = ({
   }, [habits, todayIndex]);
   const totalHabitsCount = habits.length;
   const replicaVotes = identityVoteCount ?? evidenceList.length;
+
+  const keystones = useMemo(() => activeKeystoneHabits(habits), [habits]);
+  const keystoneCompletionRate = useMemo(() => keystoneOverallCompletionRate(habits), [habits]);
+  const keystoneStats = useMemo(
+    () =>
+      keystones.map((habit) => ({
+        habit,
+        correlation: computeKeystoneCorrelation(habit, habits, momentumEvents),
+      })),
+    [keystones, habits, momentumEvents]
+  );
 
   useEffect(() => {
     setVoteFloor((prev) => Math.max(prev, replicaVotes, remoteVoteCount ?? 0));
@@ -611,6 +643,69 @@ export const ReportView: React.FC<ReportViewProps> = ({
             {ledgerVoteCount} votes
           </span>
         </button>
+      </section>
+
+      {/* Keystone habits: collapsed status + real correlation when expanded */}
+      <section>
+        <button
+          type="button"
+          id="keystone-habits-row"
+          aria-expanded={keystoneExpanded}
+          onClick={() => setKeystoneExpanded((prev) => !prev)}
+          className={`w-full rounded-2xl p-3.5 px-4 border shadow-xs text-left transition ${
+            keystones.length > 0
+              ? 'bg-white dark:bg-slate-900 border-emerald-200/90 dark:border-blue-500/40 shadow-[0_0_18px_rgba(16,185,129,0.18)] dark:shadow-[0_0_18px_rgba(59,130,246,0.22)] ring-1 ring-emerald-400/25 dark:ring-blue-400/30'
+              : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tracking-tight">
+                  Keystone
+                </span>
+                {keystones.length > 0 && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 dark:bg-blue-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] dark:shadow-[0_0_8px_rgba(96,165,250,0.9)]" />
+                )}
+              </div>
+              <p className="text-[11.5px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                {keystones.length === 0
+                  ? 'None flagged'
+                  : `${keystones.length} of ${MAX_KEYSTONE_HABITS} · ${keystones.map((habit) => habit.name).join(', ')}`}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tabular-nums">
+                {keystoneCompletionRate == null ? '—' : `${keystoneCompletionRate}%`}
+              </span>
+              <svg
+                className={`w-4 h-4 text-slate-400 transition-transform ${keystoneExpanded ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </button>
+        {keystoneExpanded && (
+          <div className="mt-2 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 px-4 space-y-2.5">
+            {keystones.length === 0 ? (
+              <p className="text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                Flag up to {MAX_KEYSTONE_HABITS} active habits as Keystone to track correlation.
+              </p>
+            ) : (
+              keystoneStats.map(({ habit, correlation }) => (
+                <p key={habit.id} className="text-[12.5px] text-slate-700 dark:text-slate-200 leading-relaxed">
+                  {correlation
+                    ? formatKeystoneCorrelation(correlation)
+                    : 'Building correlation data...'}
+                </p>
+              ))
+            )}
+          </div>
+        )}
       </section>
 
       {/* Segmented Time Filter (Today / Week / Month / Momentum) */}
