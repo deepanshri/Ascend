@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { UserSession } from '../types';
+import { MomentumEventType, UserSession } from '../types';
 
 const env = (import.meta as any).env || {};
 const supabaseUrl = env.VITE_SUPABASE_URL || 'https://dpgupbcbhkmjtyqkljpr.supabase.co';
@@ -10,6 +10,133 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function canWriteUserRows(userId?: string | null): boolean {
+  return Boolean(
+    isSupabaseConfigured && supabase && userId && UUID_RE.test(userId) && !userId.startsWith('guest_')
+  );
+}
+
+/** Append-only swipe payload written to `public.momentum_events`. */
+export interface MomentumEventInsert {
+  id: string;
+  userId: string;
+  habitId: string;
+  eventType: MomentumEventType;
+  /** Work (W) = 1.5, Self Improvement (SI) = 1.0 */
+  weight: number;
+  timestamp?: string | number;
+}
+
+export interface MomentumEventRecord {
+  id: string;
+  userId: string;
+  habitId: string;
+  eventType: MomentumEventType;
+  weight: number;
+  timestamp: string;
+}
+
+function parseMomentumEventType(raw: unknown): MomentumEventType | null {
+  const value = String(raw || '').toLowerCase();
+  if (value === 'full' || value === 'fallback' || value === 'missed') return value;
+  return null;
+}
+
+/**
+ * Insert-only write used when a HabitCard swipe commits.
+ * Never upserts or deletes historical `momentum_events` rows.
+ */
+export async function insertMomentumEvent(record: MomentumEventInsert): Promise<boolean> {
+  if (!canWriteUserRows(record.userId) || !supabase) return false;
+  if (!UUID_RE.test(record.id)) return false;
+
+  const timestamp =
+    typeof record.timestamp === 'number'
+      ? new Date(record.timestamp).toISOString()
+      : record.timestamp || new Date().toISOString();
+
+  try {
+    const { error } = await supabase.from('momentum_events').insert({
+      id: record.id,
+      user_id: record.userId,
+      habit_id: record.habitId,
+      event_type: record.eventType,
+      weight: record.weight,
+      timestamp,
+    });
+    if (!error) return true;
+    const code = (error as { code?: string }).code;
+    if (code === '23505' || /duplicate/i.test(error.message)) return true;
+    console.warn('momentum_events insert failed:', error.message);
+    return false;
+  } catch (err) {
+    console.warn('momentum_events insert offline:', err);
+    return false;
+  }
+}
+
+/** Timestamp-ordered replica of `public.momentum_events` for the rolling engine. */
+export async function fetchSequentialMomentumEvents(
+  userId?: string | null
+): Promise<MomentumEventRecord[]> {
+  if (!canWriteUserRows(userId) || !supabase || !userId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('momentum_events')
+      .select('id, user_id, habit_id, event_type, weight, timestamp')
+      .eq('user_id', userId)
+      .order('timestamp', { ascending: true });
+
+    if (error) {
+      console.warn('momentum_events fetch failed:', error.message);
+      return [];
+    }
+
+    return (data || [])
+      .map((row) => {
+        const eventType = parseMomentumEventType(row.event_type);
+        const weight = Number(row.weight);
+        if (!row.id || !row.habit_id || !eventType || !Number.isFinite(weight)) return null;
+        return {
+          id: String(row.id),
+          userId: String(row.user_id || userId),
+          habitId: String(row.habit_id),
+          eventType,
+          weight,
+          timestamp: String(row.timestamp || new Date().toISOString()),
+        } satisfies MomentumEventRecord;
+      })
+      .filter((row): row is MomentumEventRecord => row !== null);
+  } catch (err) {
+    console.warn('momentum_events fetch offline:', err);
+    return [];
+  }
+}
+
+/** COUNT(*) of completed actions: event_type IN ('full', 'fallback'). */
+export async function countMomentumCompletedActions(userId?: string | null): Promise<number | null> {
+  if (!canWriteUserRows(userId) || !supabase || !userId) return null;
+  try {
+    const { count, error } = await supabase
+      .from('momentum_events')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .in('event_type', ['full', 'fallback']);
+
+    if (error) {
+      console.warn('momentum_events count failed:', error.message);
+      return null;
+    }
+    return count ?? 0;
+  } catch (err) {
+    console.warn('momentum_events count offline:', err);
+    return null;
+  }
+}
 
 const SESSION_STORAGE_KEY = 'ascend_user_session';
 const ONBOARDING_COMPLETED_KEY = 'ascend_onboarding_completed';

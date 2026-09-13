@@ -1,5 +1,5 @@
 import { MomentumEvent, MomentumEventType } from '../types';
-import { isSupabaseConfigured, supabase } from './supabase';
+import { countMomentumCompletedActions, fetchSequentialMomentumEvents, insertMomentumEvent, isSupabaseConfigured, supabase } from './supabase';
 import { parseToIsoDate, toISODate } from '../utils/dates';
 import { isUuid, mergeMomentumEvents } from '../utils/momentum';
 
@@ -124,65 +124,36 @@ export function toMomentumEventRow(userId: string, event: MomentumEvent) {
 }
 
 export async function fetchMomentumEventsFromTable(userId?: string | null): Promise<MomentumEvent[]> {
-  if (!canSync(userId) || !supabase || !userId) return [];
-  try {
-    const { data, error } = await supabase
-      .from('momentum_events')
-      .select('id, user_id, habit_id, event_type, weight, timestamp')
-      .eq('user_id', userId)
-      .order('timestamp', { ascending: true });
-
-    if (error) {
-      console.warn('momentum_events fetch failed:', error.message);
-      return [];
-    }
-
-    return (data as MomentumEventRow[] | null || [])
-      .map(mapMomentumEventRow)
-      .filter((event): event is MomentumEvent => event !== null);
-  } catch (err) {
-    console.warn('momentum_events fetch offline:', err);
-    return [];
-  }
+  const rows = await fetchSequentialMomentumEvents(userId);
+  return rows
+    .map((row) =>
+      mapMomentumEventRow({
+        id: row.id,
+        user_id: row.userId,
+        habit_id: row.habitId,
+        event_type: row.eventType,
+        weight: row.weight,
+        timestamp: row.timestamp,
+      })
+    )
+    .filter((event): event is MomentumEvent => event !== null);
 }
 
 /** COUNT(*) of full | fallback rows. Returns null when the table is unreachable. */
 export async function fetchIdentityVoteCount(userId?: string | null): Promise<number | null> {
-  if (!canSync(userId) || !supabase || !userId) return null;
-  try {
-    const { count, error } = await supabase
-      .from('momentum_events')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .in('event_type', ['full', 'fallback']);
-
-    if (error) {
-      console.warn('momentum_events count failed:', error.message);
-      return null;
-    }
-    return count ?? 0;
-  } catch (err) {
-    console.warn('momentum_events count offline:', err);
-    return null;
-  }
+  return countMomentumCompletedActions(userId);
 }
 
 async function insertMomentumEventRemote(userId: string, event: MomentumEvent): Promise<boolean> {
-  if (!canSync(userId) || !supabase) return false;
-  if (!isUuid(event.id)) return false;
-
-  try {
-    const { error } = await supabase.from('momentum_events').insert(toMomentumEventRow(userId, event));
-    if (!error) return true;
-    const code = (error as { code?: string }).code;
-    // Unique violation: the row was already appended. Treat as success.
-    if (code === '23505' || /duplicate/i.test(error.message)) return true;
-    console.warn('momentum_events insert failed:', error.message);
-    return false;
-  } catch (err) {
-    console.warn('momentum_events insert offline:', err);
-    return false;
-  }
+  if (!canSync(userId)) return false;
+  return insertMomentumEvent({
+    id: event.id,
+    userId,
+    habitId: event.habitId,
+    eventType: event.eventType,
+    weight: event.weight,
+    timestamp: event.timestamp,
+  });
 }
 
 /** Insert-only. Never upserts or deletes historical rows. */

@@ -25,7 +25,7 @@ import {
   upsertHabitLog,
   deleteHabitLog,
 } from './utils/momentum';
-import { appendMomentumEventRemote, loadLocalMomentumEvents, MOMENTUM_EVENTS_STORAGE_KEY, saveLocalMomentumEvents } from './lib/momentumEvents';
+import { appendMomentumEventRemote, fetchMomentumEventsFromTable, loadLocalMomentumEvents, MOMENTUM_EVENTS_STORAGE_KEY, saveLocalMomentumEvents } from './lib/momentumEvents';
 import { endOfIsoDate, formatEvidenceDate, getTodayDayIndex, getWeekDates, resolveEventIsoDate, startOfDay, toISODate } from './utils/dates';
 import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome, hideNativeSplash } from './lib/nativeChrome';
@@ -698,9 +698,10 @@ export default function App() {
     if (!session || session.isGuest) return;
     let cancelled = false;
     void (async () => {
-      const [remoteHabits, dateLogs] = await Promise.all([
+      const [remoteHabits, dateLogs, remoteMomentum] = await Promise.all([
         fetchActiveHabits(session.id),
         fetchHabitLogsForDate(session.id, currentSelectedDate),
+        fetchMomentumEventsFromTable(session.id),
       ]);
       if (cancelled) return;
       if (remoteHabits.length > 0) {
@@ -712,6 +713,9 @@ export default function App() {
       }
       if (dateLogs.length > 0) {
         setCompletionEvents((prev) => mergeCompletionEvents(prev, dateLogs, calendarOrigin));
+      }
+      if (remoteMomentum.length > 0) {
+        setMomentumEvents((prev) => mergeMomentumEvents(prev, remoteMomentum));
       }
     })().catch(() => {});
     return () => {
@@ -1429,6 +1433,7 @@ export default function App() {
             habits={activeHabits}
             evidenceList={evidenceList}
             identityVoteCount={displayedIdentityVotes}
+            userId={session.id}
             onOpenLedger={() => setIsLedgerModalOpen(true)}
             examShieldActive={examShieldActive}
             onToggleExamShield={() => setExamShieldActive(!examShieldActive)}

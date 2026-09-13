@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Habit, IdentityEvidence, FrictionAudit } from '../types';
 import { getTodayDayIndex, getWeekdayShort } from '../utils/dates';
+import { countMomentumCompletedActions } from '../lib/supabase';
 
 interface ReportViewProps {
   habits: Habit[];
   evidenceList: IdentityEvidence[];
   identityVoteCount?: number;
+  userId?: string | null;
   onOpenLedger: () => void;
   examShieldActive: boolean;
   onToggleExamShield: () => void;
@@ -23,6 +25,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
   habits,
   evidenceList,
   identityVoteCount,
+  userId,
   onOpenLedger,
   examShieldActive,
   onToggleExamShield,
@@ -39,6 +42,8 @@ export const ReportView: React.FC<ReportViewProps> = ({
   const [showFrictionModal, setShowFrictionModal] = useState(false);
   const [newNoteHabit, setNewNoteHabit] = useState('');
   const [newNoteText, setNewNoteText] = useState('');
+  const [remoteVoteCount, setRemoteVoteCount] = useState<number | null>(null);
+  const [voteFloor, setVoteFloor] = useState(0);
 
   // Category completion rates based on current habits & events
   const categoryStats = useMemo(() => {
@@ -71,6 +76,24 @@ export const ReportView: React.FC<ReportViewProps> = ({
     return habits.filter((h) => Boolean(h.days?.[todayIndex])).length;
   }, [habits, todayIndex]);
   const totalHabitsCount = habits.length;
+  const replicaVotes = identityVoteCount ?? evidenceList.length;
+
+  useEffect(() => {
+    setVoteFloor((prev) => Math.max(prev, replicaVotes, remoteVoteCount ?? 0));
+  }, [replicaVotes, remoteVoteCount]);
+
+  useEffect(() => {
+    if (!userId || userId.startsWith('guest_')) return;
+    let cancelled = false;
+    void countMomentumCompletedActions(userId).then((count) => {
+      if (!cancelled && count != null) setRemoteVoteCount(count);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, replicaVotes]);
+
+  const ledgerVoteCount = Math.max(voteFloor, replicaVotes, remoteVoteCount ?? 0);
 
   // Trajectory Multi-Line Graph Data (matches the 3 concentric rings)
   const lineGraphData = useMemo(() => {
@@ -173,7 +196,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
       item.curr,
       `"+${item.delta}%"`,
       habits.length,
-      identityVoteCount ?? evidenceList.length,
+      ledgerVoteCount,
     ]);
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
@@ -568,19 +591,21 @@ export const ReportView: React.FC<ReportViewProps> = ({
         </div>
       </section>
 
-      {/* Identity Evidence Ledger Card (Non-clickable, text and accomplished/total habits only) */}
+      {/* Identity Evidence Ledger: COUNT(*) of full|fallback momentum_events */}
       <section>
-        <div
+        <button
+          type="button"
           id="identity-evidence-ledger-card"
-          className="w-full bg-white dark:bg-slate-900 rounded-2xl p-3.5 px-4 border border-slate-100 dark:border-slate-800 shadow-xs flex items-center justify-between"
+          onClick={onOpenLedger}
+          className="w-full bg-white dark:bg-slate-900 rounded-2xl p-3.5 px-4 border border-slate-100 dark:border-slate-800 shadow-xs flex items-center justify-between cursor-pointer hover:border-slate-200 dark:hover:border-slate-700 transition"
         >
           <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tracking-tight">
             Identity Evidence ledger
           </span>
           <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tabular-nums">
-            {accomplishedHabitsCount}/{totalHabitsCount}
+            {ledgerVoteCount} votes
           </span>
-        </div>
+        </button>
       </section>
 
       {/* Segmented Time Filter (Today / Week / Month / Momentum) */}

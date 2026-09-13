@@ -1,5 +1,5 @@
 import { Habit, HabitCompletionEvent, CompletionType, MomentumEvent, MomentumEventType } from '../types';
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { isSupabaseConfigured, supabase, fetchSequentialMomentumEvents } from '../lib/supabase';
 import {
   dayIndexForIso,
   endOfIsoDate,
@@ -52,21 +52,32 @@ export function resolveMomentumEventDate(event: MomentumEvent): string {
 }
 
 /**
- * Rolling step: clamp((prev * (1 - decay_factor)) + (score * weight), 0, 100)
+ * Rolling step:
+ * prevScore = clamp((prevScore * (1 - decayFactor)) + (eventScore * eventWeight), 0, 100)
  *
- * `score * weight` is the observation term. It is scaled onto 0–100
- * (full Work habit = 100) and blended by decay_factor so each log row is
- * an EMA step rather than a raw +1.5 jump that would cap near ~12.
+ * eventScore is 1 | 0.5 | 0 and eventWeight is 1.5 (W) | 1.0 (SI).
+ * The (eventScore * eventWeight) term is mapped onto 0–100 and blended by
+ * decayFactor so each log row is an EMA update the circle / mascot can show.
  */
+export function applyRollingMomentumStep(
+  prevScore: number,
+  eventScore: number,
+  eventWeight: number,
+  decayFactor: number = MOMENTUM_DECAY_FACTOR
+): number {
+  const increment = eventScore * eventWeight;
+  const observation = (increment / WORK_HABIT_WEIGHT) * 100;
+  const nextScore = prevScore * (1 - decayFactor) + observation * decayFactor;
+  return clampMomentum(nextScore);
+}
+
 export function applyMomentumDecayStep(
   prev: number,
   score: number,
   weight: number,
   decayFactor: number = MOMENTUM_DECAY_FACTOR
 ): number {
-  const observation = (score * weight * 100) / WORK_HABIT_WEIGHT;
-  const next = prev * (1 - decayFactor) + observation * decayFactor;
-  return clampMomentum(next);
+  return applyRollingMomentumStep(prev, score, weight, decayFactor);
 }
 
 export function applyMomentumEvent(
@@ -74,7 +85,27 @@ export function applyMomentumEvent(
   event: Pick<MomentumEvent, 'eventType' | 'weight'>,
   decayFactor: number = MOMENTUM_DECAY_FACTOR
 ): number {
-  return applyMomentumDecayStep(prev, eventScore(event.eventType), event.weight, decayFactor);
+  return applyRollingMomentumStep(prev, eventScore(event.eventType), event.weight, decayFactor);
+}
+
+/** Maps sequential `public.momentum_events` rows into the in-app log. */
+export async function fetchSequentialMomentumEventsLog(
+  userId?: string | null
+): Promise<MomentumEvent[]> {
+  const records = await fetchSequentialMomentumEvents(userId);
+  return records
+    .map((row) => {
+      const parsed = Date.parse(row.timestamp);
+      return {
+        id: row.id,
+        habitId: row.habitId,
+        eventType: row.eventType,
+        weight: row.weight,
+        timestamp: Number.isNaN(parsed) ? Date.now() : parsed,
+        loggedDate: parseToIsoDate(row.timestamp) || undefined,
+      } satisfies MomentumEvent;
+    })
+    .sort((a, b) => a.timestamp - b.timestamp);
 }
 
 export function createMomentumEvent(
@@ -408,11 +439,21 @@ export function calculateMomentumScore(
   const asOf = options.asOf;
   const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
 
-  let prev = 0;
+  let prevScore = 0;
   for (const event of sorted) {
     if (asOf !== undefined && event.timestamp > asOf) continue;
     if (skipMissed && event.eventType === 'missed') continue;
-    prev = applyMomentumEvent(prev, event, decayFactor);
+    const eventScoreValue = eventScore(event.eventType);
+    const eventWeight = event.weight;
+    prevScore = applyRollingMomentumStep(prevScore, eventScoreValue, eventWeight, decayFactor);
   }
-  return Math.round(prev);
+  return Math.round(prevScore);
+}
+
+export async function calculateMomentumScoreFromTable(
+  userId: string | null | undefined,
+  options: RollingMomentumOptions = {}
+): Promise<number> {
+  const events = await fetchSequentialMomentumEventsLog(userId);
+  return calculateMomentumScore(events, options);
 }
