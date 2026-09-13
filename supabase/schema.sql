@@ -145,6 +145,8 @@ alter table if exists public.habit_logs
 alter table if exists public.habits
   add column if not exists is_keystone boolean not null default false;
 
+-- Active habit cap (20). Apply supabase/migrations/007_habits_active_cap.sql.
+
 -- Friends / peer accountability. Apply supabase/migrations/006_friends.sql
 -- (public.friends + profile search + accepted-friend momentum_events reads).
 

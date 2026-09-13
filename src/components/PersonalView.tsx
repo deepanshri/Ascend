@@ -16,16 +16,11 @@ import {
   Send,
   HelpCircle,
   Shield,
-  Bell,
 } from 'lucide-react';
 import { IdentityEvidence, UserSession } from '../types';
 import { FriendsFeed } from './FriendsFeed';
-import { NotificationWindowToggles } from './NotificationWindowToggles';
-import {
-  DEFAULT_NOTIFICATION_WINDOWS,
-  type NotificationWindowKey,
-  type PsychologyNotificationWindows,
-} from '../lib/notifications';
+import { Mascot } from './Mascot';
+import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import type { ProtectionModeStatus } from '../lib/protection';
 
 interface PersonalViewProps {
@@ -40,8 +35,8 @@ interface PersonalViewProps {
   vacationModeActive?: boolean;
   vacationStatus?: ProtectionModeStatus;
   onToggleVacationMode?: () => void;
-  notificationWindows?: PsychologyNotificationWindows;
-  onToggleNotificationWindow?: (key: NotificationWindowKey) => void;
+  momentumScore?: number;
+  onOpenSettings?: () => void;
   onOpenLedger: () => void;
   onUpgradeGuest: () => void;
   onSyncNow: () => void;
@@ -63,8 +58,8 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
   vacationModeActive = false,
   vacationStatus,
   onToggleVacationMode,
-  notificationWindows = DEFAULT_NOTIFICATION_WINDOWS,
-  onToggleNotificationWindow,
+  momentumScore = 50,
+  onOpenSettings,
   onOpenLedger,
   onUpgradeGuest,
   onSyncNow,
@@ -207,7 +202,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     <div
       id="personal-screen"
       onScroll={onScroll}
-      className="absolute inset-0 px-4 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-24 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none"
+      className={`absolute inset-0 px-4 ${SCREEN_INSET_CLASS} pb-24 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none`}
     >
       {/* Toast Feedback */}
       {toastMessage && (
@@ -220,37 +215,14 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
         </div>
       )}
 
-      {/* TOP HEADER */}
-      <div className="flex items-start justify-between pt-1 pb-1">
-        <div>
-          <h1 className="text-[28px] font-extrabold text-slate-900 dark:text-white tracking-tight leading-none">
-            Personal
-          </h1>
-          <p className="text-[13.5px] font-medium text-slate-400 dark:text-slate-400 mt-1">
-            Your space. Your growth.
-          </p>
-        </div>
-
-        {/* Circular Avatar Icon (User silhouette in light green circle) */}
-        <button
-          type="button"
-          onClick={() => {
-            setTempName(name);
-            setTempDob(dob);
-            setTempUniversity(university);
-            setTempLocation(location);
-            setIsEditDetailsOpen(true);
-          }}
-          className="w-11 h-11 rounded-full bg-[#E8F8EE] dark:bg-emerald-950/80 text-[#165B33] dark:text-emerald-300 flex items-center justify-center border border-emerald-200/50 dark:border-emerald-800/60 shadow-xs hover:scale-105 active:scale-95 transition cursor-pointer"
-          title="Edit Profile"
-        >
-          <User className="w-5 h-5 fill-current" />
-        </button>
-      </div>
+      <ScreenHeader
+        title="Personal"
+        subtitle="Your space. Your growth."
+        onOpenSettings={onOpenSettings}
+      />
 
       {/* CARD 1: PERSONAL DETAILS */}
       <section className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm space-y-4">
-        {/* Header */}
         <div
           onClick={() => {
             setTempName(name);
@@ -261,9 +233,9 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
           }}
           className="flex items-center justify-between cursor-pointer group"
         >
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center">
-              <User className="w-5 h-5 fill-current" />
+          <div className="flex items-center space-x-3 min-w-0">
+            <div className="w-14 h-14 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 flex items-center justify-center shrink-0">
+              <Mascot size={48} angle="front" momentumScore={momentumScore} animate />
             </div>
             <h2 className="text-[16px] font-bold text-slate-900 dark:text-white">
               Personal Details
@@ -318,6 +290,29 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
             </span>
           </div>
         </div>
+      </section>
+
+      <section
+        onClick={() => {
+          setTempBecoming(becomingGoal);
+          setIsBecomingModalOpen(true);
+        }}
+        className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm flex items-center justify-between cursor-pointer hover:border-slate-200 dark:hover:border-slate-700 transition group"
+      >
+        <div className="flex items-center space-x-3 min-w-0 pr-2">
+          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center shrink-0">
+            <Target className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-[16px] font-bold text-slate-900 dark:text-white leading-snug">
+              What do you want to become?
+            </h2>
+            <p className="text-[12px] text-slate-400 dark:text-slate-400 truncate mt-0.5">
+              {becomingGoal.trim() || 'This will be entered by you while setting up.'}
+            </p>
+          </div>
+        </div>
+        <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-0.5 transition shrink-0" />
       </section>
 
       {/* CARD 2: PERSONAL INTEREST */}
@@ -475,49 +470,6 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
             </span>
           </div>
         )}
-      </section>
-
-      {/* DAILY REMINDER WINDOWS */}
-      <section className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm space-y-3.5">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center">
-            <Bell className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-[16px] font-bold text-slate-900 dark:text-white">Daily Reminders</h2>
-            <p className="text-[11.5px] text-slate-400 dark:text-slate-500">
-              Morning, afternoon, and night psychology windows
-            </p>
-          </div>
-        </div>
-        <NotificationWindowToggles
-          windows={notificationWindows}
-          onToggle={(key) => onToggleNotificationWindow?.(key)}
-        />
-      </section>
-
-      {/* CARD 3: WHAT DO YOU WANT TO BECOME? */}
-      <section
-        onClick={() => {
-          setTempBecoming(becomingGoal);
-          setIsBecomingModalOpen(true);
-        }}
-        className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm flex items-center justify-between cursor-pointer hover:border-slate-200 dark:hover:border-slate-700 transition group"
-      >
-        <div className="flex items-center space-x-3 min-w-0 pr-2">
-          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center shrink-0">
-            <Target className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-[16px] font-bold text-slate-900 dark:text-white leading-snug">
-              What do you want to become?
-            </h2>
-            <p className="text-[12px] text-slate-400 dark:text-slate-400 truncate mt-0.5">
-              {becomingGoal.trim() || 'This will be entered by you while setting up.'}
-            </p>
-          </div>
-        </div>
-        <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-0.5 transition shrink-0" />
       </section>
 
       {/* CARD 4: ADD A FRIEND */}

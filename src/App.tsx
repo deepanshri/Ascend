@@ -90,6 +90,7 @@ import { RemindersView } from './components/RemindersView';
 import { ReportView } from './components/ReportView';
 import { FriendsFeed } from './components/FriendsFeed';
 import { PersonalView } from './components/PersonalView';
+import { ScreenHeader, SCREEN_INSET_CLASS } from './components/ScreenHeader';
 import { SettingsView } from './components/SettingsView';
 import { AddHabitModal } from './components/AddHabitModal';
 import { HabitDetailModal } from './components/HabitDetailModal';
@@ -1493,84 +1494,18 @@ export default function App() {
         id="mobile-viewport"
         className="relative w-full h-full overflow-hidden"
       >
-        <header
-          className={`absolute top-0 left-0 right-0 z-30 px-4 pt-[max(0.25rem,env(safe-area-inset-top))] bg-canvas backdrop-blur-md ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
-          style={{
-            transform: isNavVisible ? 'translateY(0)' : 'translateY(-100%)',
-            transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            pointerEvents: isNavVisible && !longPressedHabitId ? 'auto' : 'none',
-          }}
-        >
-          <div
-            id="top-brand-settings-bar"
-            className="flex items-center justify-between px-1 mt-2 mb-2 h-[44px]"
-          >
-            <div className="flex items-center space-x-2">
-              <h1 className="text-[20px] font-black tracking-tight text-slate-900 dark:text-white flex items-center space-x-1.5">
-                <span className="text-emerald-800 dark:text-blue-400">Ascend</span>
-              </h1>
-              {session.isGuest ? (
-                <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-bold">
-                  Guest
-                </span>
-              ) : session.syncStatus === 'syncing' ? (
-                <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-bold">
-                  Syncing
-                </span>
-              ) : session.syncStatus === 'synced' ? (
-                <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-blue-950/60 text-emerald-800 dark:text-blue-300 border border-emerald-200 dark:border-blue-800 font-bold">
-                  Synced
-                </span>
-              ) : (
-                <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 font-bold">
-                  {session.syncStatus === 'local' ? 'Local' : 'Offline'}
-                </span>
-              )}
-              {examShieldActive && (
-                <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-blue-950 text-emerald-900 dark:text-blue-200 font-bold">
-                  🛡️ Shield Active
-                </span>
-              )}
-            </div>
-
-            {/* Settings button in header */}
-            <button
-              id="top-settings-btn"
-              type="button"
-              onClick={() => setActiveTab(activeTab === 'settings' ? 'home' : 'settings')}
-              title="Settings & Preferences"
-              aria-label="Settings"
-              className={`p-2 rounded-xl transition cursor-pointer ${
-                activeTab === 'settings'
-                  ? 'bg-slate-900 dark:bg-blue-600 text-white'
-                  : 'bg-white/90 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800 shadow-xs'
-              }`}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-              </svg>
-            </button>
-          </div>
-        </header>
-
         {/* HOME TAB CONTENT */}
         {activeTab === 'home' && (
           <main
             id="app-main-content"
             onScroll={handleMainScroll}
-            className={`absolute inset-0 z-10 px-4 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-28 flex flex-col gap-3 overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
+            className={`absolute inset-0 z-10 px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col gap-3 overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
           >
+            <ScreenHeader
+              title="Home"
+              onOpenSettings={() => setActiveTab('settings')}
+            />
+
             {/* Radial Fan Calendar: date fan, momentum orb, and mascot */}
             <RadialFanCalendar
               selectedDay={selectedDay}
@@ -1692,6 +1627,7 @@ export default function App() {
               });
             }}
             onScroll={handleMainScroll}
+            onOpenSettings={() => setActiveTab('settings')}
           />
         )}
 
@@ -1706,6 +1642,7 @@ export default function App() {
             userEmail={session.email}
             userName={session.name}
             onOpenLedger={() => setIsLedgerModalOpen(true)}
+            onOpenSettings={() => setActiveTab('settings')}
             frictionAudits={frictionAudits}
             onScroll={handleMainScroll}
             isDark={isDark}
@@ -1729,8 +1666,8 @@ export default function App() {
             vacationModeActive={vacationModeActive}
             vacationStatus={vacationStatus}
             onToggleVacationMode={handleToggleVacationMode}
-            notificationWindows={notificationWindows}
-            onToggleNotificationWindow={handleToggleNotificationWindow}
+            momentumScore={momentumScore}
+            onOpenSettings={() => setActiveTab('settings')}
             onOpenLedger={() => setIsLedgerModalOpen(true)}
             onUpgradeGuest={() => setIsUpgradeModalOpen(true)}
             onSyncNow={async () => {
@@ -1769,6 +1706,7 @@ export default function App() {
             onDeleteAccount={handleDeleteAccount}
             onClearCache={handleClearCache}
             onScroll={handleMainScroll}
+            onOpenSettings={() => setActiveTab('home')}
           />
         )}
 

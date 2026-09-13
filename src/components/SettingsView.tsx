@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Habit, IdentityEvidence, ThemeMode, HabitCompletionEvent, MomentumEvent } from '../types';
 import { habitCategoryLabel } from '../utils/categories';
 import { NotificationWindowToggles } from './NotificationWindowToggles';
+import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import type { NotificationWindowKey, PsychologyNotificationWindows } from '../lib/notifications';
 
 interface SettingsViewProps {
@@ -25,6 +26,7 @@ interface SettingsViewProps {
   onDeleteAccount: () => void;
   onClearCache: () => void;
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
+  onOpenSettings?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -43,6 +45,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onDeleteAccount,
   onClearCache,
   onScroll,
+  onOpenSettings,
 }) => {
   const [startMonday, setStartMonday] = useState(true);
   const [resetFeedback, setResetFeedback] = useState(false);
@@ -171,11 +174,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   return (
-    <div id="settings-screen" onScroll={onScroll} className="absolute inset-0 px-4 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-24 space-y-3.5 overflow-y-auto overscroll-y-contain no-scrollbar select-none">
-      <section className="pt-1">
-        <h1 className="text-[22px] font-bold text-slate-900 dark:text-white tracking-tight leading-tight">Settings</h1>
-        <p className="text-slate-500 dark:text-slate-400 text-[11.5px] font-normal">Theme, data controls & account</p>
-      </section>
+    <div id="settings-screen" onScroll={onScroll} className={`absolute inset-0 px-4 ${SCREEN_INSET_CLASS} pb-24 space-y-3.5 overflow-y-auto overscroll-y-contain no-scrollbar select-none`}>
+      <ScreenHeader
+        title="Settings"
+        subtitle="Theme, data controls & account"
+        titleClassName="text-[22px] font-bold text-slate-900 dark:text-white tracking-tight leading-tight"
+        onOpenSettings={onOpenSettings}
+        settingsActive
+      />
 
       {/* Theme Controls */}
       <section className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/90 dark:border-slate-800 shadow-sm space-y-2.5">

@@ -12,6 +12,7 @@ import {
 import { readSleepSnapshot, sleepRingRate, SLEEP_TARGET_HOURS, type SleepSnapshot } from '../lib/health';
 import { buildReportCsv, downloadCsvFile } from '../lib/reportExport';
 import { FriendsFeed } from './FriendsFeed';
+import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
 
 interface ReportViewProps {
@@ -23,6 +24,7 @@ interface ReportViewProps {
   userEmail?: string;
   userName?: string;
   onOpenLedger: () => void;
+  onOpenSettings?: () => void;
   frictionAudits: FrictionAudit[];
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
   isDark?: boolean;
@@ -122,6 +124,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
   userEmail = '',
   userName = '',
   onOpenLedger,
+  onOpenSettings,
   frictionAudits,
   onScroll,
   isDark = false,
@@ -331,41 +334,43 @@ export const ReportView: React.FC<ReportViewProps> = ({
     <div
       id="report-screen"
       onScroll={onScroll}
-      className="absolute inset-0 px-4.5 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-28 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none max-w-md mx-auto"
+      className={`absolute inset-0 px-4.5 ${SCREEN_INSET_CLASS} pb-28 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none max-w-md mx-auto`}
     >
-      <section className="flex items-start justify-between pt-1">
-        <div>
-          <h1 className="text-[32px] font-black text-slate-900 dark:text-white tracking-tight leading-none">Report</h1>
-          <p className="text-[13px] text-slate-500 dark:text-slate-400 font-normal mt-1">Your progress, in perspective.</p>
-        </div>
-        <button
-          id="download-report-csv-btn"
-          type="button"
-          onClick={() => void handleDownloadCSV()}
-          disabled={exporting}
-          className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2 px-3 flex items-center space-x-2.5 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 active:scale-95 transition cursor-pointer disabled:opacity-60"
-          title="Download Report (CSV)"
-        >
-          <div className="w-5 h-5 flex items-center justify-center text-slate-800 dark:text-slate-200 shrink-0">
-            {downloadSuccess ? (
-              <svg className="w-5 h-5 text-emerald-600 dark:text-blue-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5 text-slate-800 dark:text-slate-200" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-            )}
-          </div>
-          <div className="text-left leading-[1.1]">
-            <div className="text-[11.5px] font-bold text-slate-900 dark:text-white">
-              {exporting ? 'Exporting' : downloadSuccess ? 'Exported' : 'Download'}
+      <ScreenHeader
+        title="Report"
+        subtitle="Your progress, in perspective."
+        titleClassName="text-[32px] font-black text-slate-900 dark:text-white tracking-tight leading-none"
+        onOpenSettings={onOpenSettings}
+        actions={
+          <button
+            id="download-report-csv-btn"
+            type="button"
+            onClick={() => void handleDownloadCSV()}
+            disabled={exporting}
+            className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2 px-3 flex items-center space-x-2.5 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 active:scale-95 transition cursor-pointer disabled:opacity-60"
+            title="Download Report (CSV)"
+          >
+            <div className="w-5 h-5 flex items-center justify-center text-slate-800 dark:text-slate-200 shrink-0">
+              {downloadSuccess ? (
+                <svg className="w-5 h-5 text-emerald-600 dark:text-blue-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5 text-slate-800 dark:text-slate-200" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+              )}
             </div>
-            <div className="text-[11.5px] font-bold text-slate-900 dark:text-white">Report</div>
-            <div className="text-[9.5px] text-slate-400 dark:text-slate-500 font-medium">(CSV)</div>
-          </div>
-        </button>
-      </section>
+            <div className="text-left leading-[1.1]">
+              <div className="text-[11.5px] font-bold text-slate-900 dark:text-white">
+                {exporting ? 'Exporting' : downloadSuccess ? 'Exported' : 'Download'}
+              </div>
+              <div className="text-[11.5px] font-bold text-slate-900 dark:text-white">Report</div>
+              <div className="text-[9.5px] text-slate-400 dark:text-slate-500 font-medium">(CSV)</div>
+            </div>
+          </button>
+        }
+      />
 
       <section className="relative w-full flex flex-col items-center justify-center">
         <div className="relative w-full max-w-[340px] h-[210px] flex items-center justify-center">

@@ -7,6 +7,7 @@ import { ReminderCard } from './ReminderCard';
 import { ReminderLongPressOverlay } from './ReminderLongPressOverlay';
 import { EditReminderModal } from './EditReminderModal';
 import { DeleteReminderConfirmModal } from './DeleteReminderConfirmModal';
+import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 
 interface RemindersViewProps {
   reminders: StandaloneReminder[];
@@ -27,6 +28,7 @@ interface RemindersViewProps {
   onSyncReminders?: () => void;
   onRemindersHydrated?: (reminders: StandaloneReminder[]) => void;
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
+  onOpenSettings?: () => void;
 }
 
 export const RemindersView: React.FC<RemindersViewProps> = ({
@@ -41,6 +43,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
   userSession,
   onRemindersHydrated,
   onScroll,
+  onOpenSettings,
 }) => {
   // Bottom Sheet State for New Reminder
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
@@ -125,18 +128,14 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
     <div
       id="reminders-screen"
       onScroll={onScroll}
-      className="absolute inset-0 w-full px-4 pt-[calc(env(safe-area-inset-top)+4.25rem)] pb-28 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none"
+      className={`absolute inset-0 w-full px-4 ${SCREEN_INSET_CLASS} pb-28 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none`}
     >
-      {/* =========================================
-          HEADER
-          Title: "Reminders" with [+] action button on top row
-          Subtitle: "Standalone alerts & focus checkpoints" on second row
-         ========================================= */}
-      <header className="w-full pt-1">
-        <div className="w-full flex items-center justify-between">
-          <h1 className="text-[28px] sm:text-[30px] font-black text-slate-900 dark:text-white tracking-tight leading-tight text-left">
-            Reminders
-          </h1>
+      <ScreenHeader
+        title="Reminders"
+        subtitle="Standalone alerts & focus checkpoints"
+        titleClassName="text-[28px] sm:text-[30px] font-black text-slate-900 dark:text-white tracking-tight leading-tight text-left"
+        onOpenSettings={onOpenSettings}
+        actions={
           <motion.button
             id="new-reminder-btn"
             type="button"
@@ -146,7 +145,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
             onClick={handleOpenBottomSheet}
             aria-label="New Reminder"
             title="New Reminder"
-            className="w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-blue-400 text-emerald-700 dark:text-blue-400 shadow-xs hover:bg-emerald-50 dark:hover:bg-blue-950/50 hover:border-emerald-400 cursor-pointer flex items-center justify-center shrink-0 ml-auto"
+            className="w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-blue-400 text-emerald-700 dark:text-blue-400 shadow-xs hover:bg-emerald-50 dark:hover:bg-blue-950/50 hover:border-emerald-400 cursor-pointer flex items-center justify-center shrink-0"
           >
             <svg
               className="w-4 h-4 stroke-[2.5] text-emerald-700 dark:text-blue-400"
@@ -157,11 +156,8 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
           </motion.button>
-        </div>
-        <p className="text-[13px] text-slate-500 dark:text-slate-400 font-normal mt-1 leading-snug text-left">
-          Standalone alerts & focus checkpoints
-        </p>
-      </header>
+        }
+      />
 
       {/* =========================================
           REMINDERS LIST

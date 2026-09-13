@@ -4,6 +4,7 @@ import { habitCategoryBadge } from '../utils/categories';
 import { getTodayDayIndex, isoDateForDayIndex, toISODate } from '../utils/dates';
 import { HabitLogRow, mapHabitLogRowToEvent } from '../utils/momentum';
 import { isSeedHabitId, SEED_HABIT_IDS } from '../data/initialHabits';
+import { MAX_ACTIVE_HABITS } from './protection';
 
 function canSync(userId?: string | null): boolean {
   return Boolean(isSupabaseConfigured && supabase && userId && !userId.startsWith('guest_'));
@@ -187,8 +188,8 @@ export async function insertHabitToSupabase(
   if (isSeedHabitId(habit.id)) return false;
   if (!canSync(userId) || !supabase) return false;
   const remoteCount = await countActiveHabitsRemote(userId);
-  if (remoteCount != null && remoteCount >= 20 && !habit.archived) {
-    console.warn('Maximum limit of 20 active habits reached.');
+  if (remoteCount != null && remoteCount >= MAX_ACTIVE_HABITS && !habit.archived) {
+    console.warn(`Maximum limit of ${MAX_ACTIVE_HABITS} active habits reached.`);
     return false;
   }
   try {
