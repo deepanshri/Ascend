@@ -10,8 +10,8 @@ import {
   type KeystoneCorrelation,
 } from '../lib/keystone';
 import { readSleepSnapshot, sleepRingRate, SLEEP_TARGET_HOURS, type SleepSnapshot } from '../lib/health';
-import { loadFriendsFeed } from '../lib/friends';
 import { buildReportCsv, downloadCsvFile } from '../lib/reportExport';
+import { FriendsFeed } from './FriendsFeed';
 import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
 
 interface ReportViewProps {
@@ -19,6 +19,9 @@ interface ReportViewProps {
   evidenceList: IdentityEvidence[];
   identityVoteCount?: number;
   userId?: string | null;
+  isGuest?: boolean;
+  userEmail?: string;
+  userName?: string;
   onOpenLedger: () => void;
   frictionAudits: FrictionAudit[];
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
@@ -115,6 +118,9 @@ export const ReportView: React.FC<ReportViewProps> = ({
   evidenceList,
   identityVoteCount,
   userId,
+  isGuest = true,
+  userEmail = '',
+  userName = '',
   onOpenLedger,
   frictionAudits,
   onScroll,
@@ -154,8 +160,6 @@ export const ReportView: React.FC<ReportViewProps> = ({
       })),
     [keystones, habits, momentumEvents]
   );
-
-  const friends = useMemo(() => loadFriendsFeed(), []);
 
   useEffect(() => {
     setVoteFloor((prev) => Math.max(prev, replicaVotes, remoteVoteCount ?? 0));
@@ -647,31 +651,13 @@ export const ReportView: React.FC<ReportViewProps> = ({
         )}
       </section>
 
-      <section className="bg-white dark:bg-slate-900 rounded-2xl p-4.5 border border-slate-100 dark:border-slate-800 shadow-xs space-y-3">
-        <h2 className="text-[16px] font-extrabold text-slate-900 dark:text-white tracking-tight">Friends Feed</h2>
-        {friends.length === 0 ? (
-          <p className="text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
-            No friends yet. Add accountability buddies from Personal.
-          </p>
-        ) : (
-          <div className="space-y-1.5">
-            {friends.map((friend) => (
-              <div
-                key={friend.id}
-                className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 flex items-center justify-between"
-              >
-                <div className="flex items-center space-x-2">
-                  <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center justify-center">
-                    {friend.name.charAt(0).toUpperCase()}
-                  </div>
-                  <span className="font-semibold text-[13px] text-slate-800 dark:text-slate-200">{friend.name}</span>
-                </div>
-                <span className="text-[12px] font-bold text-slate-600 dark:text-slate-300 tabular-nums">{friend.momentum}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      <FriendsFeed
+        userId={userId}
+        isGuest={isGuest}
+        userEmail={userEmail}
+        userName={userName}
+        variant="full"
+      />
     </div>
   );
 };

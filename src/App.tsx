@@ -88,6 +88,7 @@ import { HabitCard } from './components/HabitCard';
 import { QuoteCard } from './components/QuoteCard';
 import { RemindersView } from './components/RemindersView';
 import { ReportView } from './components/ReportView';
+import { FriendsFeed } from './components/FriendsFeed';
 import { PersonalView } from './components/PersonalView';
 import { SettingsView } from './components/SettingsView';
 import { AddHabitModal } from './components/AddHabitModal';
@@ -1653,6 +1654,14 @@ export default function App() {
                 ))
               )}
             </section>
+
+            <FriendsFeed
+              userId={session.id}
+              isGuest={session.isGuest}
+              userEmail={session.email}
+              userName={session.name}
+              variant="drawer"
+            />
           </main>
         )}
 
@@ -1693,6 +1702,9 @@ export default function App() {
             evidenceList={evidenceList}
             identityVoteCount={displayedIdentityVotes}
             userId={session.id}
+            isGuest={session.isGuest}
+            userEmail={session.email}
+            userName={session.name}
             onOpenLedger={() => setIsLedgerModalOpen(true)}
             frictionAudits={frictionAudits}
             onScroll={handleMainScroll}

@@ -1,30 +1,335 @@
+import { isSupabaseConfigured, supabase } from './supabase';
+
+export type FriendStatus = 'pending' | 'accepted';
+
+export interface ProfileDirectoryHit {
+  id: string;
+  username: string;
+  email: string;
+  displayName: string;
+}
+
+export interface FriendEdge {
+  id: string;
+  userId: string;
+  friendId: string;
+  status: FriendStatus;
+  createdAt: string;
+  peerId: string;
+  peerName: string;
+}
+
+export interface FriendActivityItem {
+  id: string;
+  friendId: string;
+  friendName: string;
+  kind: 'habit' | 'milestone';
+  text: string;
+  timestamp: number;
+}
+
+const IDENTITY_STAGE_THRESHOLDS = [1, 10, 25, 50, 100];
+
+function canUse(userId?: string | null): boolean {
+  return Boolean(isSupabaseConfigured && supabase && userId && !userId.startsWith('guest_'));
+}
+
+export function displayNameFromProfile(row: {
+  display_name?: string | null;
+  username?: string | null;
+  email?: string | null;
+}): string {
+  const name = String(row.display_name || '').trim();
+  if (name) return name;
+  const username = String(row.username || '').trim();
+  if (username) return username;
+  const email = String(row.email || '').trim();
+  if (email.includes('@')) return email.split('@')[0];
+  return email || 'Friend';
+}
+
+export function identityStageFromVotes(votes: number): number {
+  if (votes >= 100) return 5;
+  if (votes >= 50) return 4;
+  if (votes >= 25) return 3;
+  if (votes >= 10) return 2;
+  if (votes >= 1) return 1;
+  return 0;
+}
+
+function stageUnlockedAt(previousVotes: number, nextVotes: number): number | null {
+  for (const threshold of IDENTITY_STAGE_THRESHOLDS) {
+    if (previousVotes < threshold && nextVotes >= threshold) {
+      return identityStageFromVotes(nextVotes);
+    }
+  }
+  return null;
+}
+
+export async function ensureProfileDirectory(userId: string, email?: string, name?: string): Promise<void> {
+  if (!canUse(userId) || !supabase) return;
+  const username = (email || '').split('@')[0]?.trim() || undefined;
+  const displayName = (name || '').trim() || username;
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, username, email, display_name')
+      .eq('id', userId)
+      .maybeSingle();
+    await supabase.from('profiles').upsert({
+      id: userId,
+      email: data?.email || email || null,
+      username: data?.username || username || null,
+      display_name: data?.display_name || displayName || null,
+    });
+  } catch {
+    // Offline / missing table: FriendsFeed shows an empty signed-in state.
+  }
+}
+
+export async function searchProfiles(query: string): Promise<ProfileDirectoryHit[]> {
+  const q = query.trim();
+  if (!supabase || q.length < 2) return [];
+  try {
+    const { data, error } = await supabase.rpc('search_profiles', { query: q });
+    if (error) {
+      console.warn('search_profiles failed:', error.message);
+      return [];
+    }
+    return (data || [])
+      .map((row: { id?: string; username?: string; email?: string; display_name?: string }) => ({
+        id: String(row.id || ''),
+        username: String(row.username || ''),
+        email: String(row.email || ''),
+        displayName: displayNameFromProfile(row),
+      }))
+      .filter((row) => row.id);
+  } catch {
+    return [];
+  }
+}
+
+async function loadProfileMap(ids: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (!supabase || ids.length === 0) return names;
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, username, email, display_name')
+    .in('id', ids);
+  (data || []).forEach((row) => {
+    names.set(String(row.id), displayNameFromProfile(row));
+  });
+  return names;
+}
+
+function mapEdge(
+  row: { id?: string; user_id?: string; friend_id?: string; status?: string; created_at?: string },
+  selfId: string,
+  names: Map<string, string>
+): FriendEdge | null {
+  const userId = String(row.user_id || '');
+  const friendId = String(row.friend_id || '');
+  const status = row.status === 'accepted' ? 'accepted' : row.status === 'pending' ? 'pending' : null;
+  if (!row.id || !userId || !friendId || !status) return null;
+  const peerId = userId === selfId ? friendId : userId;
+  return {
+    id: String(row.id),
+    userId,
+    friendId,
+    status,
+    createdAt: String(row.created_at || ''),
+    peerId,
+    peerName: names.get(peerId) || 'Friend',
+  };
+}
+
+export async function fetchFriendships(userId: string): Promise<FriendEdge[]> {
+  if (!canUse(userId) || !supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('friends')
+      .select('id, user_id, friend_id, status, created_at')
+      .or(`user_id.eq.${userId},friend_id.eq.${userId}`)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('friends fetch failed:', error.message);
+      return [];
+    }
+    const rows = data || [];
+    const peerIds = Array.from(
+      new Set(
+        rows
+          .map((row) => (row.user_id === userId ? String(row.friend_id) : String(row.user_id)))
+          .filter(Boolean)
+      )
+    );
+    const names = await loadProfileMap(peerIds);
+    return rows
+      .map((row) => mapEdge(row, userId, names))
+      .filter((row): row is FriendEdge => row !== null);
+  } catch {
+    return [];
+  }
+}
+
+export function acceptedFriendIds(edges: FriendEdge[], userId: string): string[] {
+  return edges.filter((edge) => edge.status === 'accepted').map((edge) => edge.peerId || (edge.userId === userId ? edge.friendId : edge.userId));
+}
+
+export function incomingPending(edges: FriendEdge[], userId: string): FriendEdge[] {
+  return edges.filter((edge) => edge.status === 'pending' && edge.friendId === userId);
+}
+
+export function outgoingPending(edges: FriendEdge[], userId: string): FriendEdge[] {
+  return edges.filter((edge) => edge.status === 'pending' && edge.userId === userId);
+}
+
+export async function sendFriendRequest(userId: string, friendId: string): Promise<{ ok: boolean; message: string }> {
+  if (!canUse(userId) || !supabase) return { ok: false, message: 'Sign in to add friends.' };
+  if (userId === friendId) return { ok: false, message: 'You cannot add yourself.' };
+  try {
+    const existing = await fetchFriendships(userId);
+    const overlap = existing.find(
+      (edge) =>
+        (edge.userId === userId && edge.friendId === friendId) ||
+        (edge.userId === friendId && edge.friendId === userId)
+    );
+    if (overlap?.status === 'accepted') return { ok: false, message: 'Already friends.' };
+    if (overlap?.status === 'pending' && overlap.userId === userId) {
+      return { ok: false, message: 'Request already sent.' };
+    }
+    if (overlap?.status === 'pending' && overlap.friendId === userId) {
+      const accepted = await respondToFriendRequest(overlap.id, 'accepted');
+      return accepted ? { ok: true, message: 'Friend request accepted.' } : { ok: false, message: 'Could not accept request.' };
+    }
+    const { error } = await supabase.from('friends').insert({
+      user_id: userId,
+      friend_id: friendId,
+      status: 'pending',
+    });
+    if (error) {
+      console.warn('friend request failed:', error.message);
+      return { ok: false, message: 'Could not send request.' };
+    }
+    return { ok: true, message: 'Friend request sent.' };
+  } catch {
+    return { ok: false, message: 'Could not send request.' };
+  }
+}
+
+export async function respondToFriendRequest(edgeId: string, status: 'accepted' | 'declined'): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    if (status === 'declined') {
+      const { error } = await supabase.from('friends').delete().eq('id', edgeId);
+      return !error;
+    }
+    const { error } = await supabase.from('friends').update({ status: 'accepted' }).eq('id', edgeId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+async function loadHabitNames(friendIds: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (!supabase || friendIds.length === 0) return names;
+  const { data } = await supabase.from('habits').select('id, title, name, user_id').in('user_id', friendIds);
+  (data || []).forEach((row) => {
+    const title = String(row.title || row.name || '').trim();
+    if (row.id && title) names.set(String(row.id), title);
+  });
+  return names;
+}
+
+async function loadVoteTotals(friendIds: string[]): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  if (!supabase || friendIds.length === 0) return totals;
+  await Promise.all(
+    friendIds.map(async (friendId) => {
+      const { count } = await supabase!
+        .from('momentum_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', friendId)
+        .in('event_type', ['full', 'fallback']);
+      totals.set(friendId, count ?? 0);
+    })
+  );
+  return totals;
+}
+
+export async function fetchFriendActivity(userId: string, edges: FriendEdge[]): Promise<FriendActivityItem[]> {
+  if (!canUse(userId) || !supabase) return [];
+  const friendIds = acceptedFriendIds(edges, userId);
+  if (friendIds.length === 0) return [];
+
+  try {
+    const [{ data: events, error }, habitNames] = await Promise.all([
+      supabase
+        .from('momentum_events')
+        .select('id, user_id, habit_id, event_type, timestamp')
+        .in('user_id', friendIds)
+        .in('event_type', ['full', 'fallback'])
+        .order('timestamp', { ascending: false })
+        .limit(80),
+      loadHabitNames(friendIds),
+    ]);
+
+    if (error) {
+      console.warn('friend momentum_events fetch failed:', error.message);
+      return [];
+    }
+
+    const recent = events || [];
+    const activeFriendIds = Array.from(new Set(recent.map((row) => String(row.user_id || '')).filter(Boolean)));
+    const remainingVotes = await loadVoteTotals(activeFriendIds);
+    const names = new Map(edges.map((edge) => [edge.peerId, edge.peerName]));
+    const items: FriendActivityItem[] = [];
+
+    recent.forEach((row) => {
+      const friendId = String(row.user_id || '');
+      const friendName = names.get(friendId) || 'Friend';
+      const timestamp = Date.parse(String(row.timestamp)) || Date.now();
+      const current = remainingVotes.get(friendId) ?? 0;
+      const previous = Math.max(0, current - 1);
+      const unlocked = stageUnlockedAt(previous, current);
+      if (unlocked && unlocked >= 2) {
+        items.push({
+          id: `stage-${friendId}-${unlocked}-${row.id}`,
+          friendId,
+          friendName,
+          kind: 'milestone',
+          text: `${friendName} unlocked Identity Stage ${unlocked}`,
+          timestamp,
+        });
+      }
+      remainingVotes.set(friendId, previous);
+
+      const habitName = habitNames.get(String(row.habit_id || '')) || 'a habit';
+      const verb = row.event_type === 'fallback' ? 'protected momentum on' : 'completed';
+      items.push({
+        id: String(row.id),
+        friendId,
+        friendName,
+        kind: 'habit',
+        text: `${friendName} ${verb} ${habitName}`,
+        timestamp,
+      });
+    });
+
+    return items.slice(0, 40);
+  } catch {
+    return [];
+  }
+}
+
+/** @deprecated Local seed list. Use fetchFriendships / FriendsFeed. */
 export interface FriendFeedItem {
   id: string;
   name: string;
   momentum: number;
 }
 
-const FRIENDS_KEY = 'ascend_friends_list';
-const SEED_FRIEND_ID = 'f-1';
-
 export function loadFriendsFeed(): FriendFeedItem[] {
-  try {
-    const raw = localStorage.getItem(FRIENDS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((item: { id?: string; name?: string; momentum?: number }) => ({
-        id: String(item?.id || ''),
-        name: String(item?.name || '').trim(),
-        momentum: Number(item?.momentum),
-      }))
-      .filter((item) => item.id && item.name && item.id !== SEED_FRIEND_ID)
-      .map((item) => ({
-        ...item,
-        momentum: Number.isFinite(item.momentum) ? item.momentum : 0,
-      }));
-  } catch {
-    return [];
-  }
+  return [];
 }

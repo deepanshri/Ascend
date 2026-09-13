@@ -13,13 +13,13 @@ import {
   ChevronRight,
   X,
   Check,
-  Share2,
   Send,
   HelpCircle,
   Shield,
   Bell,
 } from 'lucide-react';
 import { IdentityEvidence, UserSession } from '../types';
+import { FriendsFeed } from './FriendsFeed';
 import { NotificationWindowToggles } from './NotificationWindowToggles';
 import {
   DEFAULT_NOTIFICATION_WINDOWS,
@@ -119,23 +119,6 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
   // Temp Becoming goal
   const [tempBecoming, setTempBecoming] = useState(becomingGoal);
 
-  // Add friend state
-  const [friendCodeInput, setFriendCodeInput] = useState('');
-  const [friendsList, setFriendsList] = useState<Array<{ id: string; name: string; momentum: number }>>(() => {
-    try {
-      const saved = localStorage.getItem('ascend_friends_list');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return parsed.map((item: { id: string; name: string; momentum?: number }) => ({
-          id: item.id,
-          name: item.name,
-          momentum: item.momentum ?? 88,
-        }));
-      }
-    } catch {}
-    return [{ id: 'f-1', name: 'Sarah Chen', momentum: 88 }];
-  });
-
   // Help & Feedback state
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackSent, setFeedbackSent] = useState(false);
@@ -150,13 +133,6 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       localStorage.setItem('ascend_personal_interests', JSON.stringify(selectedInterests));
     } catch {}
   }, [selectedInterests]);
-
-  // Persist friends
-  useEffect(() => {
-    try {
-      localStorage.setItem('ascend_friends_list', JSON.stringify(friendsList));
-    } catch {}
-  }, [friendsList]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -199,19 +175,6 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
         prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
       );
     }
-  };
-
-  const handleAddFriend = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!friendCodeInput.trim()) return;
-    const newFriend = {
-      id: `f-${Date.now()}`,
-      name: friendCodeInput.trim(),
-      momentum: 75,
-    };
-    setFriendsList((prev) => [...prev, newFriend]);
-    setFriendCodeInput('');
-    showToast(`Added ${newFriend.name} as friend!`);
   };
 
   const handleSendFeedback = (e: React.FormEvent) => {
@@ -784,102 +747,15 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
         </div>
       )}
 
-      {/* 3. ADD A FRIEND MODAL */}
       {isFriendModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="relative w-full max-w-[390px] bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center space-x-2">
-                <Users className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">
-                  Add a Friend
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsFriendModalOpen(false)}
-                className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-[13px]">
-              {/* Your Invite Code */}
-              <div className="p-3 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/60 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                    Your Friend Code
-                  </span>
-                  <div className="text-sm font-mono font-black text-slate-900 dark:text-white">
-                    ASCEND-ALEX-88
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard?.writeText('ASCEND-ALEX-88');
-                    showToast('Invite code copied!');
-                  }}
-                  className="p-2 rounded-xl bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-xs cursor-pointer active:scale-95"
-                  title="Copy code"
-                >
-                  <Share2 className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Add friend form */}
-              <form onSubmit={handleAddFriend} className="space-y-2">
-                <label className="block text-[11.5px] font-bold text-slate-600 dark:text-slate-300">
-                  Enter Friend&apos;s Name or Code
-                </label>
-                <div className="flex space-x-2">
-                  <input
-                    type="text"
-                    value={friendCodeInput}
-                    onChange={(e) => setFriendCodeInput(e.target.value)}
-                    placeholder="e.g. Priya Sharma or CODE-123"
-                    className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:border-emerald-500"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer"
-                  >
-                    Add
-                  </button>
-                </div>
-              </form>
-
-              {/* Connected Friends List */}
-              <div className="pt-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1.5">
-                  Accountability Buddies ({friendsList.length})
-                </span>
-                <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                  {friendsList.map((f) => (
-                    <div
-                      key={f.id}
-                      className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 flex items-center justify-between"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center justify-center">
-                          {f.name.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">
-                          {f.name}
-                        </span>
-                      </div>
-                      <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center space-x-1">
-                        <span>⚡</span>
-                        <span>{f.momentum ?? 88}% momentum</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <FriendsFeed
+          userId={userSession.id}
+          isGuest={userSession.isGuest}
+          userEmail={userSession.email}
+          userName={name || userSession.name}
+          variant="modal"
+          onClose={() => setIsFriendModalOpen(false)}
+        />
       )}
 
       {/* 4. HELP & FEEDBACK MODAL */}
