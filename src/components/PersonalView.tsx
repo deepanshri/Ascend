@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Shield,
 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { IdentityEvidence, UserSession } from '../types';
 import { FriendsFeed } from './FriendsFeed';
@@ -846,72 +847,77 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
             </div>
       </MotionModal>
 
-      <AnimatePresence>
-        {isAvatarSheetOpen && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 backdrop-blur-xs transform-gpu"
-            initial={overlayFade.initial}
-            animate={overlayFade.animate}
-            exit={overlayFade.exit}
-            transition={overlayFade.transition}
-            onClick={() => setIsAvatarSheetOpen(false)}
-            role="presentation"
-          >
+      {createPortal(
+        <AnimatePresence>
+          {isAvatarSheetOpen && (
             <motion.div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="avatar-sheet-title"
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-              onClick={(event) => event.stopPropagation()}
-              className="w-full max-w-lg rounded-t-2xl bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-lg"
+              className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-900/40 backdrop-blur-xs transform-gpu"
+              initial={overlayFade.initial}
+              animate={overlayFade.animate}
+              exit={overlayFade.exit}
+              transition={overlayFade.transition}
+              onClick={() => setIsAvatarSheetOpen(false)}
+              role="presentation"
             >
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h3 id="avatar-sheet-title" className="text-[16px] font-bold text-slate-900 dark:text-white">
-                  Choose Avatar
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setIsAvatarSheetOpen(false)}
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
-                  aria-label="Close avatar picker"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="grid grid-cols-4 gap-3">
-                {AVATAR_OPTIONS.map((option) => {
-                  const selected = option.id === avatarId;
-                  return (
-                    <motion.button
-                      key={option.id}
-                      type="button"
-                      whileTap={tapPress}
-                      onClick={() => handleSelectAvatar(option.id)}
-                      aria-pressed={selected}
-                      aria-label={option.label}
-                      className={`aspect-square w-full p-1 rounded-2xl cursor-pointer ${
-                        selected
-                          ? 'ring-2 ring-green-500 dark:ring-blue-500'
-                          : 'ring-1 ring-transparent hover:ring-slate-200 dark:hover:ring-slate-700'
-                      }`}
-                    >
-                      <ProfileAvatar
-                        value={option.id}
-                        src={option.src}
-                        alt=""
-                        className="flex h-full w-full rounded-xl"
-                      />
-                    </motion.button>
-                  );
-                })}
-              </div>
+              <motion.div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="avatar-sheet-title"
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                onClick={(event) => event.stopPropagation()}
+                className="w-full max-w-lg rounded-t-2xl bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-lg"
+              >
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <h3 id="avatar-sheet-title" className="text-[16px] font-bold text-slate-900 dark:text-white">
+                    Choose Avatar
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setIsAvatarSheetOpen(false)}
+                    className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                    aria-label="Close avatar picker"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="max-h-[70vh] overflow-y-auto overscroll-contain pb-28">
+                  <div className="grid grid-cols-4 gap-3">
+                    {AVATAR_OPTIONS.map((option) => {
+                      const selected = option.id === avatarId;
+                      return (
+                        <motion.button
+                          key={option.id}
+                          type="button"
+                          whileTap={tapPress}
+                          onClick={() => handleSelectAvatar(option.id)}
+                          aria-pressed={selected}
+                          aria-label={option.label}
+                          className={`aspect-square w-full p-1 rounded-2xl cursor-pointer ${
+                            selected
+                              ? 'ring-2 ring-green-500 dark:ring-blue-500'
+                              : 'ring-1 ring-transparent hover:ring-slate-200 dark:hover:ring-slate-700'
+                          }`}
+                        >
+                          <ProfileAvatar
+                            value={option.id}
+                            src={option.src}
+                            alt=""
+                            className="flex h-full w-full rounded-xl"
+                          />
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 };
