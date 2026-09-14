@@ -8,6 +8,7 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import kotlin.jvm.JvmStatic
 
 @CapacitorPlugin(name = "WidgetBridge")
 class WidgetBridgePlugin : Plugin() {
@@ -57,6 +58,7 @@ class WidgetBridgePlugin : Plugin() {
         @Volatile
         private var instance: WidgetBridgePlugin? = null
 
+        @JvmStatic
         fun dispatchIntent(context: Context?, intent: Intent?) {
             if (context == null || intent == null) return
             val url = intent.data?.toString()
@@ -69,6 +71,7 @@ class WidgetBridgePlugin : Plugin() {
             plugin.notifyListeners("deepLink", data, true)
         }
 
+        @JvmStatic
         fun emitLatestAction(context: Context) {
             val pending = WidgetStore.readPending(context)
             if (pending.length() == 0) return

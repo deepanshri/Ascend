@@ -16,8 +16,26 @@ interface MascotProps {
   animate?: boolean;
   momentumScore?: number;
   celebrate?: boolean;
-  /** When true, CSS x-drift is disabled so the Home track owns horizontal roam. */
+  /** When true, CSS x-drift is disabled so the parent 2D random walk owns position. */
   roam?: boolean;
+}
+
+/** Smooth roam duration between two random grid targets, in seconds. */
+export function randomWalkDuration(minSeconds = 3, maxSeconds = 6): number {
+  return minSeconds + Math.random() * Math.max(0, maxSeconds - minSeconds);
+}
+
+/** Next 2D target inside the decorative dot-grid bounds (viewBox units). */
+export function randomWalkTarget(
+  minX: number,
+  maxX: number,
+  minY: number,
+  maxY: number
+): { x: number; y: number } {
+  return {
+    x: minX + Math.random() * Math.max(0, maxX - minX),
+    y: minY + Math.random() * Math.max(0, maxY - minY),
+  };
 }
 
 /** Map a 0–100 momentum score to the mascot's facing angle. */

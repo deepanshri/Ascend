@@ -375,8 +375,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     const axis = gestureAxisRef.current;
     const offset = swipeOffsetRef.current;
     if (axis !== 'vertical' && offset > threshold) {
-      // Swiped Right — App.appendMomentumLog inserts public.momentum_events (append-only)
-      // and upserts public.habit_logs for the daily card projection.
+      // Swiped Right — App.handleCompleteToday upserts today's habit_logs row and
+      // counts the Evidence Ledger once per habit per calendar day (uncheck decrements).
       if (isTodayDone) {
         // Accidental completion -> swiping right again resets it to normal!
         onResetToday(habit.id);

@@ -158,7 +158,10 @@ export function mergeMomentumEvents(local: MomentumEvent[], incoming: MomentumEv
   return Array.from(byId.values()).sort((a, b) => a.timestamp - b.timestamp);
 }
 
-/** Identity Ledger total = COUNT(*) where event_type IN ('full', 'fallback'). */
+/**
+ * Raw append-only vote rows (`full` / `fallback`). Displayed Evidence Ledger totals
+ * use unique (habit, calendar day) completion rows instead so toggles cannot stack.
+ */
 export function countIdentityVotes(events: MomentumEvent[]): number {
   let count = 0;
   for (const event of events) {

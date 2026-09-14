@@ -19,7 +19,6 @@ import {
   calculateDailyWeightedScore,
   calculateMomentumScore,
   collectMissedMomentumEvents,
-  countIdentityVotes,
   createMomentumEvent,
   deriveHabitsFromEventLog,
   mergeCompletionEvents,
@@ -73,6 +72,14 @@ import {
   type NotificationWindowKey,
   type PsychologyNotificationWindows,
 } from './lib/notifications';
+import {
+  displayedIdentityVoteCount,
+  hasMomentumVoteOnIso,
+  hasTodayLedgerEntry,
+  removeTodayEvidence,
+  replaceTodayCompletion,
+  upsertTodayEvidence,
+} from './services/ledgerService';
 import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
 import { WidgetBridge } from './lib/widgetBridge';
 import type { WidgetPendingAction, WidgetRoute } from './lib/widgetSync';
@@ -299,14 +306,6 @@ export default function App() {
     }
   });
   momentumEventsRef.current = momentumEvents;
-
-  const [identityVoteFloor, setIdentityVoteFloor] = useState(() => {
-    try {
-      return Math.max(0, Number(localStorage.getItem('ascend_identity_vote_floor') || 0) || 0);
-    } catch {
-      return 0;
-    }
-  });
 
   useEffect(() => {
     try {
@@ -724,19 +723,10 @@ export default function App() {
     });
   }, [momentumEvents, examShieldActive, vacationModeActive, habits]);
 
-  const identityVoteCount = useMemo(() => countIdentityVotes(momentumEvents), [momentumEvents]);
-
-  useEffect(() => {
-    setIdentityVoteFloor((prev) => {
-      const next = Math.max(prev, identityVoteCount);
-      try {
-        localStorage.setItem('ascend_identity_vote_floor', String(next));
-      } catch {}
-      return next;
-    });
-  }, [identityVoteCount]);
-
-  const displayedIdentityVotes = Math.max(identityVoteCount, identityVoteFloor);
+  const displayedIdentityVotes = useMemo(
+    () => displayedIdentityVoteCount(completionEvents, evidenceList, calendarOrigin),
+    [completionEvents, evidenceList, calendarOrigin]
+  );
 
   const completionEventsRef = useRef(completionEvents);
   const selectedInterestsRef = useRef(selectedInterests);
@@ -995,11 +985,8 @@ export default function App() {
 
     const isMicro = isFallback || activeFallbackIds.includes(habitId);
     const loggedDate = toISODate(calendarOrigin);
-
-    // Daily card projection can replace today's row; the momentum log always appends.
-    setCompletionEvents((prev) =>
-      prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
-    );
+    const alreadyCompletedToday = hasTodayLedgerEntry(completionEvents, habitId, loggedDate, calendarOrigin);
+    const alreadyVotedMomentum = hasMomentumVoteOnIso(momentumEvents, habitId, loggedDate);
 
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
 
@@ -1013,12 +1000,19 @@ export default function App() {
       timestamp: Date.now(),
     };
 
-    setCompletionEvents((prev) => [...prev, newEvent]);
+    // One completion row per (habit, calendar day). Re-checking after uncheck replaces, never stacks.
+    setCompletionEvents((prev) => replaceTodayCompletion(prev, newEvent, calendarOrigin));
     void upsertHabitLog(session?.id, newEvent).catch(() => {});
-    appendMomentumLog(createMomentumEvent(targetHabit, isMicro ? 'fallback' : 'full', loggedDate, newEvent.timestamp));
+
+    // momentum_events stays append-only; skip a second full/fallback row for the same local day.
+    if (!alreadyVotedMomentum) {
+      appendMomentumLog(createMomentumEvent(targetHabit, isMicro ? 'fallback' : 'full', loggedDate, newEvent.timestamp));
+    }
 
     const newEvidence: IdentityEvidence = {
-      id: `ev-${isMicro ? 'micro-' : ''}${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: alreadyCompletedToday
+        ? `ev-${habitId}-${loggedDate}`
+        : `ev-${isMicro ? 'micro-' : ''}${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       habitId,
       habitName: isMicro ? `${targetHabit.name} (Micro-Habit)` : targetHabit.name,
       identityStatement: isMicro
@@ -1027,10 +1021,11 @@ export default function App() {
       category: targetHabit.category || 'work',
       date: `${formatEvidenceDate()} • ${isMicro ? 'Fallback micro (50%)' : 'Completed (100%)'}`,
       dayNumber: todayDayIndex + 1,
+      loggedDate,
     };
-    setEvidenceList((evPrev) => [newEvidence, ...evPrev]);
+    setEvidenceList((evPrev) => upsertTodayEvidence(evPrev, newEvidence, loggedDate, calendarOrigin));
 
-    if (isMicro) {
+    if (isMicro && !alreadyCompletedToday) {
       const newAudit: FrictionAudit = {
         id: `fa-${Date.now()}`,
         date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -1077,6 +1072,7 @@ export default function App() {
       setCompletionEvents((prev) =>
         prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
       );
+      setEvidenceList((prev) => removeTodayEvidence(prev, habitId, loggedDate, calendarOrigin));
       void deleteHabitLog(session?.id, habitId, todayDayIndex).catch(() => {});
     }
 
@@ -1084,16 +1080,17 @@ export default function App() {
     showNotification('fallback');
   };
 
-  // GESTURE / TAP ACTION: Cancel today's card state. Momentum events and identity votes stay logged.
+  // GESTURE / TAP ACTION: Uncheck today. Daily ledger tally drops; historical momentum_events rows stay.
   const handleResetToday = (habitId: string) => {
     if (!isViewingToday) return;
     const loggedDate = toISODate(calendarOrigin);
     setCompletionEvents((prev) =>
       prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
     );
+    setEvidenceList((prev) => removeTodayEvidence(prev, habitId, loggedDate, calendarOrigin));
     void deleteHabitLog(session?.id, habitId, todayDayIndex).catch(() => {});
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
-    showNotification('Card reset — identity votes stay logged');
+    showNotification('Card reset');
   };
 
   // Add new habit (optimistic). Remote insert is performed by AddHabitModal.
@@ -1182,7 +1179,6 @@ export default function App() {
     setEvidenceList([]);
     setCompletionEvents([]);
     setMomentumEvents([]);
-    setIdentityVoteFloor(0);
     setActiveFallbackIds([]);
     localStorage.removeItem('habit_tracker_habits');
     localStorage.removeItem('habit_tracker_evidence');
@@ -2055,6 +2051,7 @@ export default function App() {
                 year: 'numeric',
               }),
               dayNumber: selectedDay,
+              loggedDate: toISODate(),
             };
             setEvidenceList((prev) => [newEv, ...prev]);
             appendMomentumLog(

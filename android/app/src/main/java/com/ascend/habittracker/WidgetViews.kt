@@ -47,7 +47,7 @@ object WidgetViews {
         R.id.habit_streak_1, R.id.habit_streak_2, R.id.habit_streak_3, R.id.habit_streak_4, R.id.habit_streak_5
     )
     private val identityLineIds = intArrayOf(
-        R.id.widget_identity_line_1, R.id.widget_identity_line_2, R.id.widget_identity_line_3, R.id.widget_identity_line_4
+        R.id.widget_identity_line_1, R.id.widget_identity_line_2
     )
 
     fun updateAll(context: Context) {

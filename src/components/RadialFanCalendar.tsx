@@ -150,23 +150,6 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
     return { ...h, x, y };
   });
 
-  const generateArcDots = (radius: number, count: number, start = 172, end = 8) => {
-    const dots = [];
-    for (let i = 0; i < count; i++) {
-      const frac = count > 1 ? i / (count - 1) : 0.5;
-      const angleDeg = start - frac * (start - end);
-      const rad = (angleDeg * Math.PI) / 180;
-      const x = cx + radius * Math.cos(rad);
-      const y = cy - radius * Math.sin(rad);
-      dots.push({ x, y, i });
-    }
-    return dots;
-  };
-
-  const layer2Dots = generateArcDots(62, 11);
-  const layer3Dots = generateArcDots(78, 13);
-  const layer4Dots = generateArcDots(94, 15);
-
   return (
     <section
       id="radial-calendar-widget"
@@ -216,54 +199,8 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
           </filter>
         </defs>
 
-        {/* ========================================================================= */}
-        {/* CONCENTRIC SEMICIRCLE DOTS                                               */}
-        {/* Inner decorative arcs stay in the SVG; outermost track is HTML/motion.   */}
-        {/* ========================================================================= */}
-        {/* LAYER 4: Upper Semicircle Arc (R = 94) */}
-        {layer4Dots.map((dot) => {
-          const isHighlighted = (dot.i + 2) % 3 === 0;
-          return (
-            <circle
-              key={`l4-${dot.i}`}
-              cx={dot.x}
-              cy={dot.y}
-              r={isHighlighted ? 3.8 : 3.0}
-              fill={isHighlighted ? dotColor : emptyDotStroke}
-              opacity={isHighlighted ? 0.8 : 0.48}
-            />
-          );
-        })}
-
-        {/* LAYER 3: Middle Semicircle Arc (R = 78) */}
-        {layer3Dots.map((dot) => {
-          const isFilled = dot.i % 2 === 0;
-          return (
-            <circle
-              key={`l3-${dot.i}`}
-              cx={dot.x}
-              cy={dot.y}
-              r={isFilled ? 4.0 : 3.2}
-              fill={isFilled ? dotColor : emptyDotStroke}
-              opacity={isFilled ? 0.85 : 0.58}
-            />
-          );
-        })}
-
-        {/* LAYER 2: Inner Semicircle Arc (R = 62) */}
-        {layer2Dots.map((dot) => {
-          const isFilled = dot.i % 3 !== 1;
-          return (
-            <circle
-              key={`l2-${dot.i}`}
-              cx={dot.x}
-              cy={dot.y}
-              r={isFilled ? 4.2 : 3.4}
-              fill={isFilled ? dotColor : emptyDotStroke}
-              opacity={isFilled ? 0.9 : 0.65}
-            />
-          );
-        })}
+        {/* Decorative layers 2–5 live in MascotDotTrack so 2D proximity can depress them. */}
+        {/* LAYER 1: DAILY PROGRESS HABIT DOTS stay in SVG (R = 46). */}
 
         {/* Subtle guide rail semicircle arch hugging over the momentum orb */}
         <path

@@ -61,6 +61,8 @@ export interface IdentityEvidence {
   category: HabitCategory;
   date: string;
   dayNumber: number;
+  /** YYYY-MM-DD local calendar day this vote belongs to. Used to undo today's tally. */
+  loggedDate?: string;
 }
 
 export interface StandaloneReminder {

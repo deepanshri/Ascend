@@ -1,5 +1,6 @@
 import { Preferences } from '@capacitor/preferences';
 import { Habit, HabitCompletionEvent, MomentumEvent, StandaloneReminder } from '../types';
+import { hasTodayLedgerEntry, uniqueTodayLedgerHabitIds } from '../services/ledgerService';
 import { addDaysIso, resolveEventIsoDate, toISODate } from '../utils/dates';
 import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
 import { isHabitScheduledOnIso, scheduledHabitsForDayIndex } from '../utils/schedule';
@@ -141,17 +142,13 @@ function formatReminderTime(time?: string): string {
 
 export function buildTodaysIdentityLedger(
   habits: Habit[],
-  momentumEvents: MomentumEvent[],
-  todayIso: string
+  completionEvents: HabitCompletionEvent[],
+  todayIso: string,
+  origin?: Date
 ): { points: number; lines: WidgetIdentityLine[] } {
-  const startMs = new Date(`${todayIso}T00:00:00`).getTime();
-  const todaysVotes = momentumEvents.filter((event) => {
-    if (event.eventType !== 'full' && event.eventType !== 'fallback') return false;
-    const iso = resolveMomentumEventDate(event);
-    if (iso !== todayIso) return false;
-    return event.timestamp >= startMs || iso === todayIso;
-  });
-  const points = todaysVotes.length;
+  const todayHabitIds = uniqueTodayLedgerHabitIds(completionEvents, todayIso, origin);
+  const doneSet = new Set(todayHabitIds);
+  const points = todayHabitIds.length;
   const byStatement = new Map<string, { done: number; scheduled: number }>();
 
   habits
@@ -159,10 +156,11 @@ export function buildTodaysIdentityLedger(
     .forEach((habit) => {
       const label = (habit.identityStatement || habit.name || 'Identity').trim();
       const scheduled = isHabitScheduledOnIso(habit, todayIso);
-      if (!scheduled && !todaysVotes.some((event) => event.habitId === habit.id)) return;
+      const done = doneSet.has(habit.id);
+      if (!scheduled && !done) return;
       const current = byStatement.get(label) || { done: 0, scheduled: 0 };
       if (scheduled) current.scheduled += 1;
-      if (todaysVotes.some((event) => event.habitId === habit.id)) current.done += 1;
+      if (done) current.done += 1;
       byStatement.set(label, current);
     });
 
@@ -172,7 +170,7 @@ export function buildTodaysIdentityLedger(
       detail: `${counts.done}/${Math.max(counts.scheduled, counts.done)} habits`,
     }))
     .filter((line) => line.detail !== '0/0 habits')
-    .slice(0, 4);
+    .slice(0, 2);
 
   return { points, lines };
 }
@@ -182,8 +180,8 @@ export function buildWidgetSnapshot(input: WidgetSnapshotInput): WidgetSnapshot 
   const origin = input.origin ?? new Date();
   const active = input.habits.filter((habit) => !habit.archived);
   const scheduledToday = scheduledHabitsForDayIndex(active, input.todayDayIndex, origin);
-  const habitsCompleted = scheduledToday.filter(
-    (habit) => bestScoreOnIso(habit.id, todayIso, input.momentumEvents, input.completionEvents) > 0
+  const habitsCompleted = scheduledToday.filter((habit) =>
+    hasTodayLedgerEntry(input.completionEvents, habit.id, todayIso, origin)
   ).length;
 
   const reminders = (input.reminders || [])
@@ -203,7 +201,7 @@ export function buildWidgetSnapshot(input: WidgetSnapshotInput): WidgetSnapshot 
   const habits = scheduledToday.slice(0, 5).map((habit) => ({
     id: habit.id,
     title: habit.name,
-    completed: bestScoreOnIso(habit.id, todayIso, input.momentumEvents, input.completionEvents) > 0,
+    completed: hasTodayLedgerEntry(input.completionEvents, habit.id, todayIso, origin),
     streak: habitStreak(habit, todayIso, input.momentumEvents, input.completionEvents),
   }));
 
@@ -225,7 +223,7 @@ export function buildWidgetSnapshot(input: WidgetSnapshotInput): WidgetSnapshot 
     sleepRate,
     reminders,
     habits,
-    identity: buildTodaysIdentityLedger(active, input.momentumEvents, todayIso),
+    identity: buildTodaysIdentityLedger(active, input.completionEvents, todayIso, origin),
   };
 }
 
