@@ -3,6 +3,7 @@ import { isSeedHabitId } from '../data/initialHabits';
 import { countMomentumCompletedActions, fetchSequentialMomentumEvents, insertMomentumEvent, isSupabaseConfigured, supabase } from './supabase';
 import { parseToIsoDate, toISODate } from '../utils/dates';
 import { isUuid, mergeMomentumEvents } from '../utils/momentum';
+import { isTimeOfDay } from '../utils/timeOfDay';
 
 export const MOMENTUM_EVENTS_STORAGE_KEY = 'ascend_momentum_events';
 const MOMENTUM_QUEUE_KEY = 'ascend_offline_momentum_event_queue';
@@ -14,6 +15,7 @@ export interface MomentumEventRow {
   event_type?: string;
   weight?: number | string;
   timestamp?: string | number;
+  time_of_day?: string | null;
 }
 
 interface MomentumQueueItem {
@@ -110,6 +112,7 @@ export function mapMomentumEventRow(row: MomentumEventRow): MomentumEvent | null
     weight,
     timestamp,
     loggedDate: parseToIsoDate(typeof row.timestamp === 'string' ? row.timestamp : toISODate(new Date(timestamp))),
+    timeOfDay: isTimeOfDay(row.time_of_day) ? row.time_of_day : undefined,
   };
 }
 
@@ -121,6 +124,7 @@ export function toMomentumEventRow(userId: string, event: MomentumEvent) {
     event_type: event.eventType,
     weight: event.weight,
     timestamp: new Date(event.timestamp).toISOString(),
+    time_of_day: isTimeOfDay(event.timeOfDay) ? event.timeOfDay : null,
   };
 }
 
@@ -135,6 +139,7 @@ export async function fetchMomentumEventsFromTable(userId?: string | null): Prom
         event_type: row.eventType,
         weight: row.weight,
         timestamp: row.timestamp,
+        time_of_day: row.timeOfDay,
       })
     )
     .filter((event): event is MomentumEvent => event !== null && !isSeedHabitId(event.habitId));
@@ -154,6 +159,7 @@ async function insertMomentumEventRemote(userId: string, event: MomentumEvent): 
     eventType: event.eventType,
     weight: event.weight,
     timestamp: event.timestamp,
+    timeOfDay: event.timeOfDay,
   });
 }
 

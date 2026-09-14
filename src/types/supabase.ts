@@ -129,6 +129,7 @@ export type Database = {
           interval_days: number | null
           is_archived: boolean | null
           is_keystone: boolean | null
+          time_of_day: string
           micro_days: boolean[] | null
           name: string | null
           priority: string | null
@@ -156,6 +157,7 @@ export type Database = {
           interval_days?: number | null
           is_archived?: boolean | null
           is_keystone?: boolean | null
+          time_of_day?: string
           micro_days?: boolean[] | null
           name?: string | null
           priority?: string | null
@@ -183,6 +185,7 @@ export type Database = {
           interval_days?: number | null
           is_archived?: boolean | null
           is_keystone?: boolean | null
+          time_of_day?: string
           micro_days?: boolean[] | null
           name?: string | null
           priority?: string | null
@@ -206,6 +209,7 @@ export type Database = {
           habit_id: string | null
           id: string
           timestamp: string
+          time_of_day: string | null
           user_id: string
           weight: number
         }
@@ -214,6 +218,7 @@ export type Database = {
           habit_id?: string | null
           id?: string
           timestamp?: string
+          time_of_day?: string | null
           user_id: string
           weight?: number
         }
@@ -222,6 +227,7 @@ export type Database = {
           habit_id?: string | null
           id?: string
           timestamp?: string
+          time_of_day?: string | null
           user_id?: string
           weight?: number
         }

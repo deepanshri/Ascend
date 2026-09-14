@@ -4,6 +4,7 @@ import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
+import { resolveHabitTimeOfDay } from '../utils/timeOfDay';
 
 const SWIPE_AXIS_LOCK_PX = 10;
 const DOUBLE_TAP_MS = 250;
@@ -617,6 +618,12 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                         K
                       </span>
                     )}
+                    <span
+                      title={resolveHabitTimeOfDay(habit) === 'night' ? 'Night bowl' : 'Morning bowl'}
+                      className="shrink-0 text-[9px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1 py-0.5"
+                    >
+                      {resolveHabitTimeOfDay(habit) === 'night' ? 'PM' : 'AM'}
+                    </span>
                     {!isScheduledOnActiveDay && (
                       <span
                         title="Not scheduled on this day"

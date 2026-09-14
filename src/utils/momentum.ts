@@ -12,6 +12,7 @@ import {
 } from './dates';
 import { syncHabitLogDelete, syncHabitLogUpsert } from '../lib/offlineSync';
 import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from './schedule';
+import { resolveHabitTimeOfDay } from './timeOfDay';
 
 export const WORK_HABIT_WEIGHT = 1.5;
 export const SELF_IMPROVEMENT_HABIT_WEIGHT = 1.0;
@@ -111,7 +112,7 @@ export async function fetchSequentialMomentumEventsLog(
 }
 
 export function createMomentumEvent(
-  habit: Pick<Habit, 'id' | 'category'>,
+  habit: Pick<Habit, 'id' | 'category'> & Partial<Pick<Habit, 'timeOfDay' | 'timestamp'>>,
   eventType: MomentumEventType,
   loggedDate: string = toISODate(),
   timestamp: number = Date.now()
@@ -123,6 +124,10 @@ export function createMomentumEvent(
     weight: habitWeight({ category: habit.category } as Habit),
     timestamp,
     loggedDate,
+    timeOfDay: resolveHabitTimeOfDay({
+      timeOfDay: habit.timeOfDay,
+      timestamp: habit.timestamp || '',
+    }),
   };
 }
 
@@ -143,6 +148,7 @@ export function momentumEventsFromCompletionLog(
         weight: habit ? habitWeight(habit) : SELF_IMPROVEMENT_HABIT_WEIGHT,
         timestamp: event.timestamp,
         loggedDate: resolveEventIsoDate(event, origin),
+        timeOfDay: event.timeOfDay ?? (habit ? resolveHabitTimeOfDay(habit) : undefined),
       } satisfies MomentumEvent;
     })
     .sort((a, b) => a.timestamp - b.timestamp);

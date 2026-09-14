@@ -44,6 +44,8 @@ interface ReportViewProps {
   cycleDays: CycleDays;
   onCycleDaysChange: (days: CycleDays) => void;
   bowlFill: BowlFill;
+  morningFill?: BowlFill;
+  nightFill?: BowlFill;
 }
 
 type TimeFilter = 'today' | 'week' | 'month' | 'momentum';
@@ -289,6 +291,8 @@ export const ReportView: React.FC<ReportViewProps> = ({
   cycleDays,
   onCycleDaysChange,
   bowlFill,
+  morningFill,
+  nightFill,
 }) => {
   const habits = asArray(habitsProp);
   const evidenceList = asArray(evidenceProp);
@@ -619,7 +623,9 @@ export const ReportView: React.FC<ReportViewProps> = ({
             Accumulation cycle
           </span>
           <span className="text-[11px] font-semibold tabular-nums text-slate-600 dark:text-slate-300">
-            {bowlFill.votes}/{bowlFill.capacity} · {Math.round(bowlFill.fillPercent)}%
+            {morningFill && nightFill
+              ? `AM ${morningFill.votes}/${morningFill.capacity} · Night ${nightFill.votes}/${nightFill.capacity}`
+              : `${bowlFill.votes}/${bowlFill.capacity} · ${Math.round(bowlFill.fillPercent)}%`}
             {bowlFill.isOverflowing ? ' · overflow' : ''}
           </span>
         </div>
@@ -643,7 +649,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
           })}
         </div>
         <p className="text-[10.5px] text-slate-400 dark:text-slate-500">
-          Capacity is active habits × cycle days, capped at 10 days. Overflow starts at 80%.
+          Capacity is morning habits × cycle days and night habits × cycle days, capped at 10 days. Overflow starts at 80%.
         </p>
       </section>
 

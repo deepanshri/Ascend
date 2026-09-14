@@ -58,7 +58,7 @@ const HOME_STEPS: DriveStep[] = [
     popover: {
       title: 'Accumulation bowl',
       description:
-        'Each completion drops a piece into the bowl for this cycle. Full completions are the darker gems; fallback micro-habits are lighter. At 80% capacity pieces spill over the rim. Change the cycle length (3–10 days) on Report.',
+        'Each completion drops a marble into the Morning or Night bowl for this cycle. Switch bowls on the toggle. Full completions are the darker gems; fallback micro-habits are lighter. At 80% capacity pieces spill over the rim.',
       side: 'bottom',
       align: 'center',
     },

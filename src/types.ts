@@ -1,3 +1,7 @@
+import type { TimeOfDay } from './types/habit';
+
+export type { TimeOfDay } from './types/habit';
+
 export type HabitCategory = 'work' | 'self_improvement';
 
 export type HabitPriority = 'high' | 'mid' | 'low';
@@ -17,6 +21,8 @@ export interface MomentumEvent {
   timestamp: number;
   /** YYYY-MM-DD local calendar date the event belongs to. */
   loggedDate?: string;
+  /** Bowl routing snapshot at insert time. */
+  timeOfDay?: TimeOfDay;
 }
 
 // Daily card projection (latest-per-day). Momentum + identity votes use MomentumEvent.
@@ -29,6 +35,8 @@ export interface HabitCompletionEvent {
   note?: string;
   frictionReason?: string;
   timestamp: number;
+  /** Bowl routing snapshot at completion time. */
+  timeOfDay?: TimeOfDay;
 }
 
 export interface Habit {
@@ -51,6 +59,8 @@ export interface Habit {
   intervalDays?: number; // every X days
   weeklyTargetCount?: number; // X times per week
   isKeystone?: boolean;
+  /** Morning vs night bowl this habit drops into. */
+  timeOfDay?: TimeOfDay;
   /** Epoch ms of last local/remote mutation. Used for habit hydrate LWW. */
   updatedAt?: number;
 }

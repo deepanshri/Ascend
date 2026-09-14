@@ -137,3 +137,22 @@ export function accumulationPiecesFromLogs(
     .sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id))
     .map(({ timestamp: _timestamp, ...piece }) => piece);
 }
+
+export interface DualBowlFill {
+  morning: BowlFill;
+  night: BowlFill;
+}
+
+/** Independent capacities: C_morning = H_morning × D, C_night = H_night × D. */
+export function summarizeDualBowlFill(
+  morningHabitCount: number,
+  morningVotes: number,
+  nightHabitCount: number,
+  nightVotes: number,
+  cycleDays: number
+): DualBowlFill {
+  return {
+    morning: summarizeBowlFill(morningHabitCount, morningVotes, cycleDays),
+    night: summarizeBowlFill(nightHabitCount, nightVotes, cycleDays),
+  };
+}

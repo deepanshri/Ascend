@@ -61,6 +61,7 @@ export const INITIAL_HABITS: Habit[] = [
     scheduledDays: [0, 1, 2, 3, 4],
     color: '#15803d',
     tags: ['W'],
+    timeOfDay: 'morning',
   },
   {
     id: 'habit-2',
@@ -77,6 +78,7 @@ export const INITIAL_HABITS: Habit[] = [
     scheduleType: 'daily',
     color: '#166534',
     tags: ['SI'],
+    timeOfDay: 'night',
   },
   {
     id: 'habit-3',
@@ -94,6 +96,7 @@ export const INITIAL_HABITS: Habit[] = [
     weeklyTargetCount: 5,
     color: '#7c3aed',
     tags: ['SI'],
+    timeOfDay: 'morning',
   },
   {
     id: 'habit-4',
@@ -110,6 +113,7 @@ export const INITIAL_HABITS: Habit[] = [
     scheduleType: 'daily',
     color: '#22c55e',
     tags: ['SI'],
+    timeOfDay: 'morning',
   },
   {
     id: 'habit-5',
@@ -126,6 +130,7 @@ export const INITIAL_HABITS: Habit[] = [
     scheduleType: 'daily',
     color: '#10b981',
     tags: ['SI'],
+    timeOfDay: 'morning',
   },
 ];
 

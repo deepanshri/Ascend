@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { MotionModal } from './MotionModal';
 import { tapPress } from '../lib/motionPresets';
-import { Habit, HabitCategory, HabitPriority } from '../types';
+import { Habit, HabitCategory, HabitPriority, TimeOfDay } from '../types';
 import { MAX_KEYSTONE_HABITS } from '../lib/keystone';
 import { normalizeScheduledDays, scheduleTypeFromDays } from '../utils/schedule';
 import { WeekdayScheduleChips } from './WeekdayScheduleChips';
+import { TimeOfDayToggle } from './TimeOfDayToggle';
+import { resolveHabitTimeOfDay } from '../utils/timeOfDay';
 
 interface HabitDetailModalProps {
   habit: Habit | null;
@@ -34,6 +36,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   const [isKeystone, setIsKeystone] = useState(false);
   const [keystoneWarning, setKeystoneWarning] = useState(false);
   const [scheduledWeekdays, setScheduledWeekdays] = useState<number[]>([]);
+  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('morning');
 
   useEffect(() => {
     if (!habit || !isOpen) return;
@@ -45,6 +48,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
     setIsKeystone(Boolean(habit.isKeystone));
     setKeystoneWarning(false);
     setScheduledWeekdays(normalizeScheduledDays(habit.scheduledDays));
+    setTimeOfDay(resolveHabitTimeOfDay(habit));
   }, [habit, isOpen]);
 
   const othersAtCap = Boolean(habit && !habit.isKeystone && activeKeystoneCount >= MAX_KEYSTONE_HABITS);
@@ -73,6 +77,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
       scheduledDays: days,
       scheduleType: scheduleTypeFromDays(days),
       targetDaysPerWeek: days.length,
+      timeOfDay,
     });
     onClose();
   };
@@ -266,6 +271,13 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                 You already have {MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.
               </p>
             )}
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
+              Bowl
+            </label>
+            <TimeOfDayToggle value={timeOfDay} onChange={setTimeOfDay} />
           </div>
         </div>
 

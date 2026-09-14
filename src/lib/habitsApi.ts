@@ -1,4 +1,5 @@
 import { Habit, HabitCategory, HabitCompletionEvent } from '../types';
+import { parseTimeOfDay, resolveHabitTimeOfDay } from '../utils/timeOfDay';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { habitCategoryBadge } from '../utils/categories';
 import { getTodayDayIndex, isoDateForDayIndex, toISODate } from '../utils/dates';
@@ -55,6 +56,7 @@ export function rowToHabit(row: Record<string, unknown>): Habit | null {
     intervalDays: row.interval_days != null ? Number(row.interval_days) : undefined,
     weeklyTargetCount: row.weekly_target_count != null ? Number(row.weekly_target_count) : undefined,
     isKeystone: Boolean(row.is_keystone ?? row.isKeystone),
+    timeOfDay: parseTimeOfDay(row.time_of_day ?? row.timeOfDay, String(row.timestamp || '')),
     updatedAt: row.updated_at ? Date.parse(String(row.updated_at)) || undefined : undefined,
   };
 }
@@ -101,8 +103,18 @@ export function habitToRow(habit: Habit, userId: string) {
     interval_days: habit.intervalDays ?? null,
     weekly_target_count: habit.weeklyTargetCount ?? null,
     is_keystone: Boolean(habit.isKeystone),
+    time_of_day: resolveHabitTimeOfDay(habit),
     updated_at: new Date(habit.updatedAt || Date.now()).toISOString(),
   };
+}
+
+function stripTimeOfDayColumn<T extends { time_of_day?: unknown }>(row: T): Omit<T, 'time_of_day'> {
+  const { time_of_day: _ignored, ...rest } = row;
+  return rest;
+}
+
+function isMissingTimeOfDayColumn(message: string): boolean {
+  return /time_of_day/i.test(message);
 }
 
 export async function fetchHabitsFromTable(userId?: string | null): Promise<{
@@ -146,8 +158,13 @@ export async function persistHabitsToTable(userId: string, habits: Habit[]): Pro
   if (!canSync(userId) || !supabase) return false;
   const userHabits = omitDeletedHabits(habits.filter((habit) => !isSeedHabitId(habit.id)));
   if (userHabits.length === 0) return true;
+  const rows = userHabits.map((habit) => habitToRow(habit, userId));
   try {
-    const { error } = await supabase.from('habits').upsert(userHabits.map((habit) => habitToRow(habit, userId)));
+    let { error } = await supabase.from('habits').upsert(rows);
+    if (error && isMissingTimeOfDayColumn(error.message)) {
+      const retry = await supabase.from('habits').upsert(rows.map(stripTimeOfDayColumn));
+      error = retry.error;
+    }
     if (error) {
       console.warn('Habits upsert failed:', error.message);
       return false;
@@ -227,7 +244,12 @@ export async function insertHabitToSupabase(
     return false;
   }
   try {
-    const { error } = await supabase.from('habits').upsert(habitToRow(habit, userId as string));
+    const row = habitToRow(habit, userId as string);
+    let { error } = await supabase.from('habits').upsert(row);
+    if (error && isMissingTimeOfDayColumn(error.message)) {
+      const retry = await supabase.from('habits').upsert(stripTimeOfDayColumn(row));
+      error = retry.error;
+    }
     if (error) {
       console.warn('Habit insert failed:', error.message);
       return false;

@@ -1,29 +1,37 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import bowlSrc from '../assets/bowl/bowl.png';
+import bowlMorningSrc from '../assets/bowl/bowl-morning.png';
+import bowlNightSrc from '../assets/bowl/bowl-night.png';
 import pieceGreenDark from '../assets/bowl/piece-green-dark.png';
 import pieceGreenLight from '../assets/bowl/piece-green-light.png';
 import pieceBlueDark from '../assets/bowl/piece-blue-dark.png';
 import pieceBlueLight from '../assets/bowl/piece-blue-light.png';
 import { CYCLE_DAY_OPTIONS, clampCycleDays, type AccumulationPiece, type CycleDays } from '../services/reportService';
 import { tapPress } from '../lib/motionPresets';
+import { TimeOfDayToggle } from './TimeOfDayToggle';
+import type { TimeOfDay } from '../types/habit';
 
 const SPRING = { type: 'spring' as const, stiffness: 250, damping: 18, mass: 0.8 };
 const MAX_VISIBLE_PIECES = 28;
-const BOWL_WIDTH = 170;
-/** ~35% of the compact bowl width so gems fill the base curve. */
-const PIECE_SIZE = Math.round(BOWL_WIDTH * 0.35);
+const PIECE_SIZE = 28;
 const SPILL_ROW = 3;
+/** Marble-center Y on the inner floor. ~18px above the old 71% landing (~96px). */
+const FLOOR_CENTER_Y = 78;
+const STACK_RISE = 16;
+const SCATTER_X = 12;
 
-const CAVITY_CLIP = 'ellipse(38% 30% at 50% 48%)';
+/** Interior cavity: tall enough to keep spheres round, short of the glass foot. */
+const CAVITY_CLIP = 'ellipse(48% 30% at 50% 46%)';
 const RIM_MASK =
-  'radial-gradient(ellipse 39% 31% at 50% 47%, transparent 64%, #000 67%)';
+  'radial-gradient(ellipse 52% 38% at 50% 46%, transparent 72%, #000 76%)';
 
 interface AccumulationBowlProps {
   pieces: AccumulationPiece[];
   fillPercent: number;
   isOverflowing: boolean;
   isDark?: boolean;
+  mode: TimeOfDay;
+  onModeChange?: (mode: TimeOfDay) => void;
   votes: number;
   capacity: number;
   cycleDays: number;
@@ -34,14 +42,14 @@ interface LaidPiece {
   piece: AccumulationPiece;
   index: number;
   x: number;
-  yPercent: number;
+  restY: number;
   tilt: number;
   entryX: number;
   spills: boolean;
 }
 
-function pieceSrc(kind: AccumulationPiece['kind'], isDark: boolean): string {
-  if (isDark) return kind === 'full' ? pieceBlueDark : pieceBlueLight;
+function pieceSrc(kind: AccumulationPiece['kind'], mode: TimeOfDay): string {
+  if (mode === 'night') return kind === 'full' ? pieceBlueDark : pieceBlueLight;
   return kind === 'full' ? pieceGreenDark : pieceGreenLight;
 }
 
@@ -59,11 +67,11 @@ function rangeJitter(seed: string, min: number, max: number): number {
 }
 
 function restForPiece(index: number, isOverflowing: boolean, id: string) {
-  const settleX = rangeJitter(`${id}:x`, -12, 12);
-  const entryX = rangeJitter(`${id}:entry`, -20, 20);
-  const tilt = rangeJitter(`${id}:tilt`, -10, 10);
+  const scatterX = rangeJitter(`${id}:x`, -SCATTER_X, SCATTER_X);
+  const entryX = rangeJitter(`${id}:entry`, -SCATTER_X, SCATTER_X);
+  const tilt = rangeJitter(`${id}:tilt`, -8, 8);
 
-  const rows = [3, 4, 3, 3, 2];
+  const rows = [3, 3, 2, 2];
   let cursor = index;
   let row = 0;
   while (row < rows.length && cursor >= rows[row]) {
@@ -72,32 +80,37 @@ function restForPiece(index: number, isOverflowing: boolean, id: string) {
   }
   const cols = rows[Math.min(row, rows.length - 1)] || 2;
   const col = Math.min(cursor, cols - 1);
-  const x = (col - (cols - 1) / 2) * 18 + settleX * 0.35;
-  let yPercent = 71 - row * 7.5;
+  const x = (col - (cols - 1) / 2) * 20 + scatterX;
+  let restY = FLOOR_CENTER_Y - row * STACK_RISE;
   const spills = isOverflowing && row >= SPILL_ROW;
-  if (spills) yPercent -= 8;
-  if (isOverflowing && row >= SPILL_ROW + 1) yPercent -= 6;
-  return { x, yPercent, tilt, entryX, spills };
+  if (spills) restY -= 10;
+  if (isOverflowing && row >= SPILL_ROW + 1) restY -= 8;
+  return { x, restY, tilt, entryX, spills };
 }
 
 const PieceLayer: React.FC<{
   items: LaidPiece[];
-  isDark: boolean;
-  isOverflowing: boolean;
-}> = ({ items, isDark, isOverflowing }) => {
+  mode: TimeOfDay;
+}> = ({ items, mode }) => {
   return (
     <AnimatePresence initial={false}>
       {items.map((item) => (
         <motion.img
           key={item.piece.id}
-          src={pieceSrc(item.piece.kind, isDark)}
+          src={pieceSrc(item.piece.kind, mode)}
           alt=""
           draggable={false}
-          className="pointer-events-none absolute left-1/2 object-contain transform-gpu will-change-transform"
+          className="pointer-events-none absolute left-1/2 block h-7 w-7 shrink-0 aspect-square object-contain object-center transform-gpu will-change-transform"
           style={{
             width: PIECE_SIZE,
             height: PIECE_SIZE,
-            top: `${item.yPercent}%`,
+            minWidth: PIECE_SIZE,
+            minHeight: PIECE_SIZE,
+            maxWidth: PIECE_SIZE,
+            maxHeight: PIECE_SIZE,
+            aspectRatio: '1 / 1',
+            objectFit: 'contain',
+            top: item.restY,
             marginLeft: -PIECE_SIZE / 2,
             marginTop: -PIECE_SIZE / 2,
           }}
@@ -113,7 +126,7 @@ const PieceLayer: React.FC<{
             y: 0,
             rotate: item.tilt,
             opacity: 1,
-            scale: isOverflowing && item.spills ? 1.04 : 1,
+            scale: 1,
           }}
           exit={{
             y: -28,
@@ -133,6 +146,8 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
   fillPercent,
   isOverflowing,
   isDark = false,
+  mode,
+  onModeChange,
   votes,
   capacity,
   cycleDays,
@@ -154,8 +169,10 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
   const insidePieces = laid.filter((item) => !item.spills);
   const spillPieces = laid.filter((item) => item.spills);
   const roundedFill = Math.round(fillPercent);
+  const bowlSrc = mode === 'night' ? bowlNightSrc : bowlMorningSrc;
+  const nightMode = mode === 'night';
   const overflowGlow = isOverflowing
-    ? isDark
+    ? nightMode
       ? 'drop-shadow-[0_0_14px_rgba(59,130,246,0.5)]'
       : 'drop-shadow-[0_0_14px_rgba(34,197,94,0.45)]'
     : '';
@@ -181,13 +198,19 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
       id="accumulation-bowl"
       data-tour="accumulation-bowl"
       className="relative mx-auto flex w-full max-w-[170px] flex-col items-center select-none"
-      aria-label={`Accumulation bowl, ${votes} of ${capacity} votes in a ${selectedCycle}-day cycle, ${roundedFill} percent full${isOverflowing ? ', overflowing' : ''}`}
+      aria-label={`${mode === 'night' ? 'Night' : 'Morning'} accumulation bowl, ${votes} of ${capacity} votes in a ${selectedCycle}-day cycle, ${roundedFill} percent full${isOverflowing ? ', overflowing' : ''}`}
     >
+      {onModeChange ? (
+        <div className="relative z-40 mb-1.5 w-full">
+          <TimeOfDayToggle value={mode} onChange={onModeChange} size="sm" />
+        </div>
+      ) : null}
+
       <div className="relative h-[135px] w-[170px] overflow-visible">
         {isOverflowing && (
           <div
             className={`pointer-events-none absolute left-1/2 top-[24%] z-0 h-10 w-[78%] -translate-x-1/2 rounded-full blur-xl ${
-              isDark ? 'bg-blue-500/35' : 'bg-emerald-400/40'
+              nightMode ? 'bg-blue-500/35' : 'bg-emerald-400/40'
             }`}
             aria-hidden="true"
           />
@@ -201,14 +224,14 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
         />
         <div
           className={`pointer-events-none absolute inset-0 z-[1] ${
-            isDark ? 'bg-slate-950/20' : 'bg-slate-600/10'
+            nightMode || isDark ? 'bg-slate-950/20' : 'bg-slate-600/10'
           }`}
           style={{ clipPath: CAVITY_CLIP }}
           aria-hidden="true"
         />
 
         <div className="absolute inset-0 z-10 overflow-visible" style={{ clipPath: CAVITY_CLIP }}>
-          <PieceLayer items={insidePieces} isDark={isDark} isOverflowing={isOverflowing} />
+          <PieceLayer items={insidePieces} mode={mode} />
         </div>
 
         <img
@@ -225,14 +248,14 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
         {isOverflowing && (
           <div
             className={`pointer-events-none absolute left-1/2 top-[16%] z-[25] h-7 w-[68%] -translate-x-1/2 rounded-full blur-md ${
-              isDark ? 'bg-blue-400/25' : 'bg-emerald-300/30'
+              nightMode ? 'bg-blue-400/25' : 'bg-emerald-300/30'
             }`}
             aria-hidden="true"
           />
         )}
 
         <div className="absolute inset-0 z-30 overflow-visible">
-          <PieceLayer items={spillPieces} isDark={isDark} isOverflowing={isOverflowing} />
+          <PieceLayer items={spillPieces} mode={mode} />
         </div>
       </div>
 

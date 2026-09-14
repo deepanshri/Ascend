@@ -81,10 +81,12 @@ import {
   cycleWindow,
   persistCycleDays,
   readStoredCycleDays,
-  summarizeBowlFill,
+  summarizeDualBowlFill,
   type CycleDays,
 } from './services/reportService';
-import { AccumulationBowl } from './components/AccumulationBowl';
+import { HomeView } from './components/HomeView';
+import { useBowlMode, useHabits, withHabitTimeOfDay } from './hooks/useHabits';
+import { hydrateHabitTimeOfDay, resolveHabitTimeOfDay } from './utils/timeOfDay';
 import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
 import { WidgetBridge } from './lib/widgetBridge';
 import type { WidgetPendingAction, WidgetRoute } from './lib/widgetSync';
@@ -271,7 +273,7 @@ export default function App() {
           .filter((h) => !isSeedHabitId(h.id))
           .map((h) => {
           const category = normalizeHabitCategory(h.category);
-          return { ...h, category, tags: [habitCategoryBadge(category)] };
+          return hydrateHabitTimeOfDay({ ...h, category, tags: [habitCategoryBadge(category)] });
         });
       }
     } catch {}
@@ -372,6 +374,7 @@ export default function App() {
   }, [activeFallbackIds]);
 
   const [cycleDays, setCycleDays] = useState<CycleDays>(() => readStoredCycleDays());
+  const { mode: bowlMode, setMode: setBowlMode } = useBowlMode();
 
   const handleCycleDaysChange = (days: CycleDays) => {
     const next = clampCycleDays(days);
@@ -688,26 +691,47 @@ export default function App() {
   const activeHabits = useMemo(() => {
     return derivedHabits.filter((h) => !h.archived);
   }, [derivedHabits]);
+  const { morningHabits, nightHabits } = useHabits(activeHabits);
 
   const bowlWindow = useMemo(
     () => cycleWindow(cycleDays, toISODate(calendarOrigin)),
     [cycleDays, calendarOrigin]
   );
-  const bowlPieces = useMemo(
+  const morningPieces = useMemo(
     () =>
       accumulationPiecesFromLogs(
         completionEvents,
-        activeHabits.map((habit) => habit.id),
+        morningHabits.map((habit) => habit.id),
         bowlWindow.startIso,
         bowlWindow.endIso,
         calendarOrigin
       ),
-    [completionEvents, activeHabits, bowlWindow, calendarOrigin]
+    [completionEvents, morningHabits, bowlWindow, calendarOrigin]
   );
-  const bowlFill = useMemo(
-    () => summarizeBowlFill(activeHabits.length, bowlPieces.length, cycleDays),
-    [activeHabits.length, bowlPieces.length, cycleDays]
+  const nightPieces = useMemo(
+    () =>
+      accumulationPiecesFromLogs(
+        completionEvents,
+        nightHabits.map((habit) => habit.id),
+        bowlWindow.startIso,
+        bowlWindow.endIso,
+        calendarOrigin
+      ),
+    [completionEvents, nightHabits, bowlWindow, calendarOrigin]
   );
+  const dualBowlFill = useMemo(
+    () =>
+      summarizeDualBowlFill(
+        morningHabits.length,
+        morningPieces.length,
+        nightHabits.length,
+        nightPieces.length,
+        cycleDays
+      ),
+    [morningHabits.length, morningPieces.length, nightHabits.length, nightPieces.length, cycleDays]
+  );
+  const bowlPieces = bowlMode === 'night' ? nightPieces : morningPieces;
+  const bowlFill = bowlMode === 'night' ? dualBowlFill.night : dualBowlFill.morning;
 
   const keystoneCompletedOnViewedDay = useMemo(
     () => activeHabits.filter((habit) => habit.isKeystone && habit.days?.[currentDayIndex]).map((habit) => habit.id),
@@ -993,15 +1017,21 @@ export default function App() {
 
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
 
-    const newEvent: HabitCompletionEvent = {
-      id: `evt-${isMicro ? 'micro-' : ''}${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      habitId,
-      dayIndex: todayDayIndex,
-      date: loggedDate,
-      type: isMicro ? 'fallback_micro' : 'full',
-      note: isMicro ? (targetHabit.fallbackMicroHabit || 'Fallback micro-habit completed') : undefined,
-      timestamp: Date.now(),
-    };
+    const timeOfDay = resolveHabitTimeOfDay(targetHabit);
+    setBowlMode(timeOfDay);
+
+    const newEvent: HabitCompletionEvent = withHabitTimeOfDay(
+      {
+        id: `evt-${isMicro ? 'micro-' : ''}${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        habitId,
+        dayIndex: todayDayIndex,
+        date: loggedDate,
+        type: isMicro ? 'fallback_micro' : 'full',
+        note: isMicro ? (targetHabit.fallbackMicroHabit || 'Fallback micro-habit completed') : undefined,
+        timestamp: Date.now(),
+      },
+      targetHabit
+    );
 
     // One completion row per (habit, calendar day). Re-checking after uncheck replaces, never stacks.
     setCompletionEvents((prev) => replaceTodayCompletion(prev, newEvent, calendarOrigin));
@@ -1104,6 +1134,7 @@ export default function App() {
       microDays: [false, false, false, false, false, false, false],
       scheduledDays: payload.scheduledDays && payload.scheduledDays.length > 0 ? payload.scheduledDays : [0, 1, 2, 3, 4, 5, 6],
       scheduleType: payload.scheduleType || 'daily',
+      timeOfDay: resolveHabitTimeOfDay(payload),
       updatedAt: Date.now(),
     };
     setHabits((prev) => [newHabit, ...prev]);
@@ -1733,6 +1764,8 @@ export default function App() {
             cycleDays={cycleDays}
             onCycleDaysChange={handleCycleDaysChange}
             bowlFill={bowlFill}
+            morningFill={dualBowlFill.morning}
+            nightFill={dualBowlFill.night}
           />
           </motion.div>
         ) : safeActiveTab === 'personal' ? (
@@ -1851,18 +1884,14 @@ export default function App() {
               }
             />
 
-            <div className="mt-2 flex flex-col space-y-3">
-              <AccumulationBowl
-                pieces={bowlPieces}
-                fillPercent={bowlFill.fillPercent}
-                isOverflowing={bowlFill.isOverflowing}
-                isDark={isDark}
-                votes={bowlFill.votes}
-                capacity={bowlFill.capacity}
-                cycleDays={bowlFill.cycleDays}
-                onCycleDaysChange={handleCycleDaysChange}
-              />
-
+            <HomeView
+              pieces={bowlPieces}
+              bowlFill={bowlFill}
+              isDark={isDark}
+              mode={bowlMode}
+              onModeChange={setBowlMode}
+              onCycleDaysChange={handleCycleDaysChange}
+            >
               <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
 
               {/* Habit List Cards */}
@@ -1915,7 +1944,7 @@ export default function App() {
                 ))
               )}
             </section>
-            </div>
+            </HomeView>
           </motion.main>
         )}
         </AnimatePresence>

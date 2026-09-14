@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { MomentumEventType, StandaloneReminder, UserSession } from '../types';
+import { isTimeOfDay, type TimeOfDay } from '../types/habit';
 import {
   cancelReminderDualAlerts,
   reminderNotificationIds,
@@ -39,6 +40,7 @@ export interface MomentumEventInsert {
   /** Work (W) = 1.5, Self Improvement (SI) = 1.0 */
   weight: number;
   timestamp?: string | number;
+  timeOfDay?: TimeOfDay;
 }
 
 export interface MomentumEventRecord {
@@ -48,6 +50,7 @@ export interface MomentumEventRecord {
   eventType: MomentumEventType;
   weight: number;
   timestamp: string;
+  timeOfDay?: TimeOfDay;
 }
 
 function parseMomentumEventType(raw: unknown): MomentumEventType | null {
@@ -70,14 +73,22 @@ export async function insertMomentumEvent(record: MomentumEventInsert): Promise<
       : record.timestamp || new Date().toISOString();
 
   try {
-    const { error } = await supabase.from('momentum_events').insert({
+    const payload: Record<string, unknown> = {
       id: record.id,
       user_id: record.userId,
       habit_id: record.habitId,
       event_type: record.eventType,
       weight: record.weight,
       timestamp,
-    });
+    };
+    if (isTimeOfDay(record.timeOfDay)) payload.time_of_day = record.timeOfDay;
+
+    let { error } = await supabase.from('momentum_events').insert(payload);
+    if (error && isTimeOfDay(record.timeOfDay) && /time_of_day/i.test(error.message)) {
+      const { time_of_day: _ignored, ...core } = payload;
+      const retry = await supabase.from('momentum_events').insert(core);
+      error = retry.error;
+    }
     if (!error) return true;
     const code = (error as { code?: string }).code;
     if (code === '23505' || /duplicate/i.test(error.message)) return true;
@@ -97,20 +108,29 @@ export async function fetchSequentialMomentumEvents(
   try {
     const { data, error } = await supabase
       .from('momentum_events')
-      .select('id, user_id, habit_id, event_type, weight, timestamp')
+      .select('id, user_id, habit_id, event_type, weight, timestamp, time_of_day')
       .eq('user_id', userId)
       .order('timestamp', { ascending: true });
 
-    if (error) {
-      console.warn('momentum_events fetch failed:', error.message);
+    const query = error && /time_of_day/i.test(error.message)
+      ? await supabase
+          .from('momentum_events')
+          .select('id, user_id, habit_id, event_type, weight, timestamp')
+          .eq('user_id', userId)
+          .order('timestamp', { ascending: true })
+      : { data, error };
+
+    if (query.error) {
+      console.warn('momentum_events fetch failed:', query.error.message);
       return [];
     }
 
-    return (data || [])
+    return (query.data || [])
       .map((row) => {
         const eventType = parseMomentumEventType(row.event_type);
         const weight = Number(row.weight);
         if (!row.id || !row.habit_id || !eventType || !Number.isFinite(weight)) return null;
+        const timeOfDayRaw = 'time_of_day' in row ? (row as { time_of_day?: unknown }).time_of_day : undefined;
         return {
           id: String(row.id),
           userId: String(row.user_id || userId),
@@ -118,6 +138,7 @@ export async function fetchSequentialMomentumEvents(
           eventType,
           weight,
           timestamp: String(row.timestamp || new Date().toISOString()),
+          timeOfDay: isTimeOfDay(timeOfDayRaw) ? timeOfDayRaw : undefined,
         } satisfies MomentumEventRecord;
       })
       .filter((row): row is MomentumEventRecord => row !== null);

@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { MotionModal } from './MotionModal';
 import { tapPress } from '../lib/motionPresets';
-import { Habit, HabitCategory, HabitPriority } from '../types';
+import { Habit, HabitCategory, HabitPriority, TimeOfDay } from '../types';
 import { insertHabitToSupabase, toDbCategory } from '../lib/habitsApi';
 import { MAX_ACTIVE_HABITS } from '../lib/protection';
 import { MAX_KEYSTONE_HABITS } from '../lib/keystone';
 import { normalizeScheduledDays, scheduleTypeFromDays } from '../utils/schedule';
 import { WeekdayScheduleChips } from './WeekdayScheduleChips';
+import { TimeOfDayToggle } from './TimeOfDayToggle';
+import { inferBowlModeFromClock } from '../utils/timeOfDay';
 
 interface AddHabitModalProps {
   isOpen: boolean;
@@ -36,6 +38,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   const [isKeystone, setIsKeystone] = useState(false);
   const [keystoneWarning, setKeystoneWarning] = useState(false);
   const [scheduledWeekdays, setScheduledWeekdays] = useState<number[]>([]);
+  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>(() => inferBowlModeFromClock());
   const atCap = activeHabitCount >= MAX_ACTIVE_HABITS;
   const keystoneCapReached = activeKeystoneCount >= MAX_KEYSTONE_HABITS;
 
@@ -44,6 +47,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     setIsKeystone(false);
     setKeystoneWarning(false);
     setScheduledWeekdays([]);
+    setTimeOfDay(inferBowlModeFromClock());
   }, [isOpen]);
 
   const handleKeystoneToggle = () => {
@@ -75,6 +79,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
       tags: [dbCategory],
       archived: false,
       isKeystone: isKeystone && !keystoneCapReached,
+      timeOfDay,
     });
 
     if (!created) return;
@@ -95,6 +100,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     setIsKeystone(false);
     setKeystoneWarning(false);
     setScheduledWeekdays([]);
+    setTimeOfDay(inferBowlModeFromClock());
     onClose();
   };
 
@@ -227,6 +233,16 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                     Self Improvement
                   </button>
                 </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1.5 text-[12px]">
+                  Bowl
+                </label>
+                <TimeOfDayToggle value={timeOfDay} onChange={setTimeOfDay} />
+                <p className="text-[10.5px] text-slate-400 mt-1">
+                  Completions drop into the morning or night bowl.
+                </p>
               </div>
 
               <WeekdayScheduleChips selected={scheduledWeekdays} onChange={setScheduledWeekdays} />
