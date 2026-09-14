@@ -82,10 +82,11 @@ import {
   persistCycleDays,
   readStoredCycleDays,
   summarizeDualBowlFill,
+  themeBowlMode,
   type CycleDays,
 } from './services/reportService';
 import { HomeView } from './components/HomeView';
-import { useBowlMode, useHabits, withHabitTimeOfDay } from './hooks/useHabits';
+import { useHabits, withHabitTimeOfDay } from './hooks/useHabits';
 import { hydrateHabitTimeOfDay, resolveHabitTimeOfDay } from './utils/timeOfDay';
 import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
 import { WidgetBridge } from './lib/widgetBridge';
@@ -374,7 +375,6 @@ export default function App() {
   }, [activeFallbackIds]);
 
   const [cycleDays, setCycleDays] = useState<CycleDays>(() => readStoredCycleDays());
-  const { mode: bowlMode, setMode: setBowlMode } = useBowlMode();
 
   const handleCycleDaysChange = (days: CycleDays) => {
     const next = clampCycleDays(days);
@@ -730,6 +730,7 @@ export default function App() {
       ),
     [morningHabits.length, morningPieces.length, nightHabits.length, nightPieces.length, cycleDays]
   );
+  const bowlMode = themeBowlMode(isDark);
   const bowlPieces = bowlMode === 'night' ? nightPieces : morningPieces;
   const bowlFill = bowlMode === 'night' ? dualBowlFill.night : dualBowlFill.morning;
 
@@ -1016,9 +1017,6 @@ export default function App() {
     const alreadyVotedMomentum = hasMomentumVoteOnIso(momentumEvents, habitId, loggedDate);
 
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
-
-    const timeOfDay = resolveHabitTimeOfDay(targetHabit);
-    setBowlMode(timeOfDay);
 
     const newEvent: HabitCompletionEvent = withHabitTimeOfDay(
       {
@@ -1888,8 +1886,6 @@ export default function App() {
               pieces={bowlPieces}
               bowlFill={bowlFill}
               isDark={isDark}
-              mode={bowlMode}
-              onModeChange={setBowlMode}
               onCycleDaysChange={handleCycleDaysChange}
             >
               <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />

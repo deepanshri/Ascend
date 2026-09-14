@@ -8,30 +8,26 @@ import pieceBlueDark from '../assets/bowl/piece-blue-dark.png';
 import pieceBlueLight from '../assets/bowl/piece-blue-light.png';
 import { CYCLE_DAY_OPTIONS, clampCycleDays, type AccumulationPiece, type CycleDays } from '../services/reportService';
 import { tapPress } from '../lib/motionPresets';
-import { TimeOfDayToggle } from './TimeOfDayToggle';
-import type { TimeOfDay } from '../types/habit';
 
 const SPRING = { type: 'spring' as const, stiffness: 250, damping: 18, mass: 0.8 };
 const MAX_VISIBLE_PIECES = 28;
 const PIECE_SIZE = 28;
 const SPILL_ROW = 3;
-/** Marble-center Y on the inner floor. ~18px above the old 71% landing (~96px). */
-const FLOOR_CENTER_Y = 78;
+/** Marble-center Y on the inner floor. ~18px above the prior 78px rest. */
+const FLOOR_CENTER_Y = 60;
 const STACK_RISE = 16;
 const SCATTER_X = 12;
 
-/** Interior cavity: tall enough to keep spheres round, short of the glass foot. */
-const CAVITY_CLIP = 'ellipse(48% 30% at 50% 46%)';
+/** Interior cavity: tall enough that round marbles are not clipped into ovals. */
+const CAVITY_CLIP = 'ellipse(48% 32% at 50% 44%)';
 const RIM_MASK =
-  'radial-gradient(ellipse 52% 38% at 50% 46%, transparent 72%, #000 76%)';
+  'radial-gradient(ellipse 54% 40% at 50% 44%, transparent 74%, #000 78%)';
 
 interface AccumulationBowlProps {
   pieces: AccumulationPiece[];
   fillPercent: number;
   isOverflowing: boolean;
   isDark?: boolean;
-  mode: TimeOfDay;
-  onModeChange?: (mode: TimeOfDay) => void;
   votes: number;
   capacity: number;
   cycleDays: number;
@@ -48,8 +44,8 @@ interface LaidPiece {
   spills: boolean;
 }
 
-function pieceSrc(kind: AccumulationPiece['kind'], mode: TimeOfDay): string {
-  if (mode === 'night') return kind === 'full' ? pieceBlueDark : pieceBlueLight;
+function pieceSrc(kind: AccumulationPiece['kind'], isDark: boolean): string {
+  if (isDark) return kind === 'full' ? pieceBlueDark : pieceBlueLight;
   return kind === 'full' ? pieceGreenDark : pieceGreenLight;
 }
 
@@ -90,17 +86,17 @@ function restForPiece(index: number, isOverflowing: boolean, id: string) {
 
 const PieceLayer: React.FC<{
   items: LaidPiece[];
-  mode: TimeOfDay;
-}> = ({ items, mode }) => {
+  isDark: boolean;
+}> = ({ items, isDark }) => {
   return (
     <AnimatePresence initial={false}>
       {items.map((item) => (
         <motion.img
           key={item.piece.id}
-          src={pieceSrc(item.piece.kind, mode)}
+          src={pieceSrc(item.piece.kind, isDark)}
           alt=""
           draggable={false}
-          className="pointer-events-none absolute left-1/2 block h-7 w-7 shrink-0 aspect-square object-contain object-center transform-gpu will-change-transform"
+          className="pointer-events-none absolute left-1/2 block h-7 w-7 shrink-0 aspect-square object-contain object-center overflow-visible transform-gpu will-change-transform"
           style={{
             width: PIECE_SIZE,
             height: PIECE_SIZE,
@@ -146,8 +142,6 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
   fillPercent,
   isOverflowing,
   isDark = false,
-  mode,
-  onModeChange,
   votes,
   capacity,
   cycleDays,
@@ -169,10 +163,9 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
   const insidePieces = laid.filter((item) => !item.spills);
   const spillPieces = laid.filter((item) => item.spills);
   const roundedFill = Math.round(fillPercent);
-  const bowlSrc = mode === 'night' ? bowlNightSrc : bowlMorningSrc;
-  const nightMode = mode === 'night';
+  const bowlSrc = isDark ? bowlNightSrc : bowlMorningSrc;
   const overflowGlow = isOverflowing
-    ? nightMode
+    ? isDark
       ? 'drop-shadow-[0_0_14px_rgba(59,130,246,0.5)]'
       : 'drop-shadow-[0_0_14px_rgba(34,197,94,0.45)]'
     : '';
@@ -198,19 +191,13 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
       id="accumulation-bowl"
       data-tour="accumulation-bowl"
       className="relative mx-auto flex w-full max-w-[170px] flex-col items-center select-none"
-      aria-label={`${mode === 'night' ? 'Night' : 'Morning'} accumulation bowl, ${votes} of ${capacity} votes in a ${selectedCycle}-day cycle, ${roundedFill} percent full${isOverflowing ? ', overflowing' : ''}`}
+      aria-label={`${isDark ? 'Night' : 'Morning'} accumulation bowl, ${votes} of ${capacity} votes in a ${selectedCycle}-day cycle, ${roundedFill} percent full${isOverflowing ? ', overflowing' : ''}`}
     >
-      {onModeChange ? (
-        <div className="relative z-40 mb-1.5 w-full">
-          <TimeOfDayToggle value={mode} onChange={onModeChange} size="sm" />
-        </div>
-      ) : null}
-
       <div className="relative h-[135px] w-[170px] overflow-visible">
         {isOverflowing && (
           <div
             className={`pointer-events-none absolute left-1/2 top-[24%] z-0 h-10 w-[78%] -translate-x-1/2 rounded-full blur-xl ${
-              nightMode ? 'bg-blue-500/35' : 'bg-emerald-400/40'
+              isDark ? 'bg-blue-500/35' : 'bg-emerald-400/40'
             }`}
             aria-hidden="true"
           />
@@ -224,14 +211,14 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
         />
         <div
           className={`pointer-events-none absolute inset-0 z-[1] ${
-            nightMode || isDark ? 'bg-slate-950/20' : 'bg-slate-600/10'
+            isDark ? 'bg-slate-950/20' : 'bg-slate-600/10'
           }`}
           style={{ clipPath: CAVITY_CLIP }}
           aria-hidden="true"
         />
 
         <div className="absolute inset-0 z-10 overflow-visible" style={{ clipPath: CAVITY_CLIP }}>
-          <PieceLayer items={insidePieces} mode={mode} />
+          <PieceLayer items={insidePieces} isDark={isDark} />
         </div>
 
         <img
@@ -248,14 +235,14 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
         {isOverflowing && (
           <div
             className={`pointer-events-none absolute left-1/2 top-[16%] z-[25] h-7 w-[68%] -translate-x-1/2 rounded-full blur-md ${
-              nightMode ? 'bg-blue-400/25' : 'bg-emerald-300/30'
+              isDark ? 'bg-blue-400/25' : 'bg-emerald-300/30'
             }`}
             aria-hidden="true"
           />
         )}
 
         <div className="absolute inset-0 z-30 overflow-visible">
-          <PieceLayer items={spillPieces} mode={mode} />
+          <PieceLayer items={spillPieces} isDark={isDark} />
         </div>
       </div>
 

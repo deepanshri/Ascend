@@ -51,8 +51,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   onDismissLongPress,
   onOpenEdit: _onOpenEdit,
   onOpenDeleteConfirm: _onOpenDeleteConfirm,
-  onToggleKeystone,
-  keystoneAtCap = false,
+  onToggleKeystone: _onToggleKeystone,
+  keystoneAtCap: _keystoneAtCap = false,
   keystoneBoosted: _keystoneBoosted = false,
   weekOrigin,
 }) => {
@@ -599,15 +599,15 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                       )}
                       {habitDisplayName}
                     </h3>
-                    {/* Priority Dot: green for high, light green for mid, grey dot for low */}
+                    {/* Priority Dot: green in light, blue in dark */}
                     <span
                       aria-label={`Priority: ${habit.priority || 'mid'}`}
                       className={`w-2 h-2 rounded-full shrink-0 ${
                         habit.priority === 'high'
-                          ? 'bg-[#16a34a]'
+                          ? 'bg-[#16a34a] dark:bg-blue-600'
                           : habit.priority === 'low'
-                          ? 'bg-[#94a3b8]'
-                          : 'bg-[#86efac]'
+                          ? 'bg-[#94a3b8] dark:bg-blue-800'
+                          : 'bg-[#86efac] dark:bg-blue-400'
                       }`}
                     />
                     {habit.isKeystone && (
@@ -808,45 +808,11 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                 ? `"${habit.purposeAnchor.trim()}"`
                 : 'No purpose anchor set yet. Long press to edit.'}
             </p>
-            {onToggleKeystone && (
-              <div
-                className="relative w-full min-w-0 shrink-0 flex items-center justify-between gap-2 pt-1 overflow-visible"
-                onPointerDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <span className="min-w-0 truncate text-[10.5px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                  Is Keystone Habit?
-                </span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={Boolean(habit.isKeystone)}
-                  aria-label="Is Keystone Habit?"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const next = !habit.isKeystone;
-                    if (next && keystoneAtCap) {
-                      onNotify('You already have 2 keystone habits. Unflag one before adding another.');
-                      return;
-                    }
-                    onToggleKeystone(habit.id, next);
-                  }}
-                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border transition ${
-                    habit.isKeystone
-                      ? 'bg-emerald-500 dark:bg-blue-500 border-emerald-500 dark:border-blue-500'
-                      : 'bg-slate-200 dark:bg-slate-700 border-slate-200 dark:border-slate-600'
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${
-                      habit.isKeystone ? 'translate-x-3.5' : 'translate-x-0.5'
-                    } mt-px`}
-                  />
-                </button>
-              </div>
-            )}
+            {habit.identityStatement?.trim() ? (
+              <p className="text-[12px] font-semibold text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2">
+                {habit.identityStatement.trim()}
+              </p>
+            ) : null}
           </div>
 
           <div className="flex items-center justify-between text-[10.5px] text-slate-400 dark:text-slate-400 pt-1.5 border-t border-slate-100 dark:border-slate-800">

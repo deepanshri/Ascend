@@ -1,5 +1,6 @@
 import { HabitCompletionEvent } from '../types';
 import { addDaysIso, resolveEventIsoDate, toISODate } from '../utils/dates';
+import type { TimeOfDay } from '../types/habit';
 
 export const CYCLE_DAY_OPTIONS = [3, 5, 7, 10] as const;
 export type CycleDays = (typeof CYCLE_DAY_OPTIONS)[number];
@@ -66,6 +67,11 @@ export function cycleWindow(
     startIso: addDaysIso(endIso, -(days - 1)),
     endIso,
   };
+}
+
+/** Light theme = Morning bowl, Dark theme = Night bowl. */
+export function themeBowlMode(isDark: boolean): TimeOfDay {
+  return isDark ? 'night' : 'morning';
 }
 
 /** C = H_active × cycleDays */

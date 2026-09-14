@@ -191,10 +191,10 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
                   aria-label={`Priority: ${habit.priority || 'mid'}`}
                   className={`w-2 h-2 rounded-full shrink-0 ${
                     habit.priority === 'high'
-                      ? 'bg-[#16a34a]'
+                      ? 'bg-[#16a34a] dark:bg-blue-600'
                       : habit.priority === 'low'
-                      ? 'bg-[#94a3b8]'
-                      : 'bg-[#86efac]'
+                      ? 'bg-[#94a3b8] dark:bg-blue-800'
+                      : 'bg-[#86efac] dark:bg-blue-400'
                   }`}
                 />
               </div>
