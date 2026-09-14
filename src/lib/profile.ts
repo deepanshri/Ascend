@@ -1,6 +1,7 @@
 import { UserProfile, UserSession } from '../types';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { cacheProfileLocally, readCachedProfile, syncProfilePatch } from './offlineSync';
+import { persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from '../data/avatars';
 
 const TUTORIAL_STORAGE_KEY = 'ascend_has_completed_tutorial';
 
@@ -41,6 +42,7 @@ function localProfile(session: UserSession, interests: string[] = []): UserProfi
     id: session.id,
     interests,
     has_completed_tutorial: getLocalTutorialCompleted(),
+    avatar_url: readStoredAvatarId(session.avatarUrl),
   };
 }
 
@@ -57,21 +59,36 @@ export async function fetchUserProfile(
   }
 
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('profiles')
-      .select('id, interests, has_completed_tutorial')
+      .select('id, interests, has_completed_tutorial, avatar_url')
       .eq('id', session.id)
       .maybeSingle();
+
+    if (error && /avatar_url/i.test(error.message)) {
+      const retry = await supabase
+        .from('profiles')
+        .select('id, interests, has_completed_tutorial')
+        .eq('id', session.id)
+        .maybeSingle();
+      data = retry.data as typeof data;
+      error = retry.error;
+    }
 
     if (error || !data) {
       return cached || fallback;
     }
 
     const interests = parseInterests(data.interests);
+    const avatar_url = resolveAvatarId(
+      (typeof data.avatar_url === 'string' && data.avatar_url) || cached?.avatar_url || session.avatarUrl
+    );
+    persistStoredAvatarId(avatar_url);
     const profile: UserProfile = {
       id: String(data.id || session.id),
       interests: interests.length > 0 ? interests : fallbackInterests,
       has_completed_tutorial: Boolean(data.has_completed_tutorial) || fallback.has_completed_tutorial,
+      avatar_url,
     };
     cacheProfileLocally(profile);
     return profile;
@@ -82,24 +99,34 @@ export async function fetchUserProfile(
 
 export async function persistUserProfile(
   session: UserSession,
-  patch: Partial<Pick<UserProfile, 'interests' | 'has_completed_tutorial'>>
+  patch: Partial<Pick<UserProfile, 'interests' | 'has_completed_tutorial' | 'avatar_url'>>
 ): Promise<void> {
-  if (typeof patch.has_completed_tutorial === 'boolean') {
-    setLocalTutorialCompleted(patch.has_completed_tutorial);
+  const nextPatch = { ...patch };
+  if (typeof nextPatch.avatar_url === 'string') {
+    nextPatch.avatar_url = resolveAvatarId(nextPatch.avatar_url);
+    persistStoredAvatarId(nextPatch.avatar_url);
+  }
+  if (typeof nextPatch.has_completed_tutorial === 'boolean') {
+    setLocalTutorialCompleted(nextPatch.has_completed_tutorial);
   }
 
+  const cached = readCachedProfile(session.id);
   cacheProfileLocally({
     id: session.id,
-    interests: patch.interests ?? readCachedProfile(session.id)?.interests ?? [],
+    interests: nextPatch.interests ?? cached?.interests ?? [],
     has_completed_tutorial:
-      typeof patch.has_completed_tutorial === 'boolean'
-        ? patch.has_completed_tutorial
-        : Boolean(readCachedProfile(session.id)?.has_completed_tutorial),
+      typeof nextPatch.has_completed_tutorial === 'boolean'
+        ? nextPatch.has_completed_tutorial
+        : Boolean(cached?.has_completed_tutorial),
+    avatar_url:
+      typeof nextPatch.avatar_url === 'string'
+        ? nextPatch.avatar_url
+        : cached?.avatar_url ?? readStoredAvatarId(session.avatarUrl),
   });
 
   if (!isSupabaseConfigured || !supabase || session.isGuest) {
     return;
   }
 
-  await syncProfilePatch(session.id, patch);
+  await syncProfilePatch(session.id, nextPatch);
 }

@@ -17,14 +17,16 @@ import {
   HelpCircle,
   Shield,
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { IdentityEvidence, UserSession } from '../types';
 import { FriendsFeed } from './FriendsFeed';
 import { FloatingToast } from './FloatingToast';
 import { MotionModal } from './MotionModal';
-import { tapPress } from '../lib/motionPresets';
-import { Mascot } from './Mascot';
+import { ProfileAvatar } from './ProfileAvatar';
+import { overlayFade, tapPress } from '../lib/motionPresets';
 import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
+import { persistUserProfile } from '../lib/profile';
+import { AVATAR_OPTIONS, persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from '../data/avatars';
 import type { ProtectionModeStatus } from '../lib/protection';
 
 interface PersonalViewProps {
@@ -47,6 +49,7 @@ interface PersonalViewProps {
   onChangePassword: () => void;
   onLogout: () => void;
   onUpdateName?: (name: string) => void;
+  onUpdateAvatar?: (avatarId: string) => void;
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }
 
@@ -62,7 +65,6 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
   vacationModeActive = false,
   vacationStatus,
   onToggleVacationMode,
-  momentumScore = 50,
   onOpenSettings,
   onOpenLedger,
   onUpgradeGuest,
@@ -70,6 +72,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
   onChangePassword,
   onLogout,
   onUpdateName,
+  onUpdateAvatar,
   onScroll,
 }) => {
   // Personal Details state (persisted locally)
@@ -113,6 +116,8 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
   const [isBecomingModalOpen, setIsBecomingModalOpen] = useState(false);
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
+  const [isAvatarSheetOpen, setIsAvatarSheetOpen] = useState(false);
+  const [avatarId, setAvatarId] = useState(() => readStoredAvatarId(userSession.avatarUrl));
 
   // Edit details form temp state
   const [tempName, setTempName] = useState(name);
@@ -182,6 +187,20 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     showToast('Identity goal updated!');
   };
 
+  const handleSelectAvatar = (id: string) => {
+    const next = resolveAvatarId(id);
+    setAvatarId(next);
+    persistStoredAvatarId(next);
+    onUpdateAvatar?.(next);
+    void persistUserProfile(userSession, { avatar_url: next });
+    setIsAvatarSheetOpen(false);
+    showToast('Avatar updated');
+  };
+
+  useEffect(() => {
+    if (userSession.avatarUrl) setAvatarId(resolveAvatarId(userSession.avatarUrl));
+  }, [userSession.avatarUrl]);
+
   const toggleInterest = (tag: string) => {
     if (onToggleInterest) {
       onToggleInterest(tag);
@@ -233,26 +252,36 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       />
 
       {/* CARD 1: PERSONAL DETAILS */}
-      <section className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm space-y-4">
-        <div
-          onClick={() => {
-            setTempName(name);
-            setTempDob(dob);
-            setTempUniversity(university);
-            setTempLocation(location);
-            setIsEditDetailsOpen(true);
-          }}
-          className="flex items-center justify-between cursor-pointer group"
-        >
+      <section className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm space-y-4">
+        <div className="flex items-center justify-between gap-3">
           <div className="flex items-center space-x-3 min-w-0">
-            <div className="w-14 h-14 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 flex items-center justify-center shrink-0">
-              <Mascot size={48} angle="front" momentumScore={momentumScore} animate />
+            <ProfileAvatar value={avatarId} alt="Your profile avatar" className="w-14 h-14 rounded-2xl" />
+            <div className="min-w-0">
+              <h2 className="text-[16px] font-bold text-slate-900 dark:text-white">Personal Details</h2>
+              <motion.button
+                type="button"
+                whileTap={tapPress}
+                onClick={() => setIsAvatarSheetOpen(true)}
+                className="mt-1 text-[12px] font-bold text-[#22C55E] dark:text-[#3B82F6] cursor-pointer"
+              >
+                Edit Avatar
+              </motion.button>
             </div>
-            <h2 className="text-[16px] font-bold text-slate-900 dark:text-white">
-              Personal Details
-            </h2>
           </div>
-          <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-0.5 transition" />
+          <button
+            type="button"
+            onClick={() => {
+              setTempName(name);
+              setTempDob(dob);
+              setTempUniversity(university);
+              setTempLocation(location);
+              setIsEditDetailsOpen(true);
+            }}
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+            aria-label="Edit personal details"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Detail Rows */}
@@ -816,6 +845,73 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
               </form>
             </div>
       </MotionModal>
+
+      <AnimatePresence>
+        {isAvatarSheetOpen && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 backdrop-blur-xs transform-gpu"
+            initial={overlayFade.initial}
+            animate={overlayFade.animate}
+            exit={overlayFade.exit}
+            transition={overlayFade.transition}
+            onClick={() => setIsAvatarSheetOpen(false)}
+            role="presentation"
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="avatar-sheet-title"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(event) => event.stopPropagation()}
+              className="w-full max-w-lg rounded-t-2xl bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-lg"
+            >
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h3 id="avatar-sheet-title" className="text-[16px] font-bold text-slate-900 dark:text-white">
+                  Choose Avatar
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsAvatarSheetOpen(false)}
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                  aria-label="Close avatar picker"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="grid grid-cols-4 gap-3">
+                {AVATAR_OPTIONS.map((option) => {
+                  const selected = option.id === avatarId;
+                  return (
+                    <motion.button
+                      key={option.id}
+                      type="button"
+                      whileTap={tapPress}
+                      onClick={() => handleSelectAvatar(option.id)}
+                      aria-pressed={selected}
+                      aria-label={option.label}
+                      className={`p-1 rounded-2xl cursor-pointer ${
+                        selected
+                          ? 'ring-2 ring-green-500 dark:ring-blue-500'
+                          : 'ring-1 ring-transparent hover:ring-slate-200 dark:hover:ring-slate-700'
+                      }`}
+                    >
+                      <img
+                        src={option.src}
+                        alt=""
+                        draggable={false}
+                        className="w-full aspect-square object-cover rounded-xl bg-emerald-50 dark:bg-blue-950/60"
+                      />
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

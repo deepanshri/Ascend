@@ -1,4 +1,5 @@
 import { generateFriendCode, isValidFriendCode, normalizeFriendCode } from '../utils/friendCode';
+import { resolveAvatarId } from '../data/avatars';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export type FriendStatus = 'pending' | 'accepted';
@@ -18,12 +19,14 @@ export interface FriendEdge {
   createdAt: string;
   peerId: string;
   peerName: string;
+  peerAvatar?: string | null;
 }
 
 export interface FriendActivityItem {
   id: string;
   friendId: string;
   friendName: string;
+  friendAvatar?: string | null;
   kind: 'habit' | 'milestone';
   text: string;
   timestamp: number;
@@ -95,18 +98,28 @@ export async function ensureProfileDirectory(userId: string, email?: string, nam
   try {
     const { data } = await supabase
       .from('profiles')
-      .select('id, username, email, display_name, friend_code')
+      .select('id, username, email, display_name, friend_code, avatar_url')
       .eq('id', userId)
       .maybeSingle();
     let friendCode = await ensureFriendCode(userId, data?.friend_code as string | null | undefined);
     for (let attempt = 0; attempt < 8; attempt += 1) {
-      const payload = {
+      const payload: {
+        id: string;
+        email: string | null;
+        username: string | null;
+        display_name: string | null;
+        friend_code: string;
+        avatar_url?: string;
+      } = {
         id: userId,
         email: data?.email || email || null,
         username: data?.username || username || null,
         display_name: data?.display_name || displayName || null,
         friend_code: friendCode,
       };
+      if (typeof data?.avatar_url === 'string' && data.avatar_url) {
+        payload.avatar_url = data.avatar_url;
+      }
       const { error } = await supabase.from('profiles').upsert(payload);
       if (!error) return friendCode;
       if (error.code === '23505') {
@@ -216,15 +229,29 @@ export async function searchProfiles(query: string): Promise<ProfileDirectoryHit
   }
 }
 
-async function loadProfileMap(ids: string[]): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
+interface ProfileLite {
+  name: string;
+  avatarUrl: string;
+}
+
+async function loadProfileMap(ids: string[]): Promise<Map<string, ProfileLite>> {
+  const names = new Map<string, ProfileLite>();
   if (!supabase || ids.length === 0) return names;
-  const { data } = await supabase
+  let { data, error } = await supabase
     .from('profiles')
-    .select('id, username, email, display_name')
+    .select('id, username, email, display_name, avatar_url')
     .in('id', ids);
+  if (error && /avatar_url/i.test(error.message)) {
+    const retry = await supabase.from('profiles').select('id, username, email, display_name').in('id', ids);
+    data = retry.data as typeof data;
+    error = retry.error;
+  }
+  if (error) return names;
   (data || []).forEach((row) => {
-    names.set(String(row.id), displayNameFromProfile(row));
+    names.set(String(row.id), {
+      name: displayNameFromProfile(row),
+      avatarUrl: resolveAvatarId(typeof row.avatar_url === 'string' ? row.avatar_url : ''),
+    });
   });
   return names;
 }
@@ -232,13 +259,14 @@ async function loadProfileMap(ids: string[]): Promise<Map<string, string>> {
 function mapEdge(
   row: { id?: string; user_id?: string; friend_id?: string; status?: string; created_at?: string },
   selfId: string,
-  names: Map<string, string>
+  profiles: Map<string, ProfileLite>
 ): FriendEdge | null {
   const userId = String(row.user_id || '');
   const friendId = String(row.friend_id || '');
   const status = row.status === 'accepted' ? 'accepted' : row.status === 'pending' ? 'pending' : null;
   if (!row.id || !userId || !friendId || !status) return null;
   const peerId = userId === selfId ? friendId : userId;
+  const peer = profiles.get(peerId);
   return {
     id: String(row.id),
     userId,
@@ -246,7 +274,8 @@ function mapEdge(
     status,
     createdAt: String(row.created_at || ''),
     peerId,
-    peerName: names.get(peerId) || 'Friend',
+    peerName: peer?.name || 'Friend',
+    peerAvatar: peer?.avatarUrl || null,
   };
 }
 
@@ -374,6 +403,7 @@ export interface ReceivedAffirmationGlow {
   id: string;
   fromUserId: string;
   fromName: string;
+  fromAvatar?: string | null;
   eventId: string;
   createdAt: string;
 }
@@ -407,11 +437,12 @@ export async function fetchReceivedGlows(userId: string): Promise<ReceivedAffirm
       .limit(20);
     if (error || !data) return [];
     const fromIds = Array.from(new Set(data.map((row) => String(row.from_user_id || '')).filter(Boolean)));
-    const names = await loadProfileMap(fromIds);
+    const profiles = await loadProfileMap(fromIds);
     return data.map((row) => ({
       id: String(row.id),
       fromUserId: String(row.from_user_id),
-      fromName: names.get(String(row.from_user_id)) || 'A friend',
+      fromName: profiles.get(String(row.from_user_id))?.name || 'A friend',
+      fromAvatar: profiles.get(String(row.from_user_id))?.avatarUrl || null,
       eventId: String(row.event_id || ''),
       createdAt: String(row.created_at || ''),
     }));
@@ -513,11 +544,13 @@ export async function fetchFriendActivity(userId: string, edges: FriendEdge[]): 
     const activeFriendIds = Array.from(new Set(recent.map((row) => String(row.user_id || '')).filter(Boolean)));
     const remainingVotes = await loadVoteTotals(activeFriendIds);
     const names = new Map(edges.map((edge) => [edge.peerId, edge.peerName]));
+    const avatars = new Map(edges.map((edge) => [edge.peerId, edge.peerAvatar]));
     const items: FriendActivityItem[] = [];
 
     recent.forEach((row) => {
       const friendId = String(row.user_id || '');
       const friendName = names.get(friendId) || 'Friend';
+      const friendAvatar = avatars.get(friendId) || null;
       const timestamp = Date.parse(String(row.timestamp)) || Date.now();
       const current = remainingVotes.get(friendId) ?? 0;
       const previous = Math.max(0, current - 1);
@@ -527,6 +560,7 @@ export async function fetchFriendActivity(userId: string, edges: FriendEdge[]): 
           id: `stage-${friendId}-${unlocked}-${row.id}`,
           friendId,
           friendName,
+          friendAvatar,
           kind: 'milestone',
           text: `${friendName} unlocked Identity Stage ${unlocked}`,
           timestamp,
@@ -540,6 +574,7 @@ export async function fetchFriendActivity(userId: string, edges: FriendEdge[]): 
         id: String(row.id),
         friendId,
         friendName,
+        friendAvatar,
         kind: 'habit',
         text: `${friendName} ${verb} ${habitName}`,
         timestamp,

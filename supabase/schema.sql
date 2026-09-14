@@ -145,3 +145,6 @@ ALTER TABLE IF EXISTS public.habits
 
 ALTER TABLE IF EXISTS public.profiles
   ADD COLUMN IF NOT EXISTS friend_code TEXT;
+
+ALTER TABLE IF EXISTS public.profiles
+  ADD COLUMN IF NOT EXISTS avatar_url TEXT;

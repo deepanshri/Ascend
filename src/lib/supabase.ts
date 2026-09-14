@@ -9,6 +9,7 @@ import {
   weekdayFromIsoDate,
   withReminderNotificationIds,
 } from './notifications';
+import { DEFAULT_AVATAR_ID, resolveAvatarId } from '../data/avatars';
 
 const env = (import.meta as any).env || {};
 const supabaseUrl = env.VITE_SUPABASE_URL || 'https://dpgupbcbhkmjtyqkljpr.supabase.co';
@@ -153,7 +154,10 @@ const ONBOARDING_COMPLETED_KEY = 'ascend_onboarding_completed';
 export function getStoredSession(): UserSession | null {
   try {
     const raw = localStorage.getItem(SESSION_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (!raw) return null;
+    const session = JSON.parse(raw) as UserSession;
+    session.avatarUrl = resolveAvatarId(session.avatarUrl);
+    return session;
   } catch {}
   return null;
 }
@@ -161,7 +165,8 @@ export function getStoredSession(): UserSession | null {
 export function setStoredSession(session: UserSession | null) {
   try {
     if (session) {
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+      const next = { ...session, avatarUrl: resolveAvatarId(session.avatarUrl) };
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(next));
     } else {
       localStorage.removeItem(SESSION_STORAGE_KEY);
     }
@@ -183,9 +188,8 @@ export function setOnboardingCompleted(completed: boolean) {
 }
 
 // Generate an avatar based on name initials or seed
-export function generateAvatarUrl(name: string): string {
-  const clean = encodeURIComponent(name.trim() || 'User');
-  return `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${clean}&backgroundColor=e2f8eb,bbf7d0,dcfce7`;
+export function generateAvatarUrl(_name?: string): string {
+  return DEFAULT_AVATAR_ID;
 }
 
 export function mapAuthError(raw: unknown): string {
@@ -219,7 +223,7 @@ function sessionFromAuthUser(
     id: user.id,
     email: user.email || email,
     name: displayName,
-    avatarUrl: String(user.user_metadata?.avatar_url || '') || generateAvatarUrl(displayName),
+    avatarUrl: resolveAvatarId(String(user.user_metadata?.avatar_url || '')),
     isGuest: false,
     memberSince: new Date(user.created_at || Date.now()).toLocaleDateString('en-US', {
       month: 'short',
@@ -350,7 +354,7 @@ export const authService = {
       ...currentSession,
       email,
       name: name || currentSession.name,
-      avatarUrl: generateAvatarUrl(name || email),
+      avatarUrl: resolveAvatarId(currentSession.avatarUrl || generateAvatarUrl(name || email)),
       isGuest: false,
       syncStatus: 'syncing',
     };

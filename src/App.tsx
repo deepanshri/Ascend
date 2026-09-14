@@ -49,6 +49,7 @@ import {
   upsertPublicReminder,
 } from './lib/supabase';
 import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted } from './lib/profile';
+import { persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from './data/avatars';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
 import { fetchActiveHabits, fetchHabitLogsForDate, deleteHabitCascade, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable } from './lib/habitsApi';
 import {
@@ -326,6 +327,16 @@ export default function App() {
       if (profile.interests.length > 0) {
         setSelectedInterests(profile.interests);
       }
+      if (profile.avatar_url) {
+        const avatarUrl = resolveAvatarId(profile.avatar_url);
+        persistStoredAvatarId(avatarUrl);
+        setSession((prev) => {
+          if (!prev) return prev;
+          const next = { ...prev, avatarUrl };
+          setStoredSession(next);
+          return next;
+        });
+      }
       setHasCompletedTutorial(Boolean(profile.has_completed_tutorial));
     })();
 
@@ -557,7 +568,7 @@ export default function App() {
         id: user.id,
         email: user.email || '',
         name: String(user.user_metadata?.full_name || user.email?.split('@')[0] || 'Ascender'),
-        avatarUrl: String(user.user_metadata?.avatar_url || generateAvatarUrl(user.email || 'User')),
+        avatarUrl: readStoredAvatarId(String(user.user_metadata?.avatar_url || generateAvatarUrl(user.email || 'User'))),
         isGuest: false,
         memberSince: new Date(user.created_at || Date.now()).toLocaleDateString('en-US', {
           month: 'short',
@@ -1674,6 +1685,14 @@ export default function App() {
               }
             }}
             onChangePassword={() => setIsPasswordModalOpen(true)}
+            onUpdateAvatar={(avatarUrl) => {
+              setSession((prev) => {
+                if (!prev) return prev;
+                const next = { ...prev, avatarUrl };
+                setStoredSession(next);
+                return next;
+              });
+            }}
             onLogout={handleDeleteAccount}
             onUpdateName={(newName) => {
               setSession((prev) => (prev ? { ...prev, name: newName } : prev));

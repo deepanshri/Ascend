@@ -104,6 +104,7 @@ export interface UserProfile {
   id: string;
   interests: string[];
   has_completed_tutorial: boolean;
+  avatar_url?: string | null;
 }
 
 export interface FrictionAudit {

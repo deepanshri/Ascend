@@ -20,6 +20,7 @@ import { formatFriendCodeDisplay, isValidFriendCode, normalizeFriendCode } from 
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import { overlayFade, sheetMotion, tapPress } from '../lib/motionPresets';
 import { FloatingToast } from './FloatingToast';
+import { ProfileAvatar } from './ProfileAvatar';
 
 export interface FriendsFeedProps {
   userId?: string | null;
@@ -297,7 +298,14 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
                   key={edge.id}
                   className="p-2.5 rounded-xl border border-line bg-surface-muted flex items-center justify-between gap-2"
                 >
-                  <p className="text-[13px] font-semibold text-ink truncate">{edge.peerName}</p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ProfileAvatar
+                      value={edge.peerAvatar}
+                      alt={`${edge.peerName} avatar`}
+                      className="w-9 h-9 rounded-xl"
+                    />
+                    <p className="text-[13px] font-semibold text-ink truncate">{edge.peerName}</p>
+                  </div>
                   <button
                     type="button"
                     onClick={() => void handleUnfriend(edge)}
@@ -319,7 +327,12 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
                 {receivedGlows.length > 0 ? (
                   <ul className="space-y-1.5">
                     {receivedGlows.map((glow) => (
-                      <li key={glow.id} className="p-2.5 rounded-xl border border-amber-200/80 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/30">
+                      <li key={glow.id} className="p-2.5 rounded-xl border border-amber-200/80 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/30 flex items-center gap-2">
+                        <ProfileAvatar
+                          value={glow.fromAvatar}
+                          alt={`${glow.fromName} avatar`}
+                          className="w-8 h-8 rounded-xl"
+                        />
                         <p className="text-[12.5px] text-ink leading-relaxed">{glow.fromName} sent you an Affirmation Glow</p>
                       </li>
                     ))}
@@ -335,9 +348,16 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
                       const glowed = sentGlows.has(item.id);
                       return (
                         <li key={item.id} className="p-2.5 rounded-xl border border-line bg-surface-muted flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-[12.5px] text-ink leading-relaxed">{item.text}</p>
-                            <p className="text-[10.5px] text-ink-muted mt-0.5">{formatActivityTime(item.timestamp)}</p>
+                          <div className="flex items-start gap-2 min-w-0">
+                            <ProfileAvatar
+                              value={item.friendAvatar}
+                              alt={`${item.friendName} avatar`}
+                              className="w-8 h-8 rounded-xl"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-[12.5px] text-ink leading-relaxed">{item.text}</p>
+                              <p className="text-[10.5px] text-ink-muted mt-0.5">{formatActivityTime(item.timestamp)}</p>
+                            </div>
                           </div>
                           <button
                             type="button"

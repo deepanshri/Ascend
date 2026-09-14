@@ -10,9 +10,11 @@ type HabitLogQueueItem =
   | { kind: 'upsert'; userId: string; event: HabitCompletionEvent }
   | { kind: 'delete'; userId: string; habitId: string; dayIndex: number };
 
+type ProfilePatch = Partial<Pick<UserProfile, 'interests' | 'has_completed_tutorial' | 'avatar_url'>>;
+
 interface ProfileQueueItem {
   userId: string;
-  patch: Partial<Pick<UserProfile, 'interests' | 'has_completed_tutorial'>>;
+  patch: ProfilePatch;
 }
 
 function canSync(userId?: string | null): boolean {
@@ -163,15 +165,25 @@ export async function pushHabitLogDeleteRemote(
 
 export async function pushProfileRemote(
   userId: string,
-  patch: Partial<Pick<UserProfile, 'interests' | 'has_completed_tutorial'>>
+  patch: ProfilePatch
 ): Promise<boolean> {
   if (!canSync(userId) || !supabase) return false;
   try {
-    const { error } = await supabase.from('profiles').upsert({
+    const payload: Record<string, unknown> = {
       id: userId,
-      ...patch,
       updated_at: new Date().toISOString(),
-    });
+    };
+    if (patch.interests) payload.interests = patch.interests;
+    if (typeof patch.has_completed_tutorial === 'boolean') {
+      payload.has_completed_tutorial = patch.has_completed_tutorial;
+    }
+    if (typeof patch.avatar_url === 'string') payload.avatar_url = patch.avatar_url;
+    const { error } = await supabase.from('profiles').upsert(payload);
+    if (error && /avatar_url/i.test(error.message) && 'avatar_url' in payload) {
+      delete payload.avatar_url;
+      const retry = await supabase.from('profiles').upsert(payload);
+      return !retry.error;
+    }
     return !error;
   } catch {
     return false;
@@ -205,10 +217,7 @@ export async function syncHabitLogDelete(
   if (!ok) enqueueLog({ kind: 'delete', userId, habitId, dayIndex });
 }
 
-export async function syncProfilePatch(
-  userId: string,
-  patch: Partial<Pick<UserProfile, 'interests' | 'has_completed_tutorial'>>
-): Promise<void> {
+export async function syncProfilePatch(userId: string, patch: ProfilePatch): Promise<void> {
   if (!canSync(userId)) return;
   if (!isOnline()) {
     enqueueProfile({ userId, patch });
