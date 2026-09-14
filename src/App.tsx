@@ -73,7 +73,9 @@ import {
   type NotificationWindowKey,
   type PsychologyNotificationWindows,
 } from './lib/notifications';
-import { syncWidgetData } from './lib/widgetSync';
+import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
+import { WidgetBridge } from './lib/widgetBridge';
+import type { WidgetPendingAction, WidgetRoute } from './lib/widgetSync';
 import {
   countActiveHabits,
   getExamShieldStatus,
@@ -134,6 +136,11 @@ export default function App() {
   });
   const sessionRef = useRef<UserSession | null>(session);
   sessionRef.current = session;
+  const derivedHabitsRef = useRef<Habit[]>([]);
+  const todayDayIndexRef = useRef(3);
+  const handleCompleteTodayRef = useRef<(habitId: string, isFallback?: boolean) => void>(() => {});
+  const handleResetTodayRef = useRef<(habitId: string) => void>(() => {});
+  const handleSetReminderCompletedRef = useRef<(id: string, completed: boolean) => void>(() => {});
   const [isOnboarded, setIsOnboarded] = useState<boolean>(() => isOnboardingCompleted());
 
   // Theme state ('light' | 'dark' | 'system')
@@ -498,6 +505,7 @@ export default function App() {
   }, [calendarOrigin]);
 
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
+  const [widgetFocusReminderId, setWidgetFocusReminderId] = useState<string | null>(null);
   const [detailHabit, setDetailHabit] = useState<Habit | null>(null);
   const [longPressedHabitId, setLongPressedHabitId] = useState<string | null>(null);
   const [longPressedRect, setLongPressedRect] = useState<DOMRect | null>(null);
@@ -812,16 +820,26 @@ export default function App() {
   }, [todayMomentumScore, todayDayIndex, session?.id, session?.isGuest]);
 
   useEffect(() => {
-    const scheduledToday = scheduledHabitsForDayIndex(activeHabits, todayDayIndex, calendarOrigin);
-    const totalHabits = scheduledToday.length;
-    const habitsCompleted = scheduledToday.filter((habit) => Boolean(habit.days?.[todayDayIndex])).length;
-    void syncWidgetData({
-      score: todayMomentumScore,
-      habitsCompleted,
-      totalHabits,
-      lastUpdated: new Date().toISOString(),
+    void publishWidgetSnapshot({
+      todayDayIndex,
+      origin: calendarOrigin,
+      dark: isDark,
+      momentumScore: todayMomentumScore,
+      habits: activeHabits,
+      reminders,
+      momentumEvents,
+      completionEvents,
     });
-  }, [todayMomentumScore, activeHabits, todayDayIndex, calendarOrigin, completionEvents, momentumEvents]);
+  }, [
+    todayMomentumScore,
+    activeHabits,
+    reminders,
+    todayDayIndex,
+    calendarOrigin,
+    completionEvents,
+    momentumEvents,
+    isDark,
+  ]);
 
   useEffect(() => {
     void schedulePsychologyNotifications({
@@ -1412,6 +1430,73 @@ export default function App() {
     persistReminderSync(updated);
   };
 
+  derivedHabitsRef.current = derivedHabits;
+  todayDayIndexRef.current = todayDayIndex;
+  handleCompleteTodayRef.current = handleCompleteToday;
+  handleResetTodayRef.current = handleResetToday;
+  handleSetReminderCompletedRef.current = handleSetReminderCompleted;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const applyAction = (action: WidgetPendingAction) => {
+      if (!action?.id) return;
+      const completed = Boolean(action.completed);
+      if (action.type === 'reminder') {
+        handleSetReminderCompletedRef.current(action.id, completed);
+        return;
+      }
+      if (action.type !== 'habit') return;
+      const habit = derivedHabitsRef.current.find((item) => item.id === action.id);
+      const already = Boolean(habit?.days?.[todayDayIndexRef.current]);
+      if (completed && !already) handleCompleteTodayRef.current(action.id, false);
+      if (!completed && already) handleResetTodayRef.current(action.id);
+    };
+
+    const applyRoute = (route: WidgetRoute | null) => {
+      if (!route) return;
+      if (route.tab === 'report') setActiveTab('report');
+      if (route.tab === 'reminders') {
+        setActiveTab('reminders');
+        if (route.reminderId) setWidgetFocusReminderId(route.reminderId);
+      }
+      if (route.tab === 'home') {
+        setActiveTab('home');
+        if (route.habitId) {
+          const habit = derivedHabitsRef.current.find((item) => item.id === route.habitId);
+          if (habit) setDetailHabit(habit);
+        }
+      }
+      if (route.tab === 'ledger') {
+        setActiveTab('personal');
+        setIsLedgerModalOpen(true);
+      }
+    };
+
+    const drain = async () => {
+      const [actions, launch] = await Promise.all([consumeWidgetActions(), readLaunchWidgetRoute()]);
+      if (cancelled) return;
+      actions.forEach(applyAction);
+      applyRoute(launch);
+    };
+
+    void drain();
+    const actionSub = WidgetBridge.addListener('widgetAction', applyAction);
+    const linkSub = WidgetBridge.addListener('deepLink', (data) => applyRoute(parseWidgetRoute(data.url)));
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void drain();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      void Promise.resolve(actionSub).then((sub) => sub.remove());
+      void Promise.resolve(linkSub).then((sub) => sub.remove());
+    };
+  }, []);
+
   const handleUpdateReminder = (
     id: string,
     updates: Partial<Omit<StandaloneReminder, 'id' | 'createdAt'>>
@@ -1597,6 +1682,7 @@ export default function App() {
           >
           <RemindersView
             reminders={reminders ?? []}
+            focusReminderId={widgetFocusReminderId}
             onAddReminder={handleAddReminder}
             onUpdateReminder={handleUpdateReminder}
             onToggleComplete={handleToggleReminder}

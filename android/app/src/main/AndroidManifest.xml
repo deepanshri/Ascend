@@ -23,6 +23,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="ascend" android:host="app" />
+            </intent-filter>
+
         </activity>
 
         <activity
@@ -36,6 +43,66 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".ReportRingWidget"
+            android:exported="true"
+            android:label="@string/widget_report_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_report_info" />
+        </receiver>
+
+        <receiver
+            android:name=".RemindersWidget"
+            android:exported="true"
+            android:label="@string/widget_reminders_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_reminders_info" />
+        </receiver>
+
+        <receiver
+            android:name=".HabitsWidget"
+            android:exported="true"
+            android:label="@string/widget_habits_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_habits_info" />
+        </receiver>
+
+        <receiver
+            android:name=".IdentityLedgerWidget"
+            android:exported="true"
+            android:label="@string/widget_identity_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_identity_info" />
+        </receiver>
+
+        <receiver
+            android:name=".WidgetActionReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.ascend.habittracker.widget.TOGGLE_REMINDER" />
+                <action android:name="com.ascend.habittracker.widget.TOGGLE_HABIT" />
+                <action android:name="com.ascend.habittracker.widget.REFRESH" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

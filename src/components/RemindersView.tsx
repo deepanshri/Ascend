@@ -12,6 +12,7 @@ import { tapPress } from '../lib/motionPresets';
 
 interface RemindersViewProps {
   reminders: StandaloneReminder[];
+  focusReminderId?: string | null;
   onAddReminder: (
     reminder: Omit<StandaloneReminder, 'id' | 'completed' | 'createdAt' | 'updatedAt'> & {
       id?: string;
@@ -34,6 +35,7 @@ interface RemindersViewProps {
 
 export const RemindersView: React.FC<RemindersViewProps> = ({
   reminders,
+  focusReminderId = null,
   onAddReminder,
   onUpdateReminder,
   onToggleComplete,
@@ -66,6 +68,12 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
       cancelled = true;
     };
   }, [userSession?.id, userSession?.isGuest]);
+
+  useEffect(() => {
+    if (!focusReminderId) return;
+    const found = (Array.isArray(reminders) ? reminders : []).find((item) => item.id === focusReminderId);
+    if (found) setEditingReminder(found);
+  }, [focusReminderId, reminders]);
 
   const safeReminders = Array.isArray(reminders) ? reminders.filter((item) => !item.deleted) : [];
   const activeList = safeReminders
