@@ -571,10 +571,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                   ? 'shadow-sm border-amber-500 ring-1 ring-amber-500 bg-amber-100 dark:bg-amber-950'
                   : isFallbackActive && !isTodayDone
                   ? 'shadow-sm border-accent ring-1 ring-accent bg-accent-soft active:scale-[0.995]'
-                  : keystoneBoosted
-                  ? 'keystone-boost-glow bg-emerald-50/90 dark:bg-blue-950/40 active:scale-[0.995]'
-                  : habit.isKeystone
-                  ? 'shadow-sm border-accent ring-1 ring-accent active:scale-[0.995]'
+                  : keystoneBoosted || habit.isKeystone
+                  ? 'keystone-boost-glow overflow-visible bg-emerald-50/90 dark:bg-blue-950/40 active:scale-[0.995]'
                   : 'shadow-sm border-line active:scale-[0.995]'
               }`}
             >

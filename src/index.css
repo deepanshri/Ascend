@@ -310,6 +310,8 @@ html, body, #root {
 .keystone-boost-glow {
   animation: keystoneBoostBreathe 2.8s ease-in-out infinite;
   border-color: #15803d !important;
+  overflow: visible;
+  isolation: isolate;
 }
 
 .dark .keystone-boost-glow {

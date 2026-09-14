@@ -456,7 +456,8 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
 
   useEffect(() => {
     const syncRotation = () => {
-      setQuoteIndex(resolveRotatingQuoteIndex(pool.length));
+      const next = resolveRotatingQuoteIndex(pool.length);
+      setQuoteIndex((prev) => (prev === next ? prev : next));
     };
 
     syncRotation();

@@ -154,23 +154,6 @@ export default function App() {
   const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
 
   useEffect(() => {
-    async function checkConnection() {
-      if (!isSupabaseConfigured || !supabase) {
-        console.warn('Supabase client is not configured — skipping connection check.');
-        return;
-      }
-      const { error } = await supabase.from('profiles').select('count', { count: 'exact', head: true });
-      if (error) {
-        console.error('❌ SUPABASE CONNECTION ERROR:', error.message);
-      } else {
-        console.log('✅ SUPABASE CONNECTED SUCCESSFULLY');
-      }
-    }
-
-    void checkConnection();
-  }, []);
-
-  useEffect(() => {
     try {
       const mq = window.matchMedia('(prefers-color-scheme: dark)');
       const onChange = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
@@ -1374,12 +1357,12 @@ export default function App() {
     const updated = reminders.map((r) => {
       if (r.id !== id) return r;
       const nextCompleted = !r.completed;
-      const revised = {
+      const revised = withReminderNotificationIds({
         ...r,
         completed: nextCompleted,
         isEnabled: !nextCompleted,
         updatedAt: now,
-      };
+      });
       if (nextCompleted) {
         notificationScheduler.cancelReminderAlerts(id, revised);
       } else {
@@ -1399,7 +1382,12 @@ export default function App() {
     const updated = reminders.map((r) => {
       if (r.id !== id) return r;
       if (r.completed === completed) return r;
-      const revised = { ...r, completed, isEnabled: !completed, updatedAt: now };
+      const revised = withReminderNotificationIds({
+        ...r,
+        completed,
+        isEnabled: !completed,
+        updatedAt: now,
+      });
       if (completed) {
         notificationScheduler.cancelReminderAlerts(id, revised);
       } else {
@@ -1430,6 +1418,8 @@ export default function App() {
       return revised;
     });
     setReminders(updated);
+    const revised = updated.find((item) => item.id === id);
+    if (revised) void upsertPublicReminder(session, revised);
     persistReminderSync(updated);
     showNotification('Reminder updated');
   };
@@ -1439,8 +1429,15 @@ export default function App() {
     const itemToDelete = reminders.find((r) => r.id === id);
     const updated = reminders.filter((r) => r.id !== id);
     if (itemToDelete) {
-      notificationScheduler.cancelReminderAlerts(id, itemToDelete);
-      persistReminderSync([{ ...itemToDelete, deleted: true, isEnabled: false, updatedAt: now }, ...updated]);
+      const tombstone = withReminderNotificationIds({
+        ...itemToDelete,
+        deleted: true,
+        isEnabled: false,
+        updatedAt: now,
+      });
+      notificationScheduler.cancelReminderAlerts(id, tombstone);
+      void upsertPublicReminder(session, tombstone);
+      persistReminderSync([tombstone, ...updated]);
     }
     setReminders(updated);
     showNotification('Reminder deleted');
@@ -1467,6 +1464,8 @@ export default function App() {
       return snoozed;
     });
     setReminders(updated);
+    const snoozed = updated.find((item) => item.id === id);
+    if (snoozed) void upsertPublicReminder(session, snoozed);
     persistReminderSync(updated);
     showNotification(`Snoozed for ${minutes} minutes`);
   };

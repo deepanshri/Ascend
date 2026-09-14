@@ -345,12 +345,21 @@ export async function removeFriendship(
 ): Promise<boolean> {
   if (!supabase) return false;
   try {
-    if (pair?.userId && pair.peerId) {
+    let userId = pair?.userId;
+    let peerId = pair?.peerId;
+    if ((!userId || !peerId) && edgeId) {
+      const { data } = await supabase.from('friends').select('user_id, friend_id').eq('id', edgeId).maybeSingle();
+      if (data?.user_id && data?.friend_id) {
+        userId = String(data.user_id);
+        peerId = String(data.friend_id);
+      }
+    }
+    if (userId && peerId) {
       const { error } = await supabase
         .from('friends')
         .delete()
         .or(
-          `and(user_id.eq.${pair.userId},friend_id.eq.${pair.peerId}),and(user_id.eq.${pair.peerId},friend_id.eq.${pair.userId})`
+          `and(user_id.eq.${userId},friend_id.eq.${peerId}),and(user_id.eq.${peerId},friend_id.eq.${userId})`
         );
       return !error;
     }
