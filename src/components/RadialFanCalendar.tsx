@@ -2,7 +2,7 @@ import React from 'react';
 import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDates, getWeekdayNarrow, toISODate } from '../utils/dates';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
-import { Mascot, mascotAngleFromMomentum } from './Mascot';
+import { MascotDotTrack } from './MascotDotTrack';
 
 interface RadialFanCalendarProps {
   selectedDay: number; // 1 to 7 (for reference/current active day indicator)
@@ -166,20 +166,6 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
   const layer2Dots = generateArcDots(62, 11);
   const layer3Dots = generateArcDots(78, 13);
   const layer4Dots = generateArcDots(94, 15);
-  const layer5Dots = generateArcDots(110, 17);
-
-  // 7 fixed mascot slots on the outer momentum-dot arc (Dot 1 … Dot 7).
-  // Index 3 is today's centered card. Coordinates are % of the 360×215 canvas.
-  const mascotArcSlots = cardAngles.map((item) => {
-    const rad = (item.angle * Math.PI) / 180;
-    const x = cx + 110 * Math.cos(rad);
-    const y = cy - 110 * Math.sin(rad);
-    return {
-      left: `${(x / 360) * 100}%`,
-      top: `${(y / 215) * 100}%`,
-    };
-  });
-  const mascotSlot = mascotArcSlots[currentDayIndex] ?? mascotArcSlots[3];
 
   return (
     <section
@@ -190,24 +176,15 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
       {/* Ambient background soft radial glow centered on momentum */}
       <div className="absolute left-1/2 -translate-x-1/2 top-14 w-60 h-32 bg-accent-soft/40 rounded-full blur-2xl pointer-events-none z-0" />
 
-      <div
-        id="mascot-companion"
-        className="mascot-arc-slot z-20 pointer-events-none"
-        style={{ top: mascotSlot.top, left: mascotSlot.left }}
-      >
-        <Mascot
-          size={56}
-          angle={mascotAngleFromMomentum(momentumScore)}
-          momentumScore={momentumScore}
-          celebrate={isCelebrating}
-          animate
-        />
-      </div>
+      <MascotDotTrack
+        celebrate={isCelebrating}
+        momentumScore={momentumScore}
+        dotColor={dotColor}
+        emptyDotStroke={emptyDotStroke}
+      />
 
       {/* ========================================================================= */}
-      {/* UNIFIED SVG CANVAS: Everything is mathematically locked to (cx, cy)       */}
-      {/* Completely eliminates coordinate drift, viewport scaling mismatch, &      */}
-      {/* weird artifact shadows.                                                   */}
+      {/* UNIFIED SVG CANVAS: date cards stay above the mascot dot track            */}
       {/* ========================================================================= */}
       <svg
         className="relative z-10 w-full h-full overflow-visible pointer-events-none select-none"
@@ -240,89 +217,9 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
         </defs>
 
         {/* ========================================================================= */}
-        {/* SEMICIRCLE ARCH OF DATE CARDS (Day 1 to Day 7)                            */}
-        {/* Read-only date tiles; mascot sits above this layer.                     */}
-        {/* ========================================================================= */}
-        <g id="fan-date-cards" className="pointer-events-none" style={{ pointerEvents: 'none' }}>
-          {dateCards.map((card) => {
-            const isActive = card.isSelected || card.isToday;
-            return (
-              <g
-                key={card.day}
-                id={`fan-day-card-${card.day}`}
-                transform={`translate(${card.x}, ${card.y}) rotate(${card.rot})`}
-                className="pointer-events-none cursor-default"
-                aria-hidden="true"
-              >
-                {/* Crisp card background */}
-                <rect
-                  x="-18"
-                  y="-22"
-                  width="36"
-                  height="44"
-                  rx="13"
-                  ry="13"
-                  fill={isActive ? (isDark ? '#1E293B' : '#FFFFFF') : (isDark ? '#0F172A' : '#FFFFFF')}
-                  stroke={card.isSelected ? (isDark ? '#3B82F6' : '#10B981') : card.isToday ? (isDark ? '#3B82F6' : '#94A3B8') : (isDark ? '#334155' : '#E2E8F0')}
-                  strokeWidth={card.isSelected ? '2' : card.isToday ? '1.6' : '1'}
-                  filter="url(#cleanCardShadow)"
-                />
-
-                {/* Weekday + calendar date */}
-                <text
-                  textAnchor="middle"
-                  y="-8"
-                  fontSize="7"
-                  fontWeight="800"
-                  fill={isActive ? (isDark ? '#93C5FD' : '#059669') : (isDark ? '#94A3B8' : '#94A3B8')}
-                  fontFamily="system-ui, -apple-system, sans-serif"
-                >
-                  {card.weekdayLabel}
-                </text>
-                <text
-                  textAnchor="middle"
-                  y="5"
-                  fontSize="13"
-                  fontWeight={isActive ? '900' : '700'}
-                  fill={isActive ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#E2E8F0' : '#334155')}
-                  fontFamily="system-ui, -apple-system, sans-serif"
-                >
-                  {card.dateLabel}
-                </text>
-
-                {/* Status indicator dot with explicit completion colors */}
-                <circle
-                  cx="0"
-                  cy="12"
-                  r="3.2"
-                  fill={card.dotBg}
-                  stroke={isDark ? '#1E293B' : '#FFFFFF'}
-                  strokeWidth="0.9"
-                />
-              </g>
-            );
-          })}
-        </g>
-
-        {/* ========================================================================= */}
         {/* CONCENTRIC SEMICIRCLE DOTS                                               */}
-        {/* Radiating outward from the central momentum orb                          */}
+        {/* Inner decorative arcs stay in the SVG; outermost track is HTML/motion.   */}
         {/* ========================================================================= */}
-        {/* LAYER 5: Outermost Semicircle Arc (R = 110) */}
-        {layer5Dots.map((dot) => {
-          const isHighlighted = (dot.i + 1) % 3 === 0;
-          return (
-            <circle
-              key={`l5-${dot.i}`}
-              cx={dot.x}
-              cy={dot.y}
-              r={isHighlighted ? 3.6 : 2.8}
-              fill={isHighlighted ? dotColor : emptyDotStroke}
-              opacity={isHighlighted ? 0.75 : 0.4}
-            />
-          );
-        })}
-
         {/* LAYER 4: Upper Semicircle Arc (R = 94) */}
         {layer4Dots.map((dot) => {
           const isHighlighted = (dot.i + 2) % 3 === 0;
@@ -484,6 +381,63 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
           >
             MOMENTUM
           </text>
+        </g>
+
+        {/* Date cards paint last so they stay readable above the mascot track. */}
+        <g id="fan-date-cards" className="pointer-events-none" style={{ pointerEvents: 'none' }}>
+          {dateCards.map((card) => {
+            const isActive = card.isSelected || card.isToday;
+            return (
+              <g
+                key={card.day}
+                id={`fan-day-card-${card.day}`}
+                transform={`translate(${card.x}, ${card.y}) rotate(${card.rot})`}
+                className="pointer-events-none cursor-default"
+                aria-hidden="true"
+              >
+                <rect
+                  x="-18"
+                  y="-22"
+                  width="36"
+                  height="44"
+                  rx="13"
+                  ry="13"
+                  fill={isActive ? (isDark ? '#1E293B' : '#FFFFFF') : (isDark ? '#0F172A' : '#FFFFFF')}
+                  stroke={card.isSelected ? (isDark ? '#3B82F6' : '#10B981') : card.isToday ? (isDark ? '#3B82F6' : '#94A3B8') : (isDark ? '#334155' : '#E2E8F0')}
+                  strokeWidth={card.isSelected ? '2' : card.isToday ? '1.6' : '1'}
+                  filter="url(#cleanCardShadow)"
+                />
+                <text
+                  textAnchor="middle"
+                  y="-8"
+                  fontSize="7"
+                  fontWeight="800"
+                  fill={isActive ? (isDark ? '#93C5FD' : '#059669') : (isDark ? '#94A3B8' : '#94A3B8')}
+                  fontFamily="system-ui, -apple-system, sans-serif"
+                >
+                  {card.weekdayLabel}
+                </text>
+                <text
+                  textAnchor="middle"
+                  y="5"
+                  fontSize="13"
+                  fontWeight={isActive ? '900' : '700'}
+                  fill={isActive ? (isDark ? '#FFFFFF' : '#0F172A') : (isDark ? '#E2E8F0' : '#334155')}
+                  fontFamily="system-ui, -apple-system, sans-serif"
+                >
+                  {card.dateLabel}
+                </text>
+                <circle
+                  cx="0"
+                  cy="12"
+                  r="3.2"
+                  fill={card.dotBg}
+                  stroke={isDark ? '#1E293B' : '#FFFFFF'}
+                  strokeWidth="0.9"
+                />
+              </g>
+            );
+          })}
         </g>
       </svg>
     </section>

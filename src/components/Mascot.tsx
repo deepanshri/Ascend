@@ -16,6 +16,8 @@ interface MascotProps {
   animate?: boolean;
   momentumScore?: number;
   celebrate?: boolean;
+  /** When true, CSS x-drift is disabled so the Home track owns horizontal roam. */
+  roam?: boolean;
 }
 
 /** Map a 0–100 momentum score to the mascot's facing angle. */
@@ -39,6 +41,7 @@ export function Mascot({
   animate = true,
   momentumScore,
   celebrate = false,
+  roam = false,
 }: MascotProps) {
   const uid = useId().replace(/:/g, '');
   const capeGrad = `mascot-cape-${uid}`;
@@ -190,11 +193,11 @@ export function Mascot({
 
   return (
     <div
-      className={`relative z-10 mascot-shell mascot-mood-${mood}${celebrate ? ' is-celebrating' : ''}`}
+      className={`relative z-[1] mascot-shell mascot-mood-${mood}${celebrate ? ' is-celebrating' : ''}${roam ? ' is-roaming' : ''}`}
       aria-hidden="true"
     >
       {mood === 'excited' && <span className="mascot-aura" />}
-      <div className="mascot-drift-x">
+      <div className={roam ? 'mascot-drift-x mascot-drift-x-off' : 'mascot-drift-x'}>
         <div className="mascot-float-y">
           <div className="mascot-tilt">
             <div className="mascot-celebrate-layer">

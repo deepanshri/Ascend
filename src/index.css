@@ -197,10 +197,22 @@ html, body, #root {
   transition: top 0.4s cubic-bezier(0.4, 0, 0.2, 1), left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.mascot-track-slot {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+  padding: 0.4rem;
+  transform: translate(-50%, -46%);
+}
+
+.mascot-drift-x-off {
+  animation: none;
+}
+
 .mascot-shell {
   pointer-events: none;
   position: relative;
-  z-index: 10;
+  z-index: 1;
 }
 
 .mascot-drift-x {
