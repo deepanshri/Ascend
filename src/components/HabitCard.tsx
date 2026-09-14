@@ -52,7 +52,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   onOpenDeleteConfirm: _onOpenDeleteConfirm,
   onToggleKeystone,
   keystoneAtCap = false,
-  keystoneBoosted = false,
+  keystoneBoosted: _keystoneBoosted = false,
   weekOrigin,
 }) => {
   const [dragStartX, setDragStartX] = useState<number | null>(null);
@@ -576,7 +576,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                   ? 'shadow-sm border-amber-500 ring-1 ring-amber-500 bg-amber-100 dark:bg-amber-950'
                   : isFallbackActive && !isTodayDone
                   ? 'shadow-sm border-accent ring-1 ring-accent bg-accent-soft active:scale-[0.995]'
-                  : keystoneBoosted || habit.isKeystone
+                  : habit.isKeystone
                   ? 'keystone-boost-glow overflow-visible bg-emerald-50/90 dark:bg-blue-950/40 active:scale-[0.995]'
                   : 'shadow-sm border-line active:scale-[0.995]'
               }`}

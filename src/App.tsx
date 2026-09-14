@@ -1822,7 +1822,7 @@ export default function App() {
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             id="app-main-content"
             onScroll={handleMainScroll}
-            className={`absolute inset-0 z-10 px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col gap-1.5 overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
+            className={`absolute inset-0 z-10 px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
           >
             <ScreenHeader
               title="Home"
@@ -1851,18 +1851,21 @@ export default function App() {
               }
             />
 
-            <AccumulationBowl
-              pieces={bowlPieces}
-              fillPercent={bowlFill.fillPercent}
-              isOverflowing={bowlFill.isOverflowing}
-              isDark={isDark}
-              votes={bowlFill.votes}
-              capacity={bowlFill.capacity}
-              cycleDays={bowlFill.cycleDays}
-            />
+            <div className="mt-5 mb-4">
+              <AccumulationBowl
+                pieces={bowlPieces}
+                fillPercent={bowlFill.fillPercent}
+                isOverflowing={bowlFill.isOverflowing}
+                isDark={isDark}
+                votes={bowlFill.votes}
+                capacity={bowlFill.capacity}
+                cycleDays={bowlFill.cycleDays}
+              />
+            </div>
 
-            {/* Atomic Wisdom Quote Card Curated by Personal Interests */}
-            <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
+            <div className="mb-4">
+              <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
+            </div>
 
             {/* Habit List Cards */}
             <section id="habit-list" className="flex flex-col space-y-2.5">

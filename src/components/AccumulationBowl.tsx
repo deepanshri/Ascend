@@ -9,8 +9,13 @@ import type { AccumulationPiece } from '../services/reportService';
 
 const SPRING = { type: 'spring' as const, stiffness: 250, damping: 18, mass: 0.8 };
 const MAX_VISIBLE_PIECES = 42;
-const PIECE_SIZE = 34;
+const PIECE_SIZE = 32;
 const SPILL_ROW = 4;
+
+/** Inner cavity of bowl.png (904×579) — pieces clip to this, front rim punches this hole. */
+const CAVITY_CLIP = 'ellipse(39% 31% at 50% 46%)';
+const RIM_MASK =
+  'radial-gradient(ellipse 40% 32% at 50% 45%, transparent 66%, #000 68%)';
 
 interface AccumulationBowlProps {
   pieces: AccumulationPiece[];
@@ -26,7 +31,7 @@ interface LaidPiece {
   piece: AccumulationPiece;
   index: number;
   x: number;
-  y: number;
+  yPercent: number;
   tilt: number;
   entryX: number;
   spills: boolean;
@@ -64,12 +69,12 @@ function restForPiece(index: number, isOverflowing: boolean, id: string) {
   }
   const cols = rows[Math.min(row, rows.length - 1)] || 4;
   const col = Math.min(cursor, cols - 1);
-  const x = (col - (cols - 1) / 2) * 22 + settleX * 0.45;
-  let y = 124 - row * 15;
+  const x = (col - (cols - 1) / 2) * 20 + settleX * 0.4;
+  let yPercent = 60 - row * 5.2;
   const spills = isOverflowing && row >= SPILL_ROW;
-  if (spills) y -= 16;
-  if (isOverflowing && row >= SPILL_ROW + 1) y -= 12;
-  return { x, y, tilt, entryX, spills };
+  if (spills) yPercent -= 7;
+  if (isOverflowing && row >= SPILL_ROW + 1) yPercent -= 5;
+  return { x, yPercent, tilt, entryX, spills };
 }
 
 const PieceLayer: React.FC<{
@@ -85,28 +90,30 @@ const PieceLayer: React.FC<{
           src={pieceSrc(item.piece.kind, isDark)}
           alt=""
           draggable={false}
-          className="pointer-events-none absolute top-0 left-1/2 object-contain transform-gpu will-change-transform"
+          className="pointer-events-none absolute left-1/2 object-contain transform-gpu will-change-transform"
           style={{
             width: PIECE_SIZE,
             height: PIECE_SIZE,
+            top: `${item.yPercent}%`,
             marginLeft: -PIECE_SIZE / 2,
+            marginTop: -PIECE_SIZE / 2,
           }}
           initial={{
             x: item.x + item.entryX,
-            y: -36,
+            y: -72,
             rotate: item.tilt * 0.25,
-            opacity: 0.85,
-            scale: 0.86,
+            opacity: 0.9,
+            scale: 0.88,
           }}
           animate={{
             x: item.x,
-            y: item.y,
+            y: 0,
             rotate: item.tilt,
             opacity: 1,
             scale: isOverflowing && item.spills ? 1.05 : 1,
           }}
           exit={{
-            y: item.y - 48,
+            y: -40,
             opacity: 0,
             scale: 0.55,
             rotate: item.tilt * 1.4,
@@ -139,6 +146,11 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
   const insidePieces = laid.filter((item) => !item.spills);
   const spillPieces = laid.filter((item) => item.spills);
   const roundedFill = Math.round(fillPercent);
+  const overflowGlow = isOverflowing
+    ? isDark
+      ? 'drop-shadow-[0_0_18px_rgba(59,130,246,0.55)]'
+      : 'drop-shadow-[0_0_18px_rgba(34,197,94,0.5)]'
+    : '';
 
   return (
     <section
@@ -147,36 +159,54 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
       className="relative w-full max-w-[360px] mx-auto select-none"
       aria-label={`Accumulation bowl, ${votes} of ${capacity} votes in a ${cycleDays}-day cycle, ${roundedFill} percent full${isOverflowing ? ', overflowing' : ''}`}
     >
-      <div className="relative h-[176px] w-full overflow-visible">
+      <div className="relative mx-auto w-full max-w-[320px] aspect-[904/579] overflow-visible">
         {isOverflowing && (
           <div
-            className={`pointer-events-none absolute left-1/2 top-[18%] z-0 h-16 w-[78%] -translate-x-1/2 rounded-full blur-2xl ${
+            className={`pointer-events-none absolute left-1/2 top-[22%] z-0 h-14 w-[72%] -translate-x-1/2 rounded-full blur-2xl ${
               isDark ? 'bg-blue-500/35' : 'bg-emerald-400/40'
             }`}
             aria-hidden="true"
           />
         )}
 
-        <div className="absolute inset-0 z-10 overflow-visible">
-          <PieceLayer items={insidePieces} isDark={isDark} isOverflowing={isOverflowing} />
-        </div>
-
+        {/* Back wall of the vessel */}
         <img
           src={bowlSrc}
           alt=""
           draggable={false}
-          className={`pointer-events-none absolute inset-0 z-20 h-full w-full object-contain object-bottom ${
-            isOverflowing
-              ? isDark
-                ? 'drop-shadow-[0_0_18px_rgba(59,130,246,0.55)]'
-                : 'drop-shadow-[0_0_18px_rgba(34,197,94,0.5)]'
-              : ''
+          className="pointer-events-none absolute inset-0 z-0 h-full w-full object-contain"
+        />
+        <div
+          className={`pointer-events-none absolute inset-0 z-[1] ${
+            isDark ? 'bg-slate-950/20' : 'bg-slate-600/10'
           }`}
+          style={{ clipPath: CAVITY_CLIP }}
+          aria-hidden="true"
+        />
+
+        {/* Gems settle in the cavity, in front of the back wall */}
+        <div
+          className="absolute inset-0 z-10 overflow-visible"
+          style={{ clipPath: CAVITY_CLIP }}
+        >
+          <PieceLayer items={insidePieces} isDark={isDark} isOverflowing={isOverflowing} />
+        </div>
+
+        {/* Front rim / glass lip — interior hole so gems read as inside */}
+        <img
+          src={bowlSrc}
+          alt=""
+          draggable={false}
+          className={`pointer-events-none absolute inset-0 z-20 h-full w-full object-contain ${overflowGlow}`}
+          style={{
+            WebkitMaskImage: RIM_MASK,
+            maskImage: RIM_MASK,
+          }}
         />
 
         {isOverflowing && (
           <div
-            className={`pointer-events-none absolute left-1/2 top-[14%] z-[25] h-10 w-[70%] -translate-x-1/2 rounded-full blur-md ${
+            className={`pointer-events-none absolute left-1/2 top-[16%] z-[25] h-9 w-[64%] -translate-x-1/2 rounded-full blur-md ${
               isDark ? 'bg-blue-400/25' : 'bg-emerald-300/30'
             }`}
             aria-hidden="true"
@@ -188,7 +218,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
         </div>
       </div>
 
-      <p className="mt-0.5 text-center text-[10.5px] font-semibold tabular-nums text-slate-400 dark:text-slate-500">
+      <p className="mt-1.5 text-center text-[10.5px] font-semibold tabular-nums text-slate-400 dark:text-slate-500">
         {votes}/{capacity} · {cycleDays}-day cycle
         {isOverflowing ? ' · overflowing' : ''}
       </p>
