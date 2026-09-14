@@ -302,7 +302,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
                     <ProfileAvatar
                       value={edge.peerAvatar}
                       alt={`${edge.peerName} avatar`}
-                      className="w-9 h-9 rounded-xl"
+                      className="w-12 h-12 rounded-xl"
                     />
                     <p className="text-[13px] font-semibold text-ink truncate">{edge.peerName}</p>
                   </div>
@@ -331,7 +331,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
                         <ProfileAvatar
                           value={glow.fromAvatar}
                           alt={`${glow.fromName} avatar`}
-                          className="w-8 h-8 rounded-xl"
+                          className="w-12 h-12 rounded-xl"
                         />
                         <p className="text-[12.5px] text-ink leading-relaxed">{glow.fromName} sent you an Affirmation Glow</p>
                       </li>
@@ -352,7 +352,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
                             <ProfileAvatar
                               value={item.friendAvatar}
                               alt={`${item.friendName} avatar`}
-                              className="w-8 h-8 rounded-xl"
+                              className="w-12 h-12 rounded-xl"
                             />
                             <div className="min-w-0">
                               <p className="text-[12.5px] text-ink leading-relaxed">{item.text}</p>

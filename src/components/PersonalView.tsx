@@ -255,7 +255,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       <section className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center space-x-3 min-w-0">
-            <ProfileAvatar value={avatarId} alt="Your profile avatar" className="w-14 h-14 rounded-2xl" />
+            <ProfileAvatar value={avatarId} alt="Your profile avatar" className="w-16 h-16 rounded-2xl" />
             <div className="min-w-0">
               <h2 className="text-[16px] font-bold text-slate-900 dark:text-white">Personal Details</h2>
               <motion.button
@@ -892,17 +892,17 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                       onClick={() => handleSelectAvatar(option.id)}
                       aria-pressed={selected}
                       aria-label={option.label}
-                      className={`p-1 rounded-2xl cursor-pointer ${
+                      className={`aspect-square w-full p-1 rounded-2xl cursor-pointer ${
                         selected
                           ? 'ring-2 ring-green-500 dark:ring-blue-500'
                           : 'ring-1 ring-transparent hover:ring-slate-200 dark:hover:ring-slate-700'
                       }`}
                     >
-                      <img
+                      <ProfileAvatar
+                        value={option.id}
                         src={option.src}
                         alt=""
-                        draggable={false}
-                        className="w-full aspect-square object-cover rounded-xl bg-emerald-50 dark:bg-blue-950/60"
+                        className="flex h-full w-full rounded-xl"
                       />
                     </motion.button>
                   );
