@@ -54,11 +54,11 @@ function sharedDriver(steps: DriveStep[], onComplete: () => void): Driver {
 
 const HOME_STEPS: DriveStep[] = [
   {
-    element: '[data-tour="momentum-card"]',
+    element: '[data-tour="accumulation-bowl"]',
     popover: {
-      title: 'Momentum Score (0–100)',
+      title: 'Accumulation bowl',
       description:
-        'This is your anti-fragile velocity. Full completions add 1.0, fallback micro-habits add 0.5, and missed days decay gently instead of resetting to zero. Exam Shield freezes decay when you need it.',
+        'Each completion drops a piece into the bowl for this cycle. Full completions are the darker gems; fallback micro-habits are lighter. At 80% capacity pieces spill over the rim. Change the cycle length (3–10 days) on Report.',
       side: 'bottom',
       align: 'center',
     },
@@ -124,7 +124,7 @@ const SCREEN_STEPS: Record<Exclude<TutorialScreen, 'home'>, DriveStep[]> = {
       popover: {
         title: 'Daily dots vs these rings',
         description:
-          'Home’s fan dots are a week-at-a-glance of whether you showed up. These rings split the same event log by Work, Self-Improvement, and Sleep. Switch Graph swaps rings for the line view — the Analysis bars stay put. Tabs filter Today, 7 days, 30 days, or the full momentum curve.',
+          'These rings split the event log by Work, Self-Improvement, and Sleep. Switch Graph swaps rings for the line view — the Analysis bars stay put. Tabs filter Today, 7 days, 30 days, or the full momentum curve.',
         side: 'bottom',
         align: 'center',
       },

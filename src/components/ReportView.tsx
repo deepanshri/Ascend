@@ -23,6 +23,7 @@ import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import { tapPress } from '../lib/motionPresets';
 import { calculateMomentumScore, eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
 import { isHabitScheduledOnIso } from '../utils/schedule';
+import { CYCLE_DAY_OPTIONS, type BowlFill, type CycleDays } from '../services/reportService';
 
 interface ReportViewProps {
   habits: Habit[];
@@ -40,6 +41,9 @@ interface ReportViewProps {
   momentumScore?: number;
   momentumEvents?: MomentumEvent[];
   completionEvents?: HabitCompletionEvent[];
+  cycleDays: CycleDays;
+  onCycleDaysChange: (days: CycleDays) => void;
+  bowlFill: BowlFill;
 }
 
 type TimeFilter = 'today' | 'week' | 'month' | 'momentum';
@@ -282,6 +286,9 @@ export const ReportView: React.FC<ReportViewProps> = ({
   momentumScore = 0,
   momentumEvents: momentumProp,
   completionEvents: completionProp,
+  cycleDays,
+  onCycleDaysChange,
+  bowlFill,
 }) => {
   const habits = asArray(habitsProp);
   const evidenceList = asArray(evidenceProp);
@@ -605,6 +612,40 @@ export const ReportView: React.FC<ReportViewProps> = ({
           </motion.button>
         }
       />
+
+      <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Accumulation cycle
+          </span>
+          <span className="text-[11px] font-semibold tabular-nums text-slate-600 dark:text-slate-300">
+            {bowlFill.votes}/{bowlFill.capacity} · {Math.round(bowlFill.fillPercent)}%
+            {bowlFill.isOverflowing ? ' · overflow' : ''}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {CYCLE_DAY_OPTIONS.map((days) => {
+            const active = cycleDays === days;
+            return (
+              <button
+                key={days}
+                type="button"
+                onClick={() => onCycleDaysChange(days)}
+                className={`flex-1 py-1.5 rounded-xl text-[12px] font-bold cursor-pointer transition ${
+                  active
+                    ? 'bg-emerald-600 text-white dark:bg-blue-600'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                }`}
+              >
+                {days}d
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10.5px] text-slate-400 dark:text-slate-500">
+          Capacity is active habits × cycle days, capped at 10 days. Overflow starts at 80%.
+        </p>
+      </section>
 
       <section data-tour="report-momentum" className="bg-[#EFF3F6] dark:bg-slate-800/80 p-1 rounded-2xl flex items-center">
         {(['today', 'week', 'month', 'momentum'] as TimeFilter[]).map((tab) => {

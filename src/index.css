@@ -188,15 +188,6 @@ html, body, #root {
   100% { transform: translateY(0) scale(1); }
 }
 
-.mascot-arc-slot {
-  position: absolute;
-  z-index: 20;
-  pointer-events: none;
-  padding: 0.4rem;
-  transform: translate(-50%, -42%);
-  transition: top 0.4s cubic-bezier(0.4, 0, 0.2, 1), left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
 .mascot-track-slot {
   position: relative;
   z-index: 1;

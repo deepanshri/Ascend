@@ -17,7 +17,6 @@ import {
 } from './types';
 import { isSeedHabitId } from './data/initialHabits';
 import {
-  calculateDailyWeightedScore,
   calculateMomentumScore,
   collectMissedMomentumEvents,
   createMomentumEvent,
@@ -76,6 +75,16 @@ import {
 } from './lib/notifications';
 import { ledgerEvidenceForHabits, displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
 import { deleteHabit } from './services/habitService';
+import {
+  accumulationPiecesFromLogs,
+  clampCycleDays,
+  cycleWindow,
+  persistCycleDays,
+  readStoredCycleDays,
+  summarizeBowlFill,
+  type CycleDays,
+} from './services/reportService';
+import { AccumulationBowl } from './components/AccumulationBowl';
 import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
 import { WidgetBridge } from './lib/widgetBridge';
 import type { WidgetPendingAction, WidgetRoute } from './lib/widgetSync';
@@ -102,7 +111,6 @@ import {
 } from './lib/frictionAudit';
 import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
-import { RadialFanCalendar } from './components/RadialFanCalendar';
 import { HabitCard } from './components/HabitCard';
 import { QuoteCard } from './components/QuoteCard';
 import { RemindersView } from './components/RemindersView';
@@ -363,6 +371,14 @@ export default function App() {
     } catch {}
   }, [activeFallbackIds]);
 
+  const [cycleDays, setCycleDays] = useState<CycleDays>(() => readStoredCycleDays());
+
+  const handleCycleDaysChange = (days: CycleDays) => {
+    const next = clampCycleDays(days);
+    persistCycleDays(next);
+    setCycleDays(next);
+  };
+
   const [evidenceList, setEvidenceList] = useState<IdentityEvidence[]>(() => {
     try {
       const saved = localStorage.getItem('habit_tracker_evidence');
@@ -432,8 +448,6 @@ export default function App() {
   const [calendarOrigin, setCalendarOrigin] = useState<Date>(() => startOfDay(new Date()));
   const [currentSelectedDate, setCurrentSelectedDate] = useState<string>(() => toISODate());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [mascotCelebrate, setMascotCelebrate] = useState(false);
-  const mascotCelebrateTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const rollForwardIfMidnightPassed = () => {
@@ -630,14 +644,6 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    return () => {
-      if (mascotCelebrateTimerRef.current != null) {
-        window.clearTimeout(mascotCelebrateTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     const dark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
     void applyNativeChrome(dark).catch(() => {});
   }, [theme, systemPrefersDark]);
@@ -683,6 +689,26 @@ export default function App() {
     return derivedHabits.filter((h) => !h.archived);
   }, [derivedHabits]);
 
+  const bowlWindow = useMemo(
+    () => cycleWindow(cycleDays, toISODate(calendarOrigin)),
+    [cycleDays, calendarOrigin]
+  );
+  const bowlPieces = useMemo(
+    () =>
+      accumulationPiecesFromLogs(
+        completionEvents,
+        activeHabits.map((habit) => habit.id),
+        bowlWindow.startIso,
+        bowlWindow.endIso,
+        calendarOrigin
+      ),
+    [completionEvents, activeHabits, bowlWindow, calendarOrigin]
+  );
+  const bowlFill = useMemo(
+    () => summarizeBowlFill(activeHabits.length, bowlPieces.length, cycleDays),
+    [activeHabits.length, bowlPieces.length, cycleDays]
+  );
+
   const keystoneCompletedOnViewedDay = useMemo(
     () => activeHabits.filter((habit) => habit.isKeystone && habit.days?.[currentDayIndex]).map((habit) => habit.id),
     [activeHabits, currentDayIndex]
@@ -692,7 +718,7 @@ export default function App() {
     return derivedHabits.find((h) => h.id === longPressedHabitId) || null;
   }, [derivedHabits, longPressedHabitId]);
 
-  // Rolling momentum from the append-only events log (drives RadialFanCalendar + mascot)
+  // Rolling momentum from the append-only events log
   const momentumScore = useMemo(() => {
     return calculateMomentumScore(momentumEvents, {
       examShield: examShieldActive,
@@ -887,20 +913,6 @@ export default function App() {
     };
   }, [session?.id, session?.isGuest]);
 
-  // Calculate day completion rates (1-7) using active habits
-  const dayCompletionRates = useMemo(() => {
-    return Array.from({ length: 7 }, (_, dayIdx) => {
-      if (scheduledHabitsForDayIndex(derivedHabits, dayIdx, calendarOrigin).length === 0) return null;
-      return calculateDailyWeightedScore(
-        derivedHabits,
-        dayIdx,
-        examShieldActive || vacationModeActive,
-        undefined,
-        calendarOrigin
-      ) / 100;
-    });
-  }, [derivedHabits, examShieldActive, vacationModeActive, calendarOrigin]);
-
   const selectedDayCompletedCount = activeHabits.filter(
     (h) => h.days[currentDayIndex]
   ).length;
@@ -1029,14 +1041,6 @@ export default function App() {
       setFrictionAudits((prevAudits) => [newAudit, ...prevAudits]);
     }
     showNotification('Completed');
-    if (mascotCelebrateTimerRef.current != null) {
-      window.clearTimeout(mascotCelebrateTimerRef.current);
-    }
-    setMascotCelebrate(true);
-    mascotCelebrateTimerRef.current = window.setTimeout(() => {
-      setMascotCelebrate(false);
-      mascotCelebrateTimerRef.current = null;
-    }, 400);
   };
 
   // GESTURE / TAP ACTION: Toggle Fallback Mode for Today (Does NOT mark complete; allows cancel / revert)
@@ -1726,6 +1730,9 @@ export default function App() {
             momentumScore={todayMomentumScore}
             momentumEvents={momentumEvents ?? []}
             completionEvents={completionEvents ?? []}
+            cycleDays={cycleDays}
+            onCycleDaysChange={handleCycleDaysChange}
+            bowlFill={bowlFill}
           />
           </motion.div>
         ) : safeActiveTab === 'personal' ? (
@@ -1844,15 +1851,14 @@ export default function App() {
               }
             />
 
-            {/* Radial Fan Calendar: date fan, momentum orb, and mascot */}
-            <RadialFanCalendar
-              selectedDay={selectedDay}
-              dayCompletionRates={dayCompletionRates}
-              habits={activeHabits}
-              momentumScore={momentumScore}
-              isCelebrating={mascotCelebrate}
+            <AccumulationBowl
+              pieces={bowlPieces}
+              fillPercent={bowlFill.fillPercent}
+              isOverflowing={bowlFill.isOverflowing}
               isDark={isDark}
-              originDate={calendarOrigin}
+              votes={bowlFill.votes}
+              capacity={bowlFill.capacity}
+              cycleDays={bowlFill.cycleDays}
             />
 
             {/* Atomic Wisdom Quote Card Curated by Personal Interests */}
