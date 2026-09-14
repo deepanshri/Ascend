@@ -1851,7 +1851,7 @@ export default function App() {
               }
             />
 
-            <div className="mt-5 mb-4">
+            <div className="mt-2 flex flex-col space-y-3">
               <AccumulationBowl
                 pieces={bowlPieces}
                 fillPercent={bowlFill.fillPercent}
@@ -1860,15 +1860,13 @@ export default function App() {
                 votes={bowlFill.votes}
                 capacity={bowlFill.capacity}
                 cycleDays={bowlFill.cycleDays}
+                onCycleDaysChange={handleCycleDaysChange}
               />
-            </div>
 
-            <div className="mb-4">
               <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
-            </div>
 
-            {/* Habit List Cards */}
-            <section id="habit-list" className="flex flex-col space-y-2.5">
+              {/* Habit List Cards */}
+              <section id="habit-list" className="flex flex-col space-y-2.5">
               {(activeHabits ?? []).length === 0 ? (
                 <div className="bg-white/80 rounded-2xl p-6 text-center text-slate-400 text-[13px] border border-slate-200/80">
                   No habits active yet. Tap &quot;+&quot; in the header to create one!
@@ -1917,6 +1915,7 @@ export default function App() {
                 ))
               )}
             </section>
+            </div>
           </motion.main>
         )}
         </AnimatePresence>
