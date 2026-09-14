@@ -9,7 +9,13 @@ import pieceBlueLight from '../assets/bowl/piece-blue-light.png';
 import { CYCLE_DAY_OPTIONS, clampCycleDays, type AccumulationPiece, type CycleDays } from '../services/reportService';
 import { tapPress } from '../lib/motionPresets';
 
-const SPRING = { type: 'spring' as const, stiffness: 250, damping: 18, mass: 0.8 };
+const SPRING = { type: 'spring' as const, stiffness: 120, damping: 14, mass: 1.2 };
+const DROP_Y = [0, -4, 0];
+const DROP_Y_TRANSITION = {
+  duration: 1.15,
+  times: [0.7, 0.85, 1],
+  ease: ['easeIn', 'easeOut', 'easeOut'] as const,
+};
 const MAX_VISIBLE_PIECES = 28;
 const PIECE_SIZE = 28;
 const SPILL_ROW = 3;
@@ -112,14 +118,14 @@ const PieceLayer: React.FC<{
           }}
           initial={{
             x: item.x + item.entryX,
-            y: -56,
+            y: -80,
             rotate: item.tilt * 0.25,
             opacity: 0.9,
             scale: 0.88,
           }}
           animate={{
             x: item.x,
-            y: 0,
+            y: DROP_Y,
             rotate: item.tilt,
             opacity: 1,
             scale: 1,
@@ -130,7 +136,13 @@ const PieceLayer: React.FC<{
             scale: 0.55,
             rotate: item.tilt * 1.4,
           }}
-          transition={SPRING}
+          transition={{
+            x: SPRING,
+            rotate: SPRING,
+            opacity: SPRING,
+            scale: SPRING,
+            y: DROP_Y_TRANSITION,
+          }}
         />
       ))}
     </AnimatePresence>

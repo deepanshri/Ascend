@@ -2,13 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { MotionModal } from './MotionModal';
 import { tapPress } from '../lib/motionPresets';
-import { Habit, HabitCategory, HabitPriority, TimeOfDay } from '../types';
+import { Habit, HabitCategory, HabitPriority } from '../types';
 import { insertHabitToSupabase, toDbCategory } from '../lib/habitsApi';
 import { MAX_ACTIVE_HABITS } from '../lib/protection';
 import { MAX_KEYSTONE_HABITS } from '../lib/keystone';
 import { normalizeScheduledDays, scheduleTypeFromDays } from '../utils/schedule';
 import { WeekdayScheduleChips } from './WeekdayScheduleChips';
-import { TimeOfDayToggle } from './TimeOfDayToggle';
 import { inferBowlModeFromClock } from '../utils/timeOfDay';
 
 interface AddHabitModalProps {
@@ -38,7 +37,6 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   const [isKeystone, setIsKeystone] = useState(false);
   const [keystoneWarning, setKeystoneWarning] = useState(false);
   const [scheduledWeekdays, setScheduledWeekdays] = useState<number[]>([]);
-  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>(() => inferBowlModeFromClock());
   const atCap = activeHabitCount >= MAX_ACTIVE_HABITS;
   const keystoneCapReached = activeKeystoneCount >= MAX_KEYSTONE_HABITS;
 
@@ -47,7 +45,6 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     setIsKeystone(false);
     setKeystoneWarning(false);
     setScheduledWeekdays([]);
-    setTimeOfDay(inferBowlModeFromClock());
   }, [isOpen]);
 
   const handleKeystoneToggle = () => {
@@ -79,7 +76,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
       tags: [dbCategory],
       archived: false,
       isKeystone: isKeystone && !keystoneCapReached,
-      timeOfDay,
+      timeOfDay: inferBowlModeFromClock(),
     });
 
     if (!created) return;
@@ -100,7 +97,6 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     setIsKeystone(false);
     setKeystoneWarning(false);
     setScheduledWeekdays([]);
-    setTimeOfDay(inferBowlModeFromClock());
     onClose();
   };
 
@@ -116,7 +112,6 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
             <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
                 <h2 className="text-[17px] font-bold text-slate-900 dark:text-white leading-tight">Create Habit</h2>
-                <p className="text-[11.5px] text-slate-500 dark:text-slate-400">Add purpose, fallback & category</p>
               </div>
               <motion.button
                 type="button"
@@ -166,11 +161,11 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                     onClick={() => setPriority('high')}
                     className={`py-2 px-2 rounded-xl border text-center transition font-semibold text-[12px] flex items-center justify-center space-x-1.5 cursor-pointer ${
                       priority === 'high'
-                        ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 font-bold shadow-xs ring-1 ring-emerald-500'
+                        ? 'border-emerald-600 dark:border-blue-500 bg-emerald-50 dark:bg-blue-950/40 text-emerald-900 dark:text-blue-200 font-bold shadow-xs ring-1 ring-emerald-500 dark:ring-blue-500'
                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                     }`}
                   >
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#16a34a] shrink-0" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#16a34a] dark:bg-blue-600 shrink-0" />
                     <span>High</span>
                   </motion.button>
 
@@ -180,11 +175,11 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                     onClick={() => setPriority('mid')}
                     className={`py-2 px-2 rounded-xl border text-center transition font-semibold text-[12px] flex items-center justify-center space-x-1.5 cursor-pointer ${
                       priority === 'mid'
-                        ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 font-bold shadow-xs ring-1 ring-emerald-400'
+                        ? 'border-emerald-400 dark:border-blue-400 bg-emerald-50 dark:bg-blue-950/30 text-emerald-900 dark:text-blue-200 font-bold shadow-xs ring-1 ring-emerald-400 dark:ring-blue-400'
                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                     }`}
                   >
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#86efac] shrink-0" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#86efac] dark:bg-blue-400 shrink-0" />
                     <span>Mid</span>
                   </motion.button>
 
@@ -198,7 +193,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                     }`}
                   >
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#94a3b8] shrink-0" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#94a3b8] dark:bg-blue-800 shrink-0" />
                     <span>Low</span>
                   </motion.button>
                 </div>
@@ -235,17 +230,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1.5 text-[12px]">
-                  Bowl
-                </label>
-                <TimeOfDayToggle value={timeOfDay} onChange={setTimeOfDay} />
-                <p className="text-[10.5px] text-slate-400 mt-1">
-                  Completions drop into the morning or night bowl.
-                </p>
-              </div>
-
-              <WeekdayScheduleChips selected={scheduledWeekdays} onChange={setScheduledWeekdays} />
+              <WeekdayScheduleChips selected={scheduledWeekdays} onChange={setScheduledWeekdays} hint="" />
 
               {/* Purpose */}
               <div>
@@ -264,7 +249,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
               {/* Typing Fallback */}
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1 text-[12px]">
-                  Fallback Micro-Habit <span className="text-slate-400 font-normal">(typing fallback)</span>
+                  Fallback Micro-Habit
                 </label>
                 <input
                   type="text"
@@ -273,9 +258,6 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   onChange={(e) => setFallbackMicro(e.target.value)}
                   className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-slate-900 dark:text-white text-[12.5px] transition-colors"
                 />
-                <p className="text-[10.5px] text-slate-400 mt-1">
-                  Triggered automatically when swiping left on the habit card.
-                </p>
               </div>
 
               <div>
@@ -302,9 +284,6 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                     />
                   </button>
                 </div>
-                <p className="text-[10.5px] text-slate-400 mt-1">
-                  At most {MAX_KEYSTONE_HABITS} active keystones. These drive correlation on Report.
-                </p>
                 {keystoneWarning && (
                   <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-amber-700 dark:text-amber-300">
                     You already have {MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.

@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from 'motion/react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   mergeQuoteBank,
-  resolveRotatingQuoteIndex,
   type Quote,
 } from '../data/quotes';
 
@@ -410,6 +409,8 @@ async function fetchQuotesFromSupabase(categories: string[]): Promise<Quote[]> {
   }
 }
 
+const ROTATE_MS = 12_000;
+
 interface QuoteCardProps {
   selectedInterests?: string[];
   isGuest?: boolean;
@@ -425,6 +426,7 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
     const merged = mergeQuoteBank(Array.isArray(quotes) ? quotes : []);
     return merged.length > 0 ? merged : mergeQuoteBank([]);
   }, [quotes]);
+  const poolLength = Math.max(pool.length, 1);
 
   useEffect(() => {
     let cancelled = false;
@@ -455,54 +457,55 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
   }, [selectedInterests, isGuest]);
 
   useEffect(() => {
-    const syncRotation = () => {
-      const next = resolveRotatingQuoteIndex(pool.length);
-      setQuoteIndex((prev) => (prev === next ? prev : next));
-    };
+    if (poolLength < 2) return;
+    const id = window.setInterval(() => {
+      setQuoteIndex((prev) => (prev + 1) % poolLength);
+    }, ROTATE_MS);
+    return () => window.clearInterval(id);
+  }, [poolLength, quoteIndex]);
 
-    syncRotation();
-    window.addEventListener('focus', syncRotation);
-    document.addEventListener('visibilitychange', syncRotation);
+  const goNext = () => {
+    if (poolLength < 2) return;
+    setQuoteIndex((prev) => (prev + 1) % poolLength);
+  };
 
-    return () => {
-      window.removeEventListener('focus', syncRotation);
-      document.removeEventListener('visibilitychange', syncRotation);
-    };
-  }, [pool.length]);
-
-  const currentQuote = pool[quoteIndex % Math.max(pool.length, 1)] || DEFAULT_HABIT_QUOTES[0];
+  const currentQuote = pool[quoteIndex % poolLength] || DEFAULT_HABIT_QUOTES[0];
   const isTip = currentQuote.kind === 'tip' || currentQuote.category === 'Tip';
 
   return (
-    <div
+    <motion.button
+      type="button"
       id="atomic-quote-card"
       data-tour="daily-wisdom"
-      title={isTip ? 'Feature tip · rotates every 5–6 hours' : 'Quote · rotates every 5–6 hours'}
-      className="w-full rounded-xl py-1.5 px-3 bg-surface text-ink border border-line shadow-2xs select-none"
+      title={isTip ? 'Tip · tap for next' : 'Quote · tap for next'}
+      aria-label={isTip ? 'App tip, tap for next' : 'Quote, tap for next'}
+      onClick={goNext}
+      layout
+      className="w-full h-auto cursor-pointer rounded-xl py-1.5 px-3 bg-surface text-ink border border-line shadow-2xs select-none text-left transition-all duration-300 overflow-visible"
     >
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={`${quoteIndex}-${currentQuote.text}`}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
         >
           <p className="text-[12px] font-medium text-slate-800 dark:text-slate-100 italic leading-snug">
-            &ldquo;{currentQuote.text}&rdquo;
+            {isTip ? currentQuote.text : `\u201C${currentQuote.text}\u201D`}
           </p>
 
-          <div className="flex items-center justify-between mt-1 text-[10.5px]">
+          <div className="flex items-center justify-between mt-1 text-[10.5px] gap-2">
             <span className="font-semibold text-emerald-900 dark:text-blue-300">
-              — {currentQuote.author}
+              {isTip ? 'Tip' : `— ${currentQuote.author}`}
             </span>
-            <span className="text-[10px] font-medium text-emerald-800/80 dark:text-blue-300/80 flex items-center space-x-1">
+            <span className="text-[10px] font-medium text-emerald-800/80 dark:text-blue-300/80 flex items-center space-x-1 shrink-0">
               <span>{currentQuote.icon}</span>
-              <span>{currentQuote.category}</span>
+              <span>{isTip ? 'App' : currentQuote.category}</span>
             </span>
           </div>
         </motion.div>
       </AnimatePresence>
-    </div>
+    </motion.button>
   );
 };

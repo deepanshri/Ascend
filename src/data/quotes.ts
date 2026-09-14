@@ -16,6 +16,22 @@ export const CURRENT_QUOTE_INDEX_KEY = 'current_quote_index';
 
 export const FEATURE_TIPS: Quote[] = [
   {
+    text: 'Momentum grows with consistency — 1 vote today is better than 0, even fallback habits count.',
+    author: 'Ascend',
+    source: 'Feature Tip',
+    category: 'Tip',
+    icon: '💡',
+    kind: 'tip',
+  },
+  {
+    text: 'Unlike rigid streaks that reset to zero on a miss, decay gently scales down your progress.',
+    author: 'Ascend',
+    source: 'Feature Tip',
+    category: 'Tip',
+    icon: '💡',
+    kind: 'tip',
+  },
+  {
     text: 'Double-tap a habit card to see why you created it.',
     author: 'Ascend',
     source: 'Feature Tip',
