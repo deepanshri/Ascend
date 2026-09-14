@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { UserPlus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
@@ -19,6 +20,7 @@ import {
 import { formatFriendCodeDisplay, isValidFriendCode, normalizeFriendCode } from '../utils/friendCode';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import { overlayFade, sheetMotion, tapPress } from '../lib/motionPresets';
+import { HEADER_ICON_BTN_CLASS } from './ScreenHeader';
 import { FloatingToast } from './FloatingToast';
 import { ProfileAvatar } from './ProfileAvatar';
 
@@ -447,7 +449,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
 
   if (variant === 'icon') {
     return (
-      <>
+      <span className="relative inline-flex shrink-0">
         <motion.button
           id="home-friends-btn"
           type="button"
@@ -455,19 +457,13 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
           onClick={() => setDrawerOpen(true)}
           aria-label="Friends"
           title="Friends"
-          className="relative w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-blue-500 text-emerald-800 dark:text-blue-400 shadow-xs hover:bg-emerald-50 dark:hover:bg-blue-950 cursor-pointer flex items-center justify-center"
+          className={HEADER_ICON_BTN_CLASS}
         >
-          <svg className="w-4 h-4 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.118a7.5 7.5 0 0115 0A17.93 17.93 0 0112 21.75c-2.68 0-5.21-.584-7.5-1.632z"
-            />
-          </svg>
+          <UserPlus className="w-4 h-4" strokeWidth={2.2} />
         </motion.button>
         {friendsModal}
         <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
-      </>
+      </span>
     );
   }
 

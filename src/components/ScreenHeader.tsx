@@ -2,6 +2,9 @@ import React from 'react';
 
 export const SCREEN_INSET_CLASS = 'pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.5rem))]';
 
+export const HEADER_ICON_BTN_CLASS =
+  'w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-blue-500 text-emerald-800 dark:text-blue-400 shadow-xs hover:bg-emerald-50 dark:hover:bg-blue-950 cursor-pointer flex items-center justify-center shrink-0';
+
 interface ScreenHeaderProps {
   title: string;
   subtitle?: string;
@@ -20,7 +23,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
   actions,
 }) => {
   return (
-    <header className="w-full flex items-start justify-between gap-3 pt-1">
+    <header className="w-full flex items-start justify-between gap-3">
       <div className="min-w-0">
         <h1 className={titleClassName}>{title}</h1>
         {subtitle ? (
@@ -36,7 +39,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
             onClick={onOpenSettings}
             title="Settings & Preferences"
             aria-label="Settings"
-            className={`p-2 rounded-xl transition cursor-pointer ${
+            className={`w-8 h-8 rounded-xl flex items-center justify-center transition cursor-pointer ${
               settingsActive
                 ? 'bg-slate-900 dark:bg-blue-600 text-white'
                 : 'bg-white/90 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800 shadow-xs'

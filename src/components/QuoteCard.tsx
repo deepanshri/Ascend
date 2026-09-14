@@ -478,7 +478,7 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
       id="atomic-quote-card"
       data-tour="daily-wisdom"
       title={isTip ? 'Feature tip · rotates every 5–6 hours' : 'Quote · rotates every 5–6 hours'}
-      className="w-full rounded-xl py-2 px-3 bg-surface text-ink border border-line shadow-2xs select-none"
+      className="w-full rounded-xl py-1.5 px-3 bg-surface text-ink border border-line shadow-2xs select-none"
     >
       <AnimatePresence mode="wait" initial={false}>
         <motion.div

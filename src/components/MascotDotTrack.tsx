@@ -3,9 +3,9 @@ import { animate, motion, useMotionValue, useMotionValueEvent, useTransform } fr
 import { Mascot, randomWalkDuration, randomWalkTarget, type MascotAngle } from './Mascot';
 
 const CANVAS_W = 360;
-const CANVAS_H = 215;
+const CANVAS_H = 200;
 const TRACK_CX = 180;
-const TRACK_CY = 160;
+const TRACK_CY = 154;
 const WALK_PAD = 8;
 const PROXIMITY = 18;
 

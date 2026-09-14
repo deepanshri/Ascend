@@ -63,10 +63,10 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
   // All dots, momentum orb, and date cards are concentric around this exact point
   // =========================================================================
   const cx = 180;
-  const cy = 160;
+  const cy = 154;
 
-  // 1. DATE CARDS (Day 1 to Day 7) arched along radius = 138
-  const cardRadius = 138;
+  // 1. DATE CARDS (Day 1 to Day 7) arched along radius = 132
+  const cardRadius = 132;
   const cardAngles = [
     { day: 1, angle: 154, rot: -64 },
     { day: 2, angle: 132.7, rot: -42.7 },
@@ -154,10 +154,10 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
     <section
       id="radial-calendar-widget"
       data-tour="momentum-card"
-      className="relative w-full max-w-[360px] mx-auto h-[215px] pt-1 pb-1 overflow-visible select-none cursor-default"
+      className="relative w-full max-w-[360px] mx-auto h-[200px] -mt-2 pt-0 pb-0 overflow-visible select-none cursor-default"
     >
       {/* Ambient background soft radial glow centered on momentum */}
-      <div className="absolute left-1/2 -translate-x-1/2 top-14 w-60 h-32 bg-accent-soft/40 rounded-full blur-2xl pointer-events-none z-0" />
+      <div className="absolute left-1/2 -translate-x-1/2 top-10 w-60 h-32 bg-accent-soft/40 rounded-full blur-2xl pointer-events-none z-0" />
 
       <MascotDotTrack
         celebrate={isCelebrating}
@@ -172,7 +172,7 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
       <svg
         className="relative z-10 w-full h-full overflow-visible pointer-events-none select-none"
         fill="none"
-        viewBox="0 0 360 215"
+        viewBox="0 0 360 200"
       >
         <defs>
           <linearGradient id="microDotGrad" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -272,7 +272,7 @@ export const RadialFanCalendar: React.FC<RadialFanCalendarProps> = ({
 
         {/* ========================================================================= */}
         {/* CENTRAL MOMENTUM ORB: EXACTLY IN THE MIDDLE OF THE CONCENTRIC DOTS        */}
-        {/* Centered at (cx, cy) = (180, 160), radius 30                             */}
+        {/* Centered at (cx, cy) = (180, 154), radius 30                             */}
         {/* ========================================================================= */}
         <g id="central-momentum-orb" transform={`translate(${cx}, ${cy})`}>
           {/* Outer gentle ambient pulse aura ring */}

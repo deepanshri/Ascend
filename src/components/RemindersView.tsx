@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { StandaloneReminder, UserSession } from '../types';
 import { fetchPublicReminders } from '../lib/supabase';
@@ -7,7 +8,8 @@ import { ReminderLongPressOverlay } from './ReminderLongPressOverlay';
 import { CreateReminderModal } from './CreateReminderModal';
 import { EditReminderModal } from './EditReminderModal';
 import { DeleteReminderConfirmModal } from './DeleteReminderConfirmModal';
-import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
+import { ScreenHeader, SCREEN_INSET_CLASS, HEADER_ICON_BTN_CLASS } from './ScreenHeader';
+import { FriendsFeed } from './FriendsFeed';
 import { tapPress } from '../lib/motionPresets';
 
 interface RemindersViewProps {
@@ -96,29 +98,30 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
       <ScreenHeader
         title="Reminders"
         subtitle="Standalone alerts & focus checkpoints"
-        titleClassName="text-[28px] sm:text-[30px] font-black text-slate-900 dark:text-white tracking-tight leading-tight text-left"
         onOpenSettings={onOpenSettings}
         actions={
-          <motion.button
-            id="new-reminder-btn"
-            type="button"
-            whileHover={{ scale: 1.08 }}
-            whileTap={tapPress}
-            transition={{ type: 'spring', damping: 15, stiffness: 400 }}
-            onClick={() => setIsCreateOpen(true)}
-            aria-label="New Reminder"
-            title="New Reminder"
-            className="w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-[#22C55E]/70 dark:border-[#3B82F6] text-[#22C55E] dark:text-[#3B82F6] shadow-xs hover:bg-emerald-50 dark:hover:bg-blue-950/50 cursor-pointer flex items-center justify-center shrink-0"
-          >
-            <svg
-              className="w-4 h-4 stroke-[2.5] text-[#22C55E] dark:text-[#3B82F6]"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          <>
+            {userSession ? (
+              <FriendsFeed
+                userId={userSession.id}
+                isGuest={userSession.isGuest}
+                userEmail={userSession.email}
+                userName={userSession.name}
+                variant="icon"
+              />
+            ) : null}
+            <motion.button
+              id="new-reminder-btn"
+              type="button"
+              whileTap={tapPress}
+              onClick={() => setIsCreateOpen(true)}
+              aria-label="New Reminder"
+              title="New Reminder"
+              className={HEADER_ICON_BTN_CLASS}
             >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-          </motion.button>
+              <Plus className="w-4 h-4" strokeWidth={2.5} />
+            </motion.button>
+          </>
         }
       />
 

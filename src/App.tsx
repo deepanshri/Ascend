@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
 import { tapPress, toastMotion } from './lib/motionPresets';
@@ -113,7 +114,7 @@ import { RemindersView } from './components/RemindersView';
 import { ReportView } from './components/ReportView';
 import { FriendsFeed } from './components/FriendsFeed';
 import { PersonalView } from './components/PersonalView';
-import { ScreenHeader, SCREEN_INSET_CLASS } from './components/ScreenHeader';
+import { ScreenHeader, SCREEN_INSET_CLASS, HEADER_ICON_BTN_CLASS } from './components/ScreenHeader';
 import { SettingsView } from './components/SettingsView';
 import { AddHabitModal } from './components/AddHabitModal';
 import { HabitDetailModal } from './components/HabitDetailModal';
@@ -1819,11 +1820,33 @@ export default function App() {
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             id="app-main-content"
             onScroll={handleMainScroll}
-            className={`absolute inset-0 z-10 px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col gap-3 overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
+            className={`absolute inset-0 z-10 px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col gap-1.5 overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
           >
             <ScreenHeader
               title="Home"
               onOpenSettings={() => setActiveTab('settings')}
+              actions={
+                <>
+                  <FriendsFeed
+                    userId={session.id}
+                    isGuest={session.isGuest}
+                    userEmail={session.email}
+                    userName={session.name}
+                    variant="icon"
+                  />
+                  <motion.button
+                    id="add-habit-btn-above-list"
+                    type="button"
+                    whileTap={tapPress}
+                    onClick={() => setIsAddModalOpen(true)}
+                    aria-label="Add Habit"
+                    title="Add Habit"
+                    className={HEADER_ICON_BTN_CLASS}
+                  >
+                    <Plus className="w-4 h-4" strokeWidth={2.5} />
+                  </motion.button>
+                </>
+              }
             />
 
             {/* Radial Fan Calendar: date fan, momentum orb, and mascot */}
@@ -1840,40 +1863,11 @@ export default function App() {
             {/* Atomic Wisdom Quote Card Curated by Personal Interests */}
             <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
 
-            {/* Habit List Header: "+" Button positioned directly above the habit list */}
-            <div className="flex items-center justify-end gap-2 pt-1 pb-0.5 px-0.5">
-              <FriendsFeed
-                userId={session.id}
-                isGuest={session.isGuest}
-                userEmail={session.email}
-                userName={session.name}
-                variant="icon"
-              />
-              <motion.button
-                id="add-habit-btn-above-list"
-                type="button"
-                whileTap={tapPress}
-                onClick={() => setIsAddModalOpen(true)}
-                aria-label="Add Habit"
-                title="Add Habit"
-                className="w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-blue-500 text-emerald-800 dark:text-blue-400 shadow-xs hover:bg-emerald-50 dark:hover:bg-blue-950 cursor-pointer flex items-center justify-center"
-              >
-                <svg
-                  className="w-4 h-4 stroke-[2.5] text-emerald-700 dark:text-blue-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-              </motion.button>
-            </div>
-
             {/* Habit List Cards */}
             <section id="habit-list" className="flex flex-col space-y-2.5">
               {(activeHabits ?? []).length === 0 ? (
                 <div className="bg-white/80 rounded-2xl p-6 text-center text-slate-400 text-[13px] border border-slate-200/80">
-                  No habits active yet. Tap &quot;+&quot; above to create one!
+                  No habits active yet. Tap &quot;+&quot; in the header to create one!
                 </div>
               ) : (
                 (activeHabits ?? []).map((habit, habitIndex) => (
