@@ -3,6 +3,7 @@ import { UserPlus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
+  FRIENDSHIPS_TABLE,
   connectByFriendCode,
   ensureProfileDirectory,
   fetchFriendActivity,
@@ -16,7 +17,7 @@ import {
   type FriendActivityItem,
   type FriendEdge,
   type ReceivedAffirmationGlow,
-} from '../lib/friends';
+} from '../services/socialService';
 import { formatFriendCodeDisplay, isValidFriendCode, normalizeFriendCode } from '../utils/friendCode';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import { overlayFade, sheetMotion, tapPress } from '../lib/motionPresets';
@@ -138,7 +139,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     if (!signedIn || !supabase || !isSupabaseConfigured) return;
     const channel = supabase
       .channel(`friends-feed-${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'friends' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: FRIENDSHIPS_TABLE }, () => {
         void refresh();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'momentum_events' }, () => {
@@ -335,7 +336,10 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
                           alt={`${glow.fromName} avatar`}
                           className="w-12 h-12 rounded-xl"
                         />
-                        <p className="text-[12.5px] text-ink leading-relaxed">{glow.fromName} sent you an Affirmation Glow</p>
+                        <div className="min-w-0">
+                          <p className="text-[12.5px] text-ink leading-relaxed">{glow.fromName} sent you an Affirmation Glow</p>
+                          {glow.note ? <p className="text-[11px] text-ink-muted mt-0.5 leading-relaxed">{glow.note}</p> : null}
+                        </div>
                       </li>
                     ))}
                   </ul>

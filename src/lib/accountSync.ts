@@ -9,6 +9,7 @@ import {
   upsertHabitLog,
 } from '../utils/momentum';
 import { fetchMomentumEventsFromTable, pushMomentumEventsRemote } from './momentumEvents';
+import { mergeHabitsByUpdatedAt } from './syncMerge';
 import { getTodayDayIndex } from '../utils/dates';
 import { isSupabaseConfigured, supabase } from './supabase';
 
@@ -20,6 +21,8 @@ export interface AccountSyncInput {
   interests: string[];
   hasCompletedTutorial: boolean;
   momentumScore: number;
+  /** Re-read local habits after remote fetch so in-flight edits are not dropped. */
+  getLatestHabits?: () => Habit[];
 }
 
 export interface AccountSyncResult {
@@ -30,23 +33,10 @@ export interface AccountSyncResult {
   error?: string;
 }
 
-export { persistHabitsToTable };
+export { persistHabitsToTable, mergeHabitsByUpdatedAt };
 
 function withoutSeedHabits(habits: Habit[]): Habit[] {
   return habits.filter((habit) => !isSeedHabitId(habit.id));
-}
-
-function mergeHabits(local: Habit[], remote: Habit[]): Habit[] {
-  const localUserHabits = withoutSeedHabits(local);
-  const remoteUserHabits = withoutSeedHabits(remote);
-  if (remoteUserHabits.length === 0) return localUserHabits;
-
-  const merged = new Map<string, Habit>();
-  remoteUserHabits.forEach((habit) => merged.set(habit.id, habit));
-  localUserHabits.forEach((habit) => {
-    if (!merged.has(habit.id)) merged.set(habit.id, habit);
-  });
-  return Array.from(merged.values());
 }
 
 async function pushLocalLogs(userId: string, events: HabitCompletionEvent[]): Promise<void> {
@@ -118,7 +108,10 @@ export async function syncAuthenticatedAccount(
     };
   }
 
-  const mergedHabits = mergeHabits(input.habits, remoteHabitsResult.habits);
+  const mergedHabits = mergeHabitsByUpdatedAt(
+    input.getLatestHabits?.() ?? input.habits,
+    remoteHabitsResult.habits
+  );
   const wroteHabits = await persistHabitsToTable(session.id, mergedHabits);
   if (!wroteHabits) {
     return {

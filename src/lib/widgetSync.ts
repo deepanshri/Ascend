@@ -1,6 +1,6 @@
 import { Preferences } from '@capacitor/preferences';
 import { Habit, HabitCompletionEvent, MomentumEvent, StandaloneReminder } from '../types';
-import { hasTodayLedgerEntry, uniqueTodayLedgerHabitIds } from '../services/ledgerService';
+import { hasTodayLedgerEntry } from '../services/ledgerService';
 import { addDaysIso, resolveEventIsoDate, toISODate } from '../utils/dates';
 import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
 import { isHabitScheduledOnIso, scheduledHabitsForDayIndex } from '../utils/schedule';
@@ -142,13 +142,19 @@ function formatReminderTime(time?: string): string {
 
 export function buildTodaysIdentityLedger(
   habits: Habit[],
-  completionEvents: HabitCompletionEvent[],
+  _completionEvents: HabitCompletionEvent[],
   todayIso: string,
-  origin?: Date
+  _origin?: Date,
+  momentumEvents: MomentumEvent[] = []
 ): { points: number; lines: WidgetIdentityLine[] } {
-  const todayHabitIds = uniqueTodayLedgerHabitIds(completionEvents, todayIso, origin);
-  const doneSet = new Set(todayHabitIds);
-  const points = todayHabitIds.length;
+  const todayHabitIds = new Set<string>();
+  momentumEvents.forEach((event) => {
+    if (event.eventType !== 'full' && event.eventType !== 'fallback') return;
+    if (resolveMomentumEventDate(event) !== todayIso) return;
+    todayHabitIds.add(event.habitId);
+  });
+  const doneSet = todayHabitIds;
+  const points = todayHabitIds.size;
   const byStatement = new Map<string, { done: number; scheduled: number }>();
 
   habits
@@ -223,7 +229,7 @@ export function buildWidgetSnapshot(input: WidgetSnapshotInput): WidgetSnapshot 
     sleepRate,
     reminders,
     habits,
-    identity: buildTodaysIdentityLedger(active, input.completionEvents, todayIso, origin),
+    identity: buildTodaysIdentityLedger(active, input.completionEvents, todayIso, origin, input.momentumEvents),
   };
 }
 

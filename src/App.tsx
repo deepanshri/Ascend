@@ -51,6 +51,7 @@ import {
 import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted } from './lib/profile';
 import { persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from './data/avatars';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
+import { mergeHabitsByUpdatedAt, mergeRemindersByUpdatedAt, touchHabit } from './lib/syncMerge';
 import { fetchActiveHabits, fetchHabitLogsForDate, deleteHabitCascade, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable } from './lib/habitsApi';
 import {
   destroyAscendSpotlightTutorial,
@@ -77,7 +78,6 @@ import {
   displayedIdentityVoteCount,
   hasMomentumVoteOnIso,
   hasTodayLedgerEntry,
-  removeTodayEvidence,
   replaceTodayCompletion,
   upsertTodayEvidence,
 } from './services/ledgerService';
@@ -588,18 +588,9 @@ export default function App() {
       setStoredSession(restoredSession);
     };
 
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (error) console.warn('Auth getSession failed:', error.message);
-      if (data?.session?.user) {
-        applyAuthUser(data.session.user);
-        return;
-      }
-      const stored = getStoredSession();
-      if (stored?.isGuest) return;
-      if (stored && !stored.isGuest) {
-        setSession(null);
-        setStoredSession(null);
-      }
+    void authService.restoreExistingSession().then((result) => {
+      if (result === 'pending' || !result) return;
+      setSession(result);
     }).catch((err) => console.warn('Auth restore offline:', err));
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, supabaseSession) => {
@@ -725,8 +716,8 @@ export default function App() {
   }, [momentumEvents, examShieldActive, vacationModeActive, habits]);
 
   const displayedIdentityVotes = useMemo(
-    () => displayedIdentityVoteCount(completionEvents, evidenceList, calendarOrigin),
-    [completionEvents, evidenceList, calendarOrigin]
+    () => displayedIdentityVoteCount(momentumEvents, evidenceList),
+    [momentumEvents, evidenceList]
   );
 
   const completionEventsRef = useRef(completionEvents);
@@ -734,6 +725,7 @@ export default function App() {
   const hasCompletedTutorialRef = useRef(hasCompletedTutorial);
   const momentumScoreRef = useRef(momentumScore);
   const hydratedUserIdRef = useRef<string | null>(null);
+  const reminderSyncSeqRef = useRef(0);
   habitsRef.current = habits;
   momentumEventsRef.current = momentumEvents;
   completionEventsRef.current = completionEvents;
@@ -762,8 +754,9 @@ export default function App() {
       interests: selectedInterestsRef.current,
       hasCompletedTutorial: Boolean(hasCompletedTutorialRef.current),
       momentumScore: momentumScoreRef.current,
+      getLatestHabits: () => habitsRef.current,
     });
-    setHabits(result.habits);
+    setHabits((prev) => mergeHabitsByUpdatedAt(prev, result.habits));
     setCompletionEvents(result.completionEvents);
     setMomentumEvents((prev) => mergeMomentumEvents(prev, result.momentumEvents));
     if (result.ok) {
@@ -853,13 +846,7 @@ export default function App() {
         fetchMomentumEventsFromTable(session.id),
       ]);
       if (cancelled) return;
-      setHabits((prev) => {
-        const byId = new Map(prev.filter((habit) => !isSeedHabitId(habit.id)).map((habit) => [habit.id, habit]));
-        remoteHabits
-          .filter((habit) => !isSeedHabitId(habit.id))
-          .forEach((habit) => byId.set(habit.id, habit));
-        return Array.from(byId.values());
-      });
+      setHabits((prev) => mergeHabitsByUpdatedAt(prev, remoteHabits));
       const userDateLogs = dateLogs.filter((event) => !isSeedHabitId(event.habitId));
       if (userDateLogs.length > 0) {
         setCompletionEvents((prev) =>
@@ -1073,23 +1060,21 @@ export default function App() {
       setCompletionEvents((prev) =>
         prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
       );
-      setEvidenceList((prev) => removeTodayEvidence(prev, habitId, loggedDate, calendarOrigin));
-      void deleteHabitLog(session?.id, habitId, todayDayIndex).catch(() => {});
+      void deleteHabitLog(session?.id, habitId, loggedDate, todayDayIndex).catch(() => {});
     }
 
     setActiveFallbackIds((prev) => [...prev, habitId]);
     showNotification('fallback');
   };
 
-  // GESTURE / TAP ACTION: Uncheck today. Daily ledger tally drops; historical momentum_events rows stay.
+  // GESTURE / TAP ACTION: Uncheck today. Daily habit_logs drop; momentum_events identity points stay.
   const handleResetToday = (habitId: string) => {
     if (!isViewingToday) return;
     const loggedDate = toISODate(calendarOrigin);
     setCompletionEvents((prev) =>
       prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
     );
-    setEvidenceList((prev) => removeTodayEvidence(prev, habitId, loggedDate, calendarOrigin));
-    void deleteHabitLog(session?.id, habitId, todayDayIndex).catch(() => {});
+    void deleteHabitLog(session?.id, habitId, loggedDate, todayDayIndex).catch(() => {});
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
     showNotification('Card reset');
   };
@@ -1112,6 +1097,7 @@ export default function App() {
       microDays: [false, false, false, false, false, false, false],
       scheduledDays: payload.scheduledDays && payload.scheduledDays.length > 0 ? payload.scheduledDays : [0, 1, 2, 3, 4, 5, 6],
       scheduleType: payload.scheduleType || 'daily',
+      updatedAt: Date.now(),
     };
     setHabits((prev) => [newHabit, ...prev]);
     return newHabit;
@@ -1120,7 +1106,7 @@ export default function App() {
   // Archive habit
   const handleArchiveHabit = (habitId: string) => {
     setHabits((prev) =>
-      prev.map((h) => (h.id === habitId ? { ...h, archived: true } : h))
+      prev.map((h) => (h.id === habitId ? touchHabit({ ...h, archived: true }) : h))
     );
     if (detailHabit && detailHabit.id === habitId) {
       setDetailHabit(null);
@@ -1135,7 +1121,7 @@ export default function App() {
       return;
     }
     setHabits((prev) =>
-      prev.map((h) => (h.id === habitId ? { ...h, archived: false } : h))
+      prev.map((h) => (h.id === habitId ? touchHabit({ ...h, archived: false }) : h))
     );
   };
 
@@ -1159,9 +1145,9 @@ export default function App() {
       next = { ...next, isKeystone: false };
     }
     setHabits((prev) =>
-      prev.map((h) => (h.id === next.id ? next : h))
+      prev.map((h) => (h.id === next.id ? touchHabit(next) : h))
     );
-    setDetailHabit(next);
+    setDetailHabit(touchHabit(next));
   };
 
   const handleToggleKeystone = (habitId: string, nextValue: boolean) => {
@@ -1170,7 +1156,7 @@ export default function App() {
       return;
     }
     setHabits((prev) =>
-      prev.map((habit) => (habit.id === habitId ? { ...habit, isKeystone: nextValue } : habit))
+      prev.map((habit) => (habit.id === habitId ? touchHabit({ ...habit, isKeystone: nextValue }) : habit))
     );
   };
 
@@ -1325,9 +1311,10 @@ export default function App() {
   useEffect(() => {
     if (!session || session.isGuest) return;
     let cancelled = false;
+    const seq = ++reminderSyncSeqRef.current;
     void remindersSyncService.syncReminders(reminders, session).then((res) => {
-      if (cancelled) return;
-      setReminders(res.reminders);
+      if (cancelled || seq !== reminderSyncSeqRef.current) return;
+      setReminders((prev) => mergeRemindersByUpdatedAt(prev, res.reminders));
     });
     return () => {
       cancelled = true;
@@ -1337,8 +1324,10 @@ export default function App() {
 
   // Standalone Reminders Handlers with Supabase LWW sync and OS-level alerts
   const persistReminderSync = (updated: StandaloneReminder[]) => {
+    const seq = ++reminderSyncSeqRef.current;
     void remindersSyncService.syncReminders(updated, session).then((res) => {
-      setReminders(res.reminders);
+      if (seq !== reminderSyncSeqRef.current) return;
+      setReminders((prev) => mergeRemindersByUpdatedAt(prev, res.reminders));
     });
   };
 
@@ -1689,12 +1678,15 @@ export default function App() {
             onNotify={showNotification}
             userSession={session}
             onRemindersHydrated={(remote) => {
-              setReminders(Array.isArray(remote) ? remote : []);
-              notificationScheduler.bootReschedulePendingAlerts(Array.isArray(remote) ? remote : []);
+              const next = Array.isArray(remote) ? remote : [];
+              setReminders((prev) => mergeRemindersByUpdatedAt(prev, next));
+              notificationScheduler.bootReschedulePendingAlerts(next);
             }}
             onSyncReminders={() => {
+              const seq = ++reminderSyncSeqRef.current;
               remindersSyncService.syncReminders(reminders ?? [], session).then((res) => {
-                setReminders(Array.isArray(res.reminders) ? res.reminders : []);
+                if (seq !== reminderSyncSeqRef.current) return;
+                setReminders((prev) => mergeRemindersByUpdatedAt(prev, Array.isArray(res.reminders) ? res.reminders : []));
                 showNotification(
                   res.status === 'synced'
                     ? 'Reminders synchronized across devices'

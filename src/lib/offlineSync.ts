@@ -8,7 +8,7 @@ const PROFILE_CACHE_KEY = 'ascend_profile_cache';
 
 type HabitLogQueueItem =
   | { kind: 'upsert'; userId: string; event: HabitCompletionEvent }
-  | { kind: 'delete'; userId: string; habitId: string; dayIndex: number };
+  | { kind: 'delete'; userId: string; habitId: string; loggedDate: string; dayIndex?: number };
 
 type ProfilePatch = Partial<Pick<UserProfile, 'interests' | 'has_completed_tutorial' | 'avatar_url'>>;
 
@@ -19,6 +19,20 @@ interface ProfileQueueItem {
 
 function canSync(userId?: string | null): boolean {
   return Boolean(isSupabaseConfigured && supabase && userId && !userId.startsWith('guest_'));
+}
+
+function resolveQueuedDelete(
+  item: HabitLogQueueItem | { kind: 'delete'; userId: string; habitId: string; dayIndex?: number; loggedDate?: string }
+): { userId: string; habitId: string; loggedDate: string; dayIndex?: number } | null {
+  if (item.kind !== 'delete') return null;
+  const loggedDate =
+    'loggedDate' in item && isIsoDate(item.loggedDate)
+      ? item.loggedDate
+      : typeof item.dayIndex === 'number'
+        ? isoDateForDayIndex(item.dayIndex, new Date())
+        : null;
+  if (!loggedDate) return null;
+  return { userId: item.userId, habitId: item.habitId, loggedDate, dayIndex: item.dayIndex };
 }
 
 function isOnline(): boolean {
@@ -77,7 +91,12 @@ function enqueueLog(item: HabitLogQueueItem): void {
     writeLogQueue([...filtered, item]);
     return;
   }
-  writeLogQueue([...next, item]);
+  const loggedDate = item.loggedDate;
+  const filtered = next.filter(
+    (entry) =>
+      !(entry.kind === 'delete' && entry.habitId === item.habitId && entry.loggedDate === loggedDate)
+  );
+  writeLogQueue([...filtered, item]);
 }
 
 function enqueueProfile(item: ProfileQueueItem): void {
@@ -90,8 +109,11 @@ export async function pushHabitLogRemote(
   event: HabitCompletionEvent
 ): Promise<boolean> {
   if (!canSync(userId) || !supabase) return false;
-  const loggedDate = isIsoDate(event.date) ? event.date : isoDateForDayIndex(event.dayIndex);
+  const loggedDate = isIsoDate(event.date)
+    ? event.date
+    : isoDateForDayIndex(event.dayIndex, new Date(event.timestamp || Date.now()));
   const completion = event.type === 'fallback_micro' ? 0.5 : 1;
+  const completionType = event.type === 'fallback_micro' ? 'fallback' : 'full';
   const row = {
     id: event.id,
     user_id: userId,
@@ -100,6 +122,7 @@ export async function pushHabitLogRemote(
     date: event.date,
     day_index: event.dayIndex,
     type: event.type,
+    completion_type: completionType,
     completion,
     value: completion,
     note: event.note || null,
@@ -138,11 +161,11 @@ export async function pushHabitLogRemote(
 export async function pushHabitLogDeleteRemote(
   userId: string,
   habitId: string,
-  dayIndex: number
+  loggedDate: string,
+  dayIndex?: number
 ): Promise<boolean> {
   if (!canSync(userId) || !supabase) return false;
   try {
-    const loggedDate = isoDateForDayIndex(dayIndex);
     const byDate = await supabase
       .from('habit_logs')
       .delete()
@@ -150,6 +173,8 @@ export async function pushHabitLogDeleteRemote(
       .eq('habit_id', habitId)
       .eq('logged_date', loggedDate);
     if (!byDate.error) return true;
+
+    if (dayIndex == null) return false;
 
     const byIndex = await supabase
       .from('habit_logs')
@@ -206,15 +231,16 @@ export async function syncHabitLogUpsert(
 export async function syncHabitLogDelete(
   userId: string | null | undefined,
   habitId: string,
-  dayIndex: number
+  loggedDate: string,
+  dayIndex?: number
 ): Promise<void> {
   if (!canSync(userId) || !userId) return;
   if (!isOnline()) {
-    enqueueLog({ kind: 'delete', userId, habitId, dayIndex });
+    enqueueLog({ kind: 'delete', userId, habitId, loggedDate, dayIndex });
     return;
   }
-  const ok = await pushHabitLogDeleteRemote(userId, habitId, dayIndex);
-  if (!ok) enqueueLog({ kind: 'delete', userId, habitId, dayIndex });
+  const ok = await pushHabitLogDeleteRemote(userId, habitId, loggedDate, dayIndex);
+  if (!ok) enqueueLog({ kind: 'delete', userId, habitId, loggedDate, dayIndex });
 }
 
 export async function syncProfilePatch(userId: string, patch: ProfilePatch): Promise<void> {
@@ -232,11 +258,15 @@ export async function flushOfflineQueue(): Promise<void> {
 
   const remainingLogs: HabitLogQueueItem[] = [];
   for (const item of readLogQueue()) {
-    const ok =
-      item.kind === 'upsert'
-        ? await pushHabitLogRemote(item.userId, item.event)
-        : await pushHabitLogDeleteRemote(item.userId, item.habitId, item.dayIndex);
-    if (!ok) remainingLogs.push(item);
+    if (item.kind === 'upsert') {
+      const ok = await pushHabitLogRemote(item.userId, item.event);
+      if (!ok) remainingLogs.push(item);
+      continue;
+    }
+    const del = resolveQueuedDelete(item);
+    if (!del) continue;
+    const ok = await pushHabitLogDeleteRemote(del.userId, del.habitId, del.loggedDate, del.dayIndex);
+    if (!ok) remainingLogs.push({ kind: 'delete', ...del });
   }
   writeLogQueue(remainingLogs);
 

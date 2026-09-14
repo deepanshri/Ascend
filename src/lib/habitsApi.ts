@@ -40,7 +40,7 @@ export function rowToHabit(row: Record<string, unknown>): Habit | null {
     identityStatement: String(row.identity_statement || row.identityStatement || ''),
     targetDaysPerWeek: Number(row.target_days_per_week ?? row.targetDaysPerWeek ?? 7) || 7,
     color: row.color ? String(row.color) : undefined,
-    archived: Boolean(row.archived),
+    archived: Boolean(row.archived ?? row.is_archived),
     tags: Array.isArray(row.tags) ? row.tags.map(String) : [toDbCategory(fromDbCategory(row.category))],
     priority: (row.priority as Habit['priority']) || undefined,
     scheduleType: (row.schedule_type as Habit['scheduleType']) || (row.scheduleType as Habit['scheduleType']) || undefined,
@@ -55,6 +55,7 @@ export function rowToHabit(row: Record<string, unknown>): Habit | null {
     intervalDays: row.interval_days != null ? Number(row.interval_days) : undefined,
     weeklyTargetCount: row.weekly_target_count != null ? Number(row.weekly_target_count) : undefined,
     isKeystone: Boolean(row.is_keystone ?? row.isKeystone),
+    updatedAt: row.updated_at ? Date.parse(String(row.updated_at)) || undefined : undefined,
   };
 }
 
@@ -75,6 +76,7 @@ export function habitToRow(habit: Habit, userId: string) {
     target_days_per_week: habit.targetDaysPerWeek,
     color: habit.color ?? null,
     archived: Boolean(habit.archived),
+    is_archived: Boolean(habit.archived),
     tags: habit.tags ?? [category],
     priority: habit.priority ?? null,
     schedule_type: habit.scheduleType ?? null,
@@ -82,7 +84,7 @@ export function habitToRow(habit: Habit, userId: string) {
     interval_days: habit.intervalDays ?? null,
     weekly_target_count: habit.weeklyTargetCount ?? null,
     is_keystone: Boolean(habit.isKeystone),
-    updated_at: new Date().toISOString(),
+    updated_at: new Date(habit.updatedAt || Date.now()).toISOString(),
   };
 }
 
@@ -167,11 +169,21 @@ export async function purgeSeedHabitsFromTable(userId?: string | null): Promise<
 export async function countActiveHabitsRemote(userId?: string | null): Promise<number | null> {
   if (!canSync(userId) || !supabase || !userId) return null;
   try {
-    const { count, error } = await supabase
+    let { count, error } = await supabase
       .from('habits')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
       .or('archived.is.null,archived.eq.false');
+
+    if (error && /archived/i.test(error.message)) {
+      const retry = await supabase
+        .from('habits')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .or('is_archived.is.null,is_archived.eq.false');
+      count = retry.count;
+      error = retry.error;
+    }
 
     if (error) {
       console.warn('Active habit count failed:', error.message);

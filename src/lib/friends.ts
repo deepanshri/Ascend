@@ -2,6 +2,9 @@ import { generateFriendCode, isValidFriendCode, normalizeFriendCode } from '../u
 import { resolveAvatarId } from '../data/avatars';
 import { isSupabaseConfigured, supabase } from './supabase';
 
+/** Canonical social graph. Live DB and client queries both use public.friendships. */
+export const FRIENDSHIPS_TABLE = 'friendships';
+
 export type FriendStatus = 'pending' | 'accepted';
 
 export interface ProfileDirectoryHit {
@@ -159,7 +162,7 @@ export async function connectByFriendCode(
   }
 
   try {
-    const { data, error } = await supabase.rpc('connect_by_friend_code', { input_code: code });
+    const { data, error } = await supabase.rpc('connect_by_friend_code', { target_code: code });
     if (!error && data && typeof data === 'object') {
       const payload = data as { ok?: boolean; message?: string };
       return {
@@ -185,14 +188,14 @@ export async function connectByFriendCode(
     if (overlap?.status === 'accepted') return { ok: true, message: 'Already connected.' };
     if (overlap) {
       const { error: upgradeError } = await supabase
-        .from('friends')
+        .from(FRIENDSHIPS_TABLE)
         .update({ status: 'accepted' })
         .eq('id', overlap.id);
       if (upgradeError) return { ok: false, message: 'Could not connect.' };
       return { ok: true, message: 'You are now friends.' };
     }
 
-    const { error: insertError } = await supabase.from('friends').insert({
+    const { error: insertError } = await supabase.from(FRIENDSHIPS_TABLE).insert({
       user_id: userId,
       friend_id: String(peer.id),
       status: 'accepted',
@@ -201,6 +204,11 @@ export async function connectByFriendCode(
       console.warn('friend code connect failed:', insertError.message);
       return { ok: false, message: 'Could not connect.' };
     }
+    await supabase.from(FRIENDSHIPS_TABLE).insert({
+      user_id: String(peer.id),
+      friend_id: userId,
+      status: 'accepted',
+    });
     return { ok: true, message: 'You are now friends.' };
   } catch {
     return { ok: false, message: 'Could not connect.' };
@@ -283,12 +291,12 @@ export async function fetchFriendships(userId: string): Promise<FriendEdge[]> {
   if (!canUse(userId) || !supabase) return [];
   try {
     const { data, error } = await supabase
-      .from('friends')
+      .from(FRIENDSHIPS_TABLE)
       .select('id, user_id, friend_id, status, created_at')
       .or(`user_id.eq.${userId},friend_id.eq.${userId}`)
       .order('created_at', { ascending: false });
     if (error) {
-      console.warn('friends fetch failed:', error.message);
+      console.warn('friendships fetch failed:', error.message);
       return [];
     }
     const rows = data || [];
@@ -300,9 +308,17 @@ export async function fetchFriendships(userId: string): Promise<FriendEdge[]> {
       )
     );
     const names = await loadProfileMap(peerIds);
-    return rows
+    const mapped = rows
       .map((row) => mapEdge(row, userId, names))
       .filter((row): row is FriendEdge => row !== null);
+    const byPeer = new Map<string, FriendEdge>();
+    mapped.forEach((edge) => {
+      const current = byPeer.get(edge.peerId);
+      if (!current || (edge.status === 'accepted' && current.status !== 'accepted')) {
+        byPeer.set(edge.peerId, edge);
+      }
+    });
+    return [...byPeer.values()];
   } catch {
     return [];
   }
@@ -338,7 +354,7 @@ export async function sendFriendRequest(userId: string, friendId: string): Promi
       const accepted = await respondToFriendRequest(overlap.id, 'accepted');
       return accepted ? { ok: true, message: 'Friend request accepted.' } : { ok: false, message: 'Could not accept request.' };
     }
-    const { error } = await supabase.from('friends').insert({
+    const { error } = await supabase.from(FRIENDSHIPS_TABLE).insert({
       user_id: userId,
       friend_id: friendId,
       status: 'pending',
@@ -357,10 +373,22 @@ export async function respondToFriendRequest(edgeId: string, status: 'accepted' 
   if (!supabase) return false;
   try {
     if (status === 'declined') {
-      const { error } = await supabase.from('friends').delete().eq('id', edgeId);
+      const { error } = await supabase.from(FRIENDSHIPS_TABLE).delete().eq('id', edgeId);
       return !error;
     }
-    const { error } = await supabase.from('friends').update({ status: 'accepted' }).eq('id', edgeId);
+    const { data, error } = await supabase
+      .from(FRIENDSHIPS_TABLE)
+      .update({ status: 'accepted' })
+      .eq('id', edgeId)
+      .select('user_id, friend_id')
+      .maybeSingle();
+    if (!error && data?.user_id && data?.friend_id) {
+      await supabase.from(FRIENDSHIPS_TABLE).insert({
+        user_id: String(data.friend_id),
+        friend_id: String(data.user_id),
+        status: 'accepted',
+      });
+    }
     return !error;
   } catch {
     return false;
@@ -377,7 +405,7 @@ export async function removeFriendship(
     let userId = pair?.userId;
     let peerId = pair?.peerId;
     if ((!userId || !peerId) && edgeId) {
-      const { data } = await supabase.from('friends').select('user_id, friend_id').eq('id', edgeId).maybeSingle();
+      const { data } = await supabase.from(FRIENDSHIPS_TABLE).select('user_id, friend_id').eq('id', edgeId).maybeSingle();
       if (data?.user_id && data?.friend_id) {
         userId = String(data.user_id);
         peerId = String(data.friend_id);
@@ -385,14 +413,14 @@ export async function removeFriendship(
     }
     if (userId && peerId) {
       const { error } = await supabase
-        .from('friends')
+        .from(FRIENDSHIPS_TABLE)
         .delete()
         .or(
           `and(user_id.eq.${userId},friend_id.eq.${peerId}),and(user_id.eq.${peerId},friend_id.eq.${userId})`
         );
       return !error;
     }
-    const { error } = await supabase.from('friends').delete().eq('id', edgeId);
+    const { error } = await supabase.from(FRIENDSHIPS_TABLE).delete().eq('id', edgeId);
     return !error;
   } catch {
     return false;
@@ -405,6 +433,7 @@ export interface ReceivedAffirmationGlow {
   fromName: string;
   fromAvatar?: string | null;
   eventId: string;
+  note?: string | null;
   createdAt: string;
 }
 
@@ -429,12 +458,22 @@ export async function fetchSentGlowEventIds(userId: string): Promise<Set<string>
 export async function fetchReceivedGlows(userId: string): Promise<ReceivedAffirmationGlow[]> {
   if (!canUse(userId) || !supabase) return [];
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('affirmation_glows')
-      .select('id, from_user_id, event_id, created_at')
+      .select('id, from_user_id, event_id, note, created_at')
       .eq('to_user_id', userId)
       .order('created_at', { ascending: false })
       .limit(20);
+    if (error && /note/i.test(error.message)) {
+      const retry = await supabase
+        .from('affirmation_glows')
+        .select('id, from_user_id, event_id, created_at')
+        .eq('to_user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      data = retry.data as typeof data;
+      error = retry.error;
+    }
     if (error || !data) return [];
     const fromIds = Array.from(new Set(data.map((row) => String(row.from_user_id || '')).filter(Boolean)));
     const profiles = await loadProfileMap(fromIds);
@@ -444,6 +483,7 @@ export async function fetchReceivedGlows(userId: string): Promise<ReceivedAffirm
       fromName: profiles.get(String(row.from_user_id))?.name || 'A friend',
       fromAvatar: profiles.get(String(row.from_user_id))?.avatarUrl || null,
       eventId: String(row.event_id || ''),
+      note: typeof row.note === 'string' && row.note.trim() ? row.note : null,
       createdAt: String(row.created_at || ''),
     }));
   } catch {
@@ -454,16 +494,20 @@ export async function fetchReceivedGlows(userId: string): Promise<ReceivedAffirm
 export async function sendAffirmationGlow(
   fromUserId: string,
   toUserId: string,
-  eventId: string
+  eventId: string,
+  note?: string | null
 ): Promise<{ ok: boolean; message: string }> {
   if (!canUse(fromUserId) || !supabase) return { ok: false, message: 'Sign in to send a glow.' };
   if (fromUserId === toUserId) return { ok: false, message: 'You cannot glow your own update.' };
   try {
-    const { error } = await supabase.from('affirmation_glows').insert({
+    const payload: { from_user_id: string; to_user_id: string; event_id: string; note?: string } = {
       from_user_id: fromUserId,
       to_user_id: toUserId,
       event_id: eventId,
-    });
+    };
+    const trimmed = typeof note === 'string' ? note.trim() : '';
+    if (trimmed) payload.note = trimmed;
+    const { error } = await supabase.from('affirmation_glows').insert(payload);
     if (error) {
       if (String(error.message || '').toLowerCase().includes('duplicate') || error.code === '23505') {
         return { ok: true, message: 'Glow already sent.' };

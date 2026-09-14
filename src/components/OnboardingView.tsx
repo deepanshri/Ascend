@@ -54,7 +54,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete }) =>
                 <span>Non-Zero Saves</span>
               </div>
               <p className="text-[11px] text-emerald-800/90 dark:text-blue-200/90 mt-1">
-                Missed a day? Momentum decays gently by ~5%, never to zero.
+                Missed a day? Momentum decays by 12%, never to zero.
                 Exhausted? Execute your <strong>Fallback Micro-Habit</strong> for 50% credit.
               </p>
             </div>

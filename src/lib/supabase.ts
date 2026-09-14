@@ -244,6 +244,29 @@ async function signInRemote(email: string, password: string): Promise<UserSessio
 }
 
 export const authService = {
+  async restoreExistingSession(): Promise<UserSession | 'pending' | null> {
+    const stored = getStoredSession();
+    if (!isSupabaseConfigured || !supabase) return stored;
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) console.warn('Auth getSession failed:', error.message);
+      if (data?.session?.user) {
+        const session = sessionFromAuthUser(
+          data.session.user,
+          data.session.user.email || stored?.email || ''
+        );
+        setStoredSession(session);
+        return session;
+      }
+      if (stored?.isGuest) return stored;
+      if (stored && !stored.isGuest) return 'pending';
+      return null;
+    } catch (err) {
+      console.warn('Auth restore offline:', err);
+      return stored?.isGuest ? stored : stored ? 'pending' : null;
+    }
+  },
+
   async signInWithEmail(email: string, password: string): Promise<UserSession> {
     if (isSupabaseConfigured && supabase) {
       return signInRemote(email, password);

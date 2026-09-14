@@ -144,7 +144,23 @@ ALTER TABLE IF EXISTS public.habits
   ADD COLUMN IF NOT EXISTS is_keystone BOOLEAN NOT NULL DEFAULT FALSE;
 
 ALTER TABLE IF EXISTS public.profiles
-  ADD COLUMN IF NOT EXISTS friend_code TEXT;
+  ADD COLUMN IF NOT EXISTS friend_code VARCHAR(6);
 
 ALTER TABLE IF EXISTS public.profiles
   ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+
+ALTER TABLE IF EXISTS public.profiles
+  ADD COLUMN IF NOT EXISTS username TEXT,
+  ADD COLUMN IF NOT EXISTS vacation BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS exam_shield BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE IF EXISTS public.habits
+  ADD COLUMN IF NOT EXISTS identity_statement TEXT,
+  ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS name TEXT;
+
+ALTER TABLE IF EXISTS public.habits
+  ALTER COLUMN purpose_anchor DROP NOT NULL;
+
+-- Canonical social graph is public.friendships (not public.friends).
+-- Full live reconciliation, RPC, glows, and RLS: supabase/migrations/011_schema_reconciliation.sql

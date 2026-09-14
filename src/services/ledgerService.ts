@@ -1,6 +1,6 @@
 import { HabitCompletionEvent, IdentityEvidence, MomentumEvent } from '../types';
 import { formatEvidenceDate, resolveEventIsoDate } from '../utils/dates';
-import { resolveMomentumEventDate } from '../utils/momentum';
+import { countIdentityVotes, resolveMomentumEventDate } from '../utils/momentum';
 
 export function ledgerDayKey(habitId: string, isoDate: string): string {
   return `${habitId}::${isoDate}`;
@@ -38,8 +38,8 @@ export function uniqueTodayLedgerHabitIds(
 }
 
 /**
- * Evidence Ledger total: one vote per habit per calendar day.
- * Toggle cycles cannot stack because completionEvents keep a single row per pair.
+ * Daily unique completion days — used by the widget / card projection.
+ * Identity Ledger totals do not use this; they count append-only momentum_events.
  */
 export function uniqueLedgerVoteCount(events: HabitCompletionEvent[], origin: Date = new Date()): number {
   const keys = new Set<string>();
@@ -51,13 +51,17 @@ export function uniqueLedgerVoteCount(events: HabitCompletionEvent[], origin: Da
   return keys.size;
 }
 
+/**
+ * Identity Ledger tally: COUNT of full/fallback rows in the immutable
+ * momentum_events log, plus manual ledger entries. Unchecking a daily card
+ * does not decrement this number.
+ */
 export function displayedIdentityVoteCount(
-  events: HabitCompletionEvent[],
-  evidenceList: IdentityEvidence[],
-  origin: Date = new Date()
+  momentumEvents: MomentumEvent[],
+  evidenceList: IdentityEvidence[]
 ): number {
   const manuals = evidenceList.filter((item) => item.habitId === 'manual').length;
-  return uniqueLedgerVoteCount(events, origin) + manuals;
+  return countIdentityVotes(momentumEvents) + manuals;
 }
 
 export function hasMomentumVoteOnIso(

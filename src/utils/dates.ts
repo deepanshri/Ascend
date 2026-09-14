@@ -89,8 +89,9 @@ export function endOfIsoDate(iso: string): number {
   return new Date(year, month - 1, day, 23, 59, 59, 999).getTime();
 }
 
-export function isoDateForDayIndex(dayIndex: number, date: Date = new Date()): string {
-  return toISODate(getWeekDates(date)[dayIndex] ?? date);
+/** Map a 0..6 week index onto the rolling window anchored at `origin` (not wall-clock now). */
+export function isoDateForDayIndex(dayIndex: number, origin: Date): string {
+  return toISODate(getWeekDates(origin)[dayIndex] ?? origin);
 }
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

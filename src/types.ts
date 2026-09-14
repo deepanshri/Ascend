@@ -51,6 +51,8 @@ export interface Habit {
   intervalDays?: number; // every X days
   weeklyTargetCount?: number; // X times per week
   isKeystone?: boolean;
+  /** Epoch ms of last local/remote mutation. Used for habit hydrate LWW. */
+  updatedAt?: number;
 }
 
 export interface IdentityEvidence {
@@ -61,7 +63,7 @@ export interface IdentityEvidence {
   category: HabitCategory;
   date: string;
   dayNumber: number;
-  /** YYYY-MM-DD local calendar day this vote belongs to. Used to undo today's tally. */
+  /** YYYY-MM-DD local calendar day this vote belongs to. */
   loggedDate?: string;
 }
 

@@ -54,12 +54,12 @@ export function resolveMomentumEventDate(event: MomentumEvent): string {
 }
 
 /**
- * Rolling step:
- * prevScore = clamp((prevScore * (1 - decayFactor)) + (eventScore * eventWeight), 0, 100)
+ * Exponential moving average step (δ defaults to MOMENTUM_DECAY_FACTOR = 0.12).
+ *
+ * observation = (eventScore * eventWeight / 1.5) * 100
+ * nextScore   = clamp(prevScore * (1 - δ) + observation * δ, 0, 100)
  *
  * eventScore is 1 | 0.5 | 0 and eventWeight is 1.5 (W) | 1.0 (SI).
- * The (eventScore * eventWeight) term is mapped onto 0–100 and blended by
- * decayFactor so each log row is an EMA update the circle / mascot can show.
  */
 export function applyRollingMomentumStep(
   prevScore: number,
@@ -159,8 +159,9 @@ export function mergeMomentumEvents(local: MomentumEvent[], incoming: MomentumEv
 }
 
 /**
- * Raw append-only vote rows (`full` / `fallback`). Displayed Evidence Ledger totals
- * use unique (habit, calendar day) completion rows instead so toggles cannot stack.
+ * Raw append-only vote rows (`full` / `fallback`) from public.momentum_events.
+ * Identity Ledger totals COUNT these rows. Daily uncheck/delete of habit_logs
+ * never removes or decrements this history.
  */
 export function countIdentityVotes(events: MomentumEvent[]): number {
   let count = 0;
@@ -354,9 +355,10 @@ export async function upsertHabitLog(
 export async function deleteHabitLog(
   userId: string | null | undefined,
   habitId: string,
-  dayIndex: number = getTodayDayIndex()
+  loggedDate: string,
+  dayIndex?: number
 ): Promise<void> {
-  await syncHabitLogDelete(userId, habitId, dayIndex);
+  await syncHabitLogDelete(userId, habitId, loggedDate, dayIndex);
 }
 
 /**
@@ -439,7 +441,10 @@ export interface RollingMomentumOptions {
 
 /**
  * Rolling momentum from the append-only `momentum_events` log.
- * Iterates timestamp order: clamp((prev * (1 - decay_factor)) + (score * weight), 0, 100).
+ * Each row is an EMA update:
+ *   observation = (score * weight / 1.5) * 100
+ *   next = clamp(prev * (1 - δ) + observation * δ, 0, 100)
+ * then Math.round for display. δ defaults to 0.12.
  * Exam Shield / Vacation set decay factor δ to 0 for missed events so
  * missing habits does not decay momentum while a protection window is on.
  */

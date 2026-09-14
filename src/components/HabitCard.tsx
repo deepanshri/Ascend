@@ -114,7 +114,10 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     }
   };
 
-  useEffect(() => () => clearSingleTapTimer(), []);
+  useEffect(() => () => {
+    clearSingleTapTimer();
+    clearLongPressTimer();
+  }, []);
 
   /** Returns true when this tap completed a double-tap (exactly two taps < 250ms). */
   const registerTap = (): boolean => {
@@ -535,6 +538,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseLeave}
+          onPointerUp={handleMouseUp}
+          onPointerLeave={handleMouseLeave}
           style={{ perspective: 1000 }}
           animate={{
             x: isLongPressed ? 0 : swipeOffset,

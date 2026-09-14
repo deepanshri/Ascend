@@ -47,7 +47,9 @@ begin
   end loop;
 end $$;
 
-create or replace function public.connect_by_friend_code(input_code text)
+drop function if exists public.connect_by_friend_code(text);
+
+create function public.connect_by_friend_code(input_code text)
 returns jsonb
 language plpgsql
 security definer
