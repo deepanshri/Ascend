@@ -1,7 +1,7 @@
 import { Habit, HabitCompletionEvent, MomentumEvent, UserSession } from '../types';
 import { isSeedHabitId } from '../data/initialHabits';
 import { fetchUserProfile, persistUserProfile } from './profile';
-import { fetchHabitsFromTable, persistHabitsToTable, purgeSeedHabitsFromTable } from './habitsApi';
+import { fetchHabitsFromTable, omitDeletedHabitRefs, omitDeletedHabits, persistHabitsToTable, purgeSeedHabitsFromTable } from './habitsApi';
 import {
   fetchHabitLogsFromTable,
   mergeCompletionEvents,
@@ -100,17 +100,16 @@ export async function syncAuthenticatedAccount(
   const remoteHabitsResult = await fetchHabitsFromTable(session.id);
   if (!remoteHabitsResult.ok) {
     return {
-      habits: withoutSeedHabits(input.habits),
-      completionEvents: input.completionEvents,
+      habits: omitDeletedHabits(withoutSeedHabits(input.habits)),
+      completionEvents: omitDeletedHabitRefs(input.completionEvents),
       momentumEvents: input.momentumEvents,
       ok: false,
       error: remoteHabitsResult.error || 'Could not read habits from Supabase',
     };
   }
 
-  const mergedHabits = mergeHabitsByUpdatedAt(
-    input.getLatestHabits?.() ?? input.habits,
-    remoteHabitsResult.habits
+  const mergedHabits = omitDeletedHabits(
+    mergeHabitsByUpdatedAt(input.getLatestHabits?.() ?? input.habits, remoteHabitsResult.habits)
   );
   const wroteHabits = await persistHabitsToTable(session.id, mergedHabits);
   if (!wroteHabits) {
@@ -124,8 +123,10 @@ export async function syncAuthenticatedAccount(
   }
 
   const remoteLogs = await fetchHabitLogsFromTable(session.id);
-  const mergedLogs = mergeCompletionEvents(input.completionEvents, remoteLogs).filter(
-    (event) => !isSeedHabitId(event.habitId)
+  const mergedLogs = omitDeletedHabitRefs(
+    mergeCompletionEvents(input.completionEvents, remoteLogs).filter(
+      (event) => !isSeedHabitId(event.habitId)
+    )
   );
   await pushLocalLogs(session.id, mergedLogs);
 

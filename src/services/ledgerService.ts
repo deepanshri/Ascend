@@ -52,16 +52,36 @@ export function uniqueLedgerVoteCount(events: HabitCompletionEvent[], origin: Da
 }
 
 /**
- * Identity Ledger tally: COUNT of full/fallback rows in the immutable
- * momentum_events log, plus manual ledger entries. Unchecking a daily card
- * does not decrement this number.
+ * Identity Ledger tally: one vote per habit per calendar day among remaining
+ * habits, plus manual ledger entries. Deleted habits are excluded. Unchecking
+ * a card does not mint extra rows into this count.
  */
 export function displayedIdentityVoteCount(
   momentumEvents: MomentumEvent[],
-  evidenceList: IdentityEvidence[]
+  evidenceList: IdentityEvidence[],
+  activeHabitIds?: Iterable<string>
 ): number {
   const manuals = evidenceList.filter((item) => item.habitId === 'manual').length;
-  return countIdentityVotes(momentumEvents) + manuals;
+  return countIdentityVotes(momentumEvents, activeHabitIds) + manuals;
+}
+
+/** Drop evidence for deleted habits. One row per habit per calendar day. */
+export function ledgerEvidenceForHabits(
+  evidenceList: IdentityEvidence[],
+  habitIds: Iterable<string>
+): IdentityEvidence[] {
+  const allow = new Set(habitIds);
+  const seen = new Set<string>();
+  const next: IdentityEvidence[] = [];
+  for (const item of evidenceList) {
+    if (item.habitId !== 'manual' && !allow.has(item.habitId)) continue;
+    const day = item.loggedDate || item.date;
+    const key = item.habitId === 'manual' ? item.id : `${item.habitId}::${day}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    next.push(item);
+  }
+  return next;
 }
 
 export function hasMomentumVoteOnIso(

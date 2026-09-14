@@ -59,6 +59,23 @@ export function rowToHabit(row: Record<string, unknown>): Habit | null {
   };
 }
 
+/** Session-local tombstones so a deleted habit cannot be resurrected by fetch/upsert. */
+const deletedHabitIds = new Set<string>();
+
+export function rememberDeletedHabit(habitId: string): void {
+  if (habitId) deletedHabitIds.add(habitId);
+}
+
+export function omitDeletedHabits<T extends { id: string }>(habits: T[]): T[] {
+  if (deletedHabitIds.size === 0) return habits;
+  return habits.filter((habit) => !deletedHabitIds.has(habit.id));
+}
+
+export function omitDeletedHabitRefs<T extends { habitId: string }>(rows: T[]): T[] {
+  if (deletedHabitIds.size === 0) return rows;
+  return rows.filter((row) => !deletedHabitIds.has(row.habitId));
+}
+
 export function habitToRow(habit: Habit, userId: string) {
   const category = toDbCategory(habit.category);
   return {
@@ -107,9 +124,11 @@ export async function fetchHabitsFromTable(userId?: string | null): Promise<{
       return { ok: false, habits: [], error: error.message };
     }
 
-    const habits = (data as Record<string, unknown>[] | null || [])
-      .map(rowToHabit)
-      .filter((habit): habit is Habit => habit !== null && !habit.archived && !isSeedHabitId(habit.id));
+    const habits = omitDeletedHabits(
+      (data as Record<string, unknown>[] | null || [])
+        .map(rowToHabit)
+        .filter((habit): habit is Habit => habit !== null && !habit.archived && !isSeedHabitId(habit.id))
+    );
 
     return { ok: true, habits };
   } catch (err) {
@@ -125,7 +144,7 @@ export async function fetchActiveHabits(userId?: string | null): Promise<Habit[]
 
 export async function persistHabitsToTable(userId: string, habits: Habit[]): Promise<boolean> {
   if (!canSync(userId) || !supabase) return false;
-  const userHabits = habits.filter((habit) => !isSeedHabitId(habit.id));
+  const userHabits = omitDeletedHabits(habits.filter((habit) => !isSeedHabitId(habit.id)));
   if (userHabits.length === 0) return true;
   try {
     const { error } = await supabase.from('habits').upsert(userHabits.map((habit) => habitToRow(habit, userId)));
@@ -224,6 +243,7 @@ export async function deleteHabitCascade(
   userId: string | null | undefined,
   habitId: string
 ): Promise<void> {
+  rememberDeletedHabit(habitId);
   if (!canSync(userId) || !supabase) return;
   try {
     const logs = await supabase

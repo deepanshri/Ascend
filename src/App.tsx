@@ -52,7 +52,7 @@ import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLoc
 import { persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from './data/avatars';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
 import { mergeHabitsByUpdatedAt, mergeRemindersByUpdatedAt, touchHabit } from './lib/syncMerge';
-import { fetchActiveHabits, fetchHabitLogsForDate, deleteHabitCascade, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable } from './lib/habitsApi';
+import { fetchActiveHabits, fetchHabitLogsForDate, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable } from './lib/habitsApi';
 import {
   destroyAscendSpotlightTutorial,
   hasScreenTutorialCompleted,
@@ -74,13 +74,8 @@ import {
   type NotificationWindowKey,
   type PsychologyNotificationWindows,
 } from './lib/notifications';
-import {
-  displayedIdentityVoteCount,
-  hasMomentumVoteOnIso,
-  hasTodayLedgerEntry,
-  replaceTodayCompletion,
-  upsertTodayEvidence,
-} from './services/ledgerService';
+import { ledgerEvidenceForHabits, displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
+import { deleteHabit } from './services/habitService';
 import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
 import { WidgetBridge } from './lib/widgetBridge';
 import type { WidgetPendingAction, WidgetRoute } from './lib/widgetSync';
@@ -716,8 +711,16 @@ export default function App() {
   }, [momentumEvents, examShieldActive, vacationModeActive, habits]);
 
   const displayedIdentityVotes = useMemo(
-    () => displayedIdentityVoteCount(momentumEvents, evidenceList),
-    [momentumEvents, evidenceList]
+    () => displayedIdentityVoteCount(
+      momentumEvents,
+      evidenceList,
+      habits.map((habit) => habit.id)
+    ),
+    [momentumEvents, evidenceList, habits]
+  );
+  const ledgerEvidence = useMemo(
+    () => ledgerEvidenceForHabits(evidenceList, habits.map((habit) => habit.id)),
+    [evidenceList, habits]
   );
 
   const completionEventsRef = useRef(completionEvents);
@@ -1129,12 +1132,12 @@ export default function App() {
   const handleDeleteHabit = (habitId: string) => {
     setHabits((prev) => prev.filter((h) => h.id !== habitId));
     setCompletionEvents((prev) => prev.filter((e) => e.habitId !== habitId));
+    setEvidenceList((prev) => prev.filter((item) => item.habitId !== habitId));
+    setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
     if (detailHabit && detailHabit.id === habitId) {
       setDetailHabit(null);
     }
-    if (session && !session.isGuest) {
-      void deleteHabitCascade(session.id, habitId).catch(() => {});
-    }
+    void deleteHabit(session?.id, habitId).catch(() => {});
   };
 
   // Update habit
@@ -1709,7 +1712,7 @@ export default function App() {
           >
           <ReportView
             habits={activeHabits ?? []}
-            evidenceList={evidenceList ?? []}
+            evidenceList={ledgerEvidence}
             identityVoteCount={displayedIdentityVotes}
             userId={session.id}
             isGuest={session.isGuest}
@@ -1736,7 +1739,7 @@ export default function App() {
           >
           <PersonalView
             userSession={session}
-            evidenceList={evidenceList ?? []}
+            evidenceList={ledgerEvidence}
             identityVoteCount={displayedIdentityVotes}
             selectedInterests={selectedInterests ?? []}
             onToggleInterest={handleToggleInterest}
@@ -1786,7 +1789,7 @@ export default function App() {
           >
           <SettingsView
             habits={habits ?? []}
-            evidenceList={evidenceList ?? []}
+            evidenceList={ledgerEvidence}
             completionEvents={completionEvents ?? []}
             momentumEvents={momentumEvents ?? []}
             theme={theme}
@@ -1961,11 +1964,10 @@ export default function App() {
                 setLongPressedRect(null);
                 setDetailHabit(h);
               }}
-              onArchive={(h) => {
+              onDelete={(h) => {
                 setLongPressedHabitId(null);
                 setLongPressedRect(null);
-                handleArchiveHabit(h.id);
-                showNotification('Habit archived');
+                setDeleteConfirmHabit(h);
               }}
             />
           )}
@@ -1989,7 +1991,11 @@ export default function App() {
           habit={detailHabit}
           isOpen={Boolean(detailHabit)}
           onClose={() => setDetailHabit(null)}
-          onDeleteHabit={handleDeleteHabit}
+          onDeleteHabit={(habitId) => {
+            const target = habits.find((item) => item.id === habitId) || detailHabit;
+            setDetailHabit(null);
+            if (target) setDeleteConfirmHabit(target);
+          }}
           onUpdateHabit={handleUpdateHabit}
           onArchiveHabit={handleArchiveHabit}
           todayIndex={todayDayIndex}
@@ -2000,8 +2006,6 @@ export default function App() {
           habit={deleteConfirmHabit}
           isOpen={Boolean(deleteConfirmHabit)}
           onClose={() => setDeleteConfirmHabit(null)}
-          userId={session.id}
-          isGuest={session.isGuest}
           onConfirm={() => {
             if (deleteConfirmHabit) {
               handleDeleteHabit(deleteConfirmHabit.id);
@@ -2022,7 +2026,7 @@ export default function App() {
         <IdentityLedgerModal
           isOpen={isLedgerModalOpen}
           onClose={() => setIsLedgerModalOpen(false)}
-          evidenceList={evidenceList}
+          evidenceList={ledgerEvidence}
           identityVoteCount={displayedIdentityVotes}
           onAddVote={(name, statement, cat) => {
             const newEv: IdentityEvidence = {

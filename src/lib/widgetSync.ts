@@ -147,9 +147,11 @@ export function buildTodaysIdentityLedger(
   _origin?: Date,
   momentumEvents: MomentumEvent[] = []
 ): { points: number; lines: WidgetIdentityLine[] } {
+  const liveHabitIds = new Set(habits.map((habit) => habit.id));
   const todayHabitIds = new Set<string>();
   momentumEvents.forEach((event) => {
     if (event.eventType !== 'full' && event.eventType !== 'fallback') return;
+    if (!liveHabitIds.has(event.habitId)) return;
     if (resolveMomentumEventDate(event) !== todayIso) return;
     todayHabitIds.add(event.habitId);
   });

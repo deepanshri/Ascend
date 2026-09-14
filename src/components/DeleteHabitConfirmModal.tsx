@@ -3,15 +3,12 @@ import { motion } from 'motion/react';
 import { MotionModal } from './MotionModal';
 import { tapPress } from '../lib/motionPresets';
 import { Habit } from '../types';
-import { deleteHabitCascade } from '../lib/habitsApi';
 
 interface DeleteHabitConfirmModalProps {
   habit: Habit | null;
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
-  userId?: string | null;
-  isGuest?: boolean;
 }
 
 export const DeleteHabitConfirmModal: React.FC<DeleteHabitConfirmModalProps> = ({
@@ -19,8 +16,6 @@ export const DeleteHabitConfirmModal: React.FC<DeleteHabitConfirmModalProps> = (
   isOpen,
   onClose,
   onConfirm,
-  userId = null,
-  isGuest = true,
 }) => {
   return (
     <MotionModal
@@ -72,9 +67,6 @@ export const DeleteHabitConfirmModal: React.FC<DeleteHabitConfirmModalProps> = (
                 whileTap={tapPress}
                 onClick={() => {
                   if (!habit) return;
-                  if (!isGuest) {
-                    void deleteHabitCascade(userId, habit.id).catch(() => {});
-                  }
                   onConfirm();
                 }}
                 className="flex-1 py-2.5 bg-rose-600 text-white font-bold text-[13px] rounded-xl hover:bg-rose-700 shadow-md shadow-rose-600/20 cursor-pointer"

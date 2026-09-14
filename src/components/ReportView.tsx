@@ -9,7 +9,6 @@ import {
   startOfDay,
   toISODate,
 } from '../utils/dates';
-import { countMomentumCompletedActions } from '../lib/supabase';
 import {
   activeKeystoneHabits,
   computeKeystoneCorrelation,
@@ -293,8 +292,6 @@ export const ReportView: React.FC<ReportViewProps> = ({
   const [graphMode, setGraphMode] = useState<GraphMode>('rings');
   const [downloadSuccess, setDownloadSuccess] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [remoteVoteCount, setRemoteVoteCount] = useState<number | null>(null);
-  const [voteFloor, setVoteFloor] = useState(0);
   const [keystoneExpanded, setKeystoneExpanded] = useState(false);
   const [sleep, setSleep] = useState<SleepSnapshot>({
     hasSleepData: false,
@@ -331,21 +328,6 @@ export const ReportView: React.FC<ReportViewProps> = ({
   );
 
   useEffect(() => {
-    setVoteFloor((prev) => Math.max(prev, replicaVotes, remoteVoteCount ?? 0));
-  }, [replicaVotes, remoteVoteCount]);
-
-  useEffect(() => {
-    if (!userId || userId.startsWith('guest_')) return;
-    let cancelled = false;
-    void countMomentumCompletedActions(userId).then((count) => {
-      if (!cancelled && count != null) setRemoteVoteCount(count);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [userId, replicaVotes]);
-
-  useEffect(() => {
     let cancelled = false;
     void readSleepSnapshot(todayIso)
       .then((snapshot) => {
@@ -372,7 +354,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
     };
   }, [todayIso]);
 
-  const ledgerVoteCount = Math.max(voteFloor, replicaVotes, remoteVoteCount ?? 0);
+  const ledgerVoteCount = replicaVotes;
 
   const categoryStats = useMemo(() => {
     try {

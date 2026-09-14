@@ -159,16 +159,24 @@ export function mergeMomentumEvents(local: MomentumEvent[], incoming: MomentumEv
 }
 
 /**
- * Raw append-only vote rows (`full` / `fallback`) from public.momentum_events.
- * Identity Ledger totals COUNT these rows. Daily uncheck/delete of habit_logs
- * never removes or decrements this history.
+ * Identity Ledger totals COUNT distinct (habitId, calendar day) pairs among
+ * full/fallback rows. Multiple toggles on the same day still count as one vote.
+ * Unchecking today does not delete these rows (append-only).
  */
-export function countIdentityVotes(events: MomentumEvent[]): number {
-  let count = 0;
+export function countIdentityVotes(
+  events: MomentumEvent[],
+  activeHabitIds?: Iterable<string>
+): number {
+  const allow = activeHabitIds ? new Set(activeHabitIds) : null;
+  const keys = new Set<string>();
   for (const event of events) {
-    if (event.eventType === 'full' || event.eventType === 'fallback') count += 1;
+    if (event.eventType !== 'full' && event.eventType !== 'fallback') continue;
+    if (allow && !allow.has(event.habitId)) continue;
+    const iso = resolveMomentumEventDate(event);
+    if (!iso) continue;
+    keys.add(`${event.habitId}::${iso}`);
   }
-  return count;
+  return keys.size;
 }
 
 export function collectMissedMomentumEvents(
