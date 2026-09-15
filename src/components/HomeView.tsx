@@ -18,7 +18,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   children,
 }) => {
   return (
-    <div className="mt-2 flex flex-col space-y-3 pt-2">
+    <div className="mt-2 flex flex-col space-y-3 pt-12">
       <AccumulationBowl
         pieces={pieces}
         fillPercent={bowlFill.fillPercent}

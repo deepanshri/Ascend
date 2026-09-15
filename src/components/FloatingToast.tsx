@@ -24,7 +24,7 @@ export const FloatingToast: React.FC<FloatingToastProps> = ({
           animate={toastMotion.animate}
           exit={toastMotion.exit}
           transition={toastMotion.transition}
-          className={`fixed top-[max(1.25rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-[60] text-[12px] font-bold px-4 py-2 rounded-2xl shadow-2xl flex items-center space-x-2 pointer-events-none transform-gpu ${
+          className={`fixed top-14 left-1/2 -translate-x-1/2 z-[60] text-[12px] font-bold px-4 py-2 rounded-2xl shadow-2xl flex items-center space-x-2 pointer-events-none transform-gpu mt-[env(safe-area-inset-top)] ${
             isError
               ? 'bg-white dark:bg-slate-900 text-rose-700 dark:text-rose-300 border-2 border-rose-400 dark:border-rose-500'
               : 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white border-2 border-[#23C15D] dark:border-blue-500'

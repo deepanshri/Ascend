@@ -75,6 +75,7 @@ import {
 } from './lib/notifications';
 import { ledgerEvidenceForHabits, displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
 import { deleteHabit, stableHabitLogId } from './services/habitService';
+import { completionConfirmCopy } from './services/notificationService';
 import {
   accumulationPiecesFromLogs,
   clampCycleDays,
@@ -1068,7 +1069,7 @@ export default function App() {
       };
       setFrictionAudits((prevAudits) => [newAudit, ...prevAudits]);
     }
-    showNotification('Completed');
+    showNotification(completionConfirmCopy(targetHabit.name));
   };
 
   // GESTURE / TAP ACTION: Toggle Fallback Mode for Today (Does NOT mark complete; allows cancel / revert)
@@ -1966,7 +1967,7 @@ export default function App() {
               animate={toastMotion.animate}
               exit={toastMotion.exit}
               transition={toastMotion.transition}
-              className="fixed top-[max(3.5rem,calc(env(safe-area-inset-top)+2.5rem))] left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[12px] font-bold px-4 py-2 rounded-2xl shadow-2xl flex items-center space-x-2 border-2 border-[#23C15D] dark:border-blue-500 pointer-events-none transform-gpu"
+              className="fixed top-14 left-1/2 -translate-x-1/2 z-50 mt-[env(safe-area-inset-top)] bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[12px] font-bold px-4 py-2 rounded-2xl shadow-2xl flex items-center space-x-2 border-2 border-[#23C15D] dark:border-blue-500 pointer-events-none transform-gpu"
             >
               <div className="w-4 h-4 rounded-full bg-emerald-50 dark:bg-blue-950 flex items-center justify-center text-[#23C15D] dark:text-blue-400 shrink-0">
                 <svg className="w-2.5 h-2.5 stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

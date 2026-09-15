@@ -3,6 +3,11 @@ import { LocalNotifications, type LocalNotificationSchema } from '@capacitor/loc
 import { Preferences } from '@capacitor/preferences';
 import { Habit, StandaloneReminder } from '../types';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
+import {
+  completionConfirmCopy,
+  compactNotificationPair,
+  reminderPromptCopy,
+} from '../services/notificationService';
 
 export type NotificationWindowKey = 'morning' | 'afternoon' | 'night';
 
@@ -108,41 +113,41 @@ function remainingToday(habits: Habit[], todayIndex: number): { remaining: numbe
   return { remaining, total: scheduled.length };
 }
 
-function morningCopy(habits: Habit[], todayIndex: number): { title: string; body: string } {
+function featuredHabitName(habits: Habit[], todayIndex: number): string {
   const dueToday = activeHabits(habits).filter((habit) => isHabitScheduledOnDayIndex(habit, todayIndex));
   const featured =
     dueToday.find((habit) => habit.priority === 'high') || dueToday[0] || activeHabits(habits)[0];
-  const identity = featured?.identityStatement?.trim();
-  const name = featured?.name?.trim();
-
-  return {
-    title: 'Morning Primer',
-    body: identity
-      ? `${identity}${name ? ` Show up for ${name} first.` : ''} High-energy start — lock in today's identity.`
-      : 'High-energy start: log your first active habit and lock in today’s identity.',
-  };
+  return featured?.name?.trim() || 'your habit';
 }
 
-function afternoonCopy(remaining: number, total: number, score: number): { title: string; body: string } {
-  return {
-    title: 'Afternoon Momentum Check',
-    body:
-      total === 0
-        ? 'No active habits yet. Add one this afternoon to start building momentum.'
-        : remaining <= 0
-        ? `All ${total} daily actions are logged. Momentum is ${score} — protect the streak.`
-        : `${remaining} of ${total} daily actions still open. Log them to protect an optimal momentum score (now ${score}).`,
-  };
+function morningCopy(habits: Habit[], todayIndex: number): { title: string; body: string } {
+  return compactNotificationPair(featuredHabitName(habits, todayIndex));
 }
 
-function nightCopy(remaining: number, score: number): { title: string; body: string } {
-  return {
-    title: 'Night Streak Guard',
-    body:
-      remaining <= 0
-        ? `Streak safe. Today’s momentum (${score}) is locked in.`
-        : `Loss alert: ${remaining} unlogged habit${remaining === 1 ? '' : 's'} will decay momentum overnight. Log them before the day closes.`,
-  };
+function afternoonCopy(
+  habits: Habit[],
+  todayIndex: number,
+  remaining: number
+): { title: string; body: string } {
+  if (remaining <= 0) {
+    return compactNotificationPair(featuredHabitName(habits, todayIndex));
+  }
+  const open = activeHabits(habits).find(
+    (habit) => isHabitScheduledOnDayIndex(habit, todayIndex) && !habit.days?.[todayIndex]
+  );
+  return compactNotificationPair(open?.name?.trim() || featuredHabitName(habits, todayIndex));
+}
+
+function nightCopy(habits: Habit[], todayIndex: number, remaining: number): { title: string; body: string } {
+  if (remaining <= 0) {
+    const name = featuredHabitName(habits, todayIndex);
+    const title = completionConfirmCopy(name);
+    return { title, body: title };
+  }
+  const open = activeHabits(habits).find(
+    (habit) => isHabitScheduledOnDayIndex(habit, todayIndex) && !habit.days?.[todayIndex]
+  );
+  return compactNotificationPair(open?.name?.trim() || featuredHabitName(habits, todayIndex));
 }
 
 async function ensureChannel(): Promise<void> {
@@ -151,7 +156,7 @@ async function ensureChannel(): Promise<void> {
     await LocalNotifications.createChannel({
       id: CHANNEL_ID,
       name: 'Daily Momentum',
-      description: 'Morning primer, afternoon momentum check, and night streak guard',
+      description: 'Habit reminders',
       importance: 4,
       visibility: 1,
       vibration: true,
@@ -217,10 +222,10 @@ export async function schedulePsychologyNotifications(input: PsychologyScheduleI
 
   await ensureChannel();
 
-  const { remaining, total } = remainingToday(input.habits, input.todayIndex);
+  const { remaining } = remainingToday(input.habits, input.todayIndex);
   const morning = morningCopy(input.habits, input.todayIndex);
-  const afternoon = afternoonCopy(remaining, total, input.momentumScore);
-  const night = nightCopy(remaining, input.momentumScore);
+  const afternoon = afternoonCopy(input.habits, input.todayIndex, remaining);
+  const night = nightCopy(input.habits, input.todayIndex, remaining);
 
   const notifications: LocalNotificationSchema[] = [];
 
@@ -335,7 +340,7 @@ async function ensureReminderChannel(): Promise<void> {
     await LocalNotifications.createChannel({
       id: REMINDER_CHANNEL_ID,
       name: 'Reminders',
-      description: '10-minute prior and exact-time reminder alerts',
+      description: 'Habit reminders',
       importance: 5,
       visibility: 1,
       vibration: true,
@@ -407,8 +412,8 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
   if (hydrated.alert10Min !== false && tenMinBefore.getTime() > now && Number.isInteger(notificationId1)) {
     notifications.push({
       id: notificationId1,
-      title: `10 min: ${hydrated.title}`,
-      body: `Upcoming reminder in 10 minutes: "${hydrated.title}"`,
+      title: reminderPromptCopy(hydrated.title),
+      body: reminderPromptCopy(hydrated.title),
       channelId: REMINDER_CHANNEL_ID,
       extra: { reminderId: hydrated.id, kind: 'prior' },
       schedule: { at: tenMinBefore, allowWhileIdle: true },
@@ -418,8 +423,8 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
   if (hydrated.alertExact !== false && target.getTime() > now && Number.isInteger(notificationId2)) {
     notifications.push({
       id: notificationId2,
-      title: `Due now: ${hydrated.title}`,
-      body: hydrated.notes?.trim() || `It's time for "${hydrated.title}"`,
+      title: completionConfirmCopy(hydrated.title),
+      body: completionConfirmCopy(hydrated.title),
       channelId: REMINDER_CHANNEL_ID,
       extra: { reminderId: hydrated.id, kind: 'exact' },
       schedule: { at: target, allowWhileIdle: true },
