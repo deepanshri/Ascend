@@ -74,7 +74,7 @@ import {
   type PsychologyNotificationWindows,
 } from './lib/notifications';
 import { ledgerEvidenceForHabits, displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
-import { deleteHabit } from './services/habitService';
+import { deleteHabit, stableHabitLogId } from './services/habitService';
 import {
   accumulationPiecesFromLogs,
   clampCycleDays,
@@ -1020,7 +1020,7 @@ export default function App() {
 
     const newEvent: HabitCompletionEvent = withHabitTimeOfDay(
       {
-        id: `evt-${isMicro ? 'micro-' : ''}${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: stableHabitLogId(habitId, loggedDate),
         habitId,
         dayIndex: todayDayIndex,
         date: loggedDate,
@@ -1966,7 +1966,7 @@ export default function App() {
               animate={toastMotion.animate}
               exit={toastMotion.exit}
               transition={toastMotion.transition}
-              className="fixed top-[max(1.25rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[12px] font-bold px-4 py-2 rounded-2xl shadow-2xl flex items-center space-x-2 border-2 border-[#23C15D] dark:border-blue-500 pointer-events-none transform-gpu"
+              className="fixed top-[max(3.5rem,calc(env(safe-area-inset-top)+2.5rem))] left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[12px] font-bold px-4 py-2 rounded-2xl shadow-2xl flex items-center space-x-2 border-2 border-[#23C15D] dark:border-blue-500 pointer-events-none transform-gpu"
             >
               <div className="w-4 h-4 rounded-full bg-emerald-50 dark:bg-blue-950 flex items-center justify-center text-[#23C15D] dark:text-blue-400 shrink-0">
                 <svg className="w-2.5 h-2.5 stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

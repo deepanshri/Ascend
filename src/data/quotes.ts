@@ -32,7 +32,7 @@ export const FEATURE_TIPS: Quote[] = [
     kind: 'tip',
   },
   {
-    text: 'Double-tap a habit card to see why you created it.',
+    text: 'Tap a habit card once to flip it and read your purpose. Tap again to flip back.',
     author: 'Ascend',
     source: 'Feature Tip',
     category: 'Tip',

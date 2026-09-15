@@ -19,8 +19,8 @@ const DROP_Y_TRANSITION = {
 const MAX_VISIBLE_PIECES = 28;
 const PIECE_SIZE = 28;
 const SPILL_ROW = 3;
-/** Marble-center Y on the inner floor. ~18px above the prior 78px rest. */
-const FLOOR_CENTER_Y = 60;
+/** Marble-center Y on the inner bowl floor (deeper into the glass cavity). */
+const FLOOR_CENTER_Y = 74;
 const STACK_RISE = 16;
 const SCATTER_X = 12;
 
@@ -215,6 +215,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
           />
         )}
 
+        {/* Back glass wall */}
         <img
           src={bowlSrc}
           alt=""
@@ -229,10 +230,12 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
           aria-hidden="true"
         />
 
+        {/* Marbles sit inside the cavity, under the front rim */}
         <div className="absolute inset-0 z-10 overflow-visible" style={{ clipPath: CAVITY_CLIP }}>
           <PieceLayer items={insidePieces} isDark={isDark} />
         </div>
 
+        {/* Front glass rim (masks a hole so marbles show through the opening) */}
         <img
           src={bowlSrc}
           alt=""
@@ -256,58 +259,70 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
         <div className="absolute inset-0 z-30 overflow-visible">
           <PieceLayer items={spillPieces} isDark={isDark} />
         </div>
-      </div>
 
-      <div ref={pickerRef} className="relative z-40 mt-1.5">
-        <motion.button
-          type="button"
-          id="accumulation-cycle-pill"
-          whileTap={tapPress}
-          onClick={() => setMenuOpen((open) => !open)}
-          aria-expanded={menuOpen}
-          aria-haspopup="listbox"
-          className="bg-slate-800/60 border border-slate-700/50 backdrop-blur-sm px-3 py-1 rounded-full text-xs text-slate-300 hover:text-white transition-colors cursor-pointer tabular-nums"
-        >
-          {votes}/{capacity} · {selectedCycle} Days ▾
-        </motion.button>
+        <div ref={pickerRef} className="absolute bottom-0 right-0 z-40 translate-y-1/2">
+          <motion.button
+            type="button"
+            id="accumulation-cycle-pill"
+            whileTap={tapPress}
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-expanded={menuOpen}
+            aria-haspopup="listbox"
+            className={`backdrop-blur-sm px-3 py-1 rounded-full text-xs tabular-nums cursor-pointer transition-colors border ${
+              isDark
+                ? 'bg-slate-800/80 border-slate-700/60 text-slate-300 hover:text-white'
+                : 'bg-white/90 border-slate-200 text-slate-700 hover:text-slate-900 shadow-sm'
+            }`}
+          >
+            {votes}/{capacity} · {selectedCycle} Days ▾
+          </motion.button>
 
-        <AnimatePresence>
-          {menuOpen && (
-            <motion.div
-              role="listbox"
-              aria-label="Cycle length"
-              initial={{ opacity: 0, y: -6, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -4, scale: 0.96 }}
-              transition={{ duration: 0.16, ease: 'easeOut' }}
-              className="absolute left-1/2 top-full z-50 mt-1.5 w-[148px] -translate-x-1/2 rounded-2xl border border-slate-700/50 bg-slate-800/95 p-1 shadow-xl backdrop-blur-md"
-            >
-              {CYCLE_DAY_OPTIONS.map((days) => {
-                const active = days === selectedCycle;
-                return (
-                  <button
-                    key={days}
-                    type="button"
-                    role="option"
-                    aria-selected={active}
-                    onClick={() => {
-                      onCycleDaysChange?.(days);
-                      setMenuOpen(false);
-                    }}
-                    className={`flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-1.5 text-left text-[12px] font-semibold transition-colors ${
-                      active
-                        ? 'bg-slate-700 text-white'
-                        : 'text-slate-300 hover:bg-slate-700/60 hover:text-white'
-                    }`}
-                  >
-                    <span>{days} Days</span>
-                    {active ? <span aria-hidden="true">✓</span> : null}
-                  </button>
-                );
-              })}
-            </motion.div>
-          )}
-        </AnimatePresence>
+          <AnimatePresence>
+            {menuOpen && (
+              <motion.div
+                role="listbox"
+                aria-label="Cycle length"
+                initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                transition={{ duration: 0.16, ease: 'easeOut' }}
+                className={`absolute right-0 bottom-full z-50 mb-1.5 w-[148px] rounded-2xl border p-1 shadow-xl backdrop-blur-md ${
+                  isDark
+                    ? 'bg-slate-900/95 text-white border-slate-800'
+                    : 'bg-white/95 text-slate-900 border-slate-200'
+                }`}
+              >
+                {CYCLE_DAY_OPTIONS.map((days) => {
+                  const active = days === selectedCycle;
+                  return (
+                    <button
+                      key={days}
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      onClick={() => {
+                        onCycleDaysChange?.(days);
+                        setMenuOpen(false);
+                      }}
+                      className={`flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-1.5 text-left text-[12px] font-semibold transition-colors ${
+                        active
+                          ? isDark
+                            ? 'bg-slate-700 text-white'
+                            : 'bg-slate-100 text-slate-900'
+                          : isDark
+                            ? 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      }`}
+                    >
+                      <span>{days} Days</span>
+                      {active ? <span aria-hidden="true">✓</span> : null}
+                    </button>
+                  );
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </section>
   );

@@ -78,7 +78,7 @@ const HOME_STEPS: DriveStep[] = [
     popover: {
       title: 'Habit card gestures',
       description:
-        'Swipe right to complete at 100%. Swipe left to switch to the 50% fallback micro-habit. Double-tap to flip the card and read your Purpose Anchor.',
+        'Swipe right to complete at 100%. Swipe left to switch to the 50% fallback micro-habit. Tap once to flip the card and read your Purpose Anchor.',
       side: 'top',
       align: 'center',
     },

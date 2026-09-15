@@ -4,12 +4,11 @@ import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
-import { resolveHabitTimeOfDay } from '../utils/timeOfDay';
 
 const SWIPE_AXIS_LOCK_PX = 10;
-const DOUBLE_TAP_MS = 250;
 const LONG_PRESS_MS = 550;
 const GHOST_MOUSE_MS = 700;
+const FLIP_DEBOUNCE_MS = 400;
 
 interface HabitCardProps {
   habit: Habit;
@@ -74,8 +73,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   const swipeOffsetRef = useRef(0);
   const gestureAxisRef = useRef<'none' | 'horizontal' | 'vertical'>('none');
   const wasLongPressRef = useRef(false);
-  const lastTapTimeRef = useRef<number>(0);
-  const singleTapTimerRef = useRef<number | null>(null);
+  const ignoreClickRef = useRef(false);
+  const lastFlipAtRef = useRef(0);
   const lastTouchAtRef = useRef<number>(0);
   const isOtherLongPressedRef = useRef(isOtherLongPressed);
   isOtherLongPressedRef.current = isOtherLongPressed;
@@ -108,50 +107,20 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     }
   };
 
-  const clearSingleTapTimer = () => {
-    if (singleTapTimerRef.current !== null) {
-      clearTimeout(singleTapTimerRef.current);
-      singleTapTimerRef.current = null;
-    }
-  };
-
   useEffect(() => () => {
-    clearSingleTapTimer();
     clearLongPressTimer();
   }, []);
 
-  /** Returns true when this tap completed a double-tap (exactly two taps < 250ms). */
-  const registerTap = (): boolean => {
+  const requestFlip = () => {
     const now = Date.now();
-    if (now - lastTapTimeRef.current < DOUBLE_TAP_MS) {
-      clearSingleTapTimer();
-      clearLongPressTimer();
-      lastTapTimeRef.current = 0;
-      wasLongPressRef.current = false;
-      onDismissLongPress?.();
-      setIsFlipped((prev) => !prev);
-      return true;
-    }
-
-    lastTapTimeRef.current = now;
-    clearSingleTapTimer();
-    singleTapTimerRef.current = window.setTimeout(() => {
-      singleTapTimerRef.current = null;
-      lastTapTimeRef.current = 0;
-    }, DOUBLE_TAP_MS);
-    return false;
-  };
-
-  const shouldDeferLongPress = () => {
-    const now = Date.now();
-    if (now - lastTapTimeRef.current < DOUBLE_TAP_MS) return true;
-    if (now - lastTouchAtRef.current < GHOST_MOUSE_MS) return true;
-    return false;
+    if (now - lastFlipAtRef.current < FLIP_DEBOUNCE_MS) return;
+    lastFlipAtRef.current = now;
+    onDismissLongPress?.();
+    setIsFlipped((prev) => !prev);
   };
 
   const armLongPress = () => {
     clearLongPressTimer();
-    if (shouldDeferLongPress()) return;
     longPressTimerRef.current = window.setTimeout(() => {
       wasLongPressRef.current = true;
       gestureAxisRef.current = 'none';
@@ -203,6 +172,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     startPosRef.current = { x: touch.clientX, y: touch.clientY };
     wasLongPressRef.current = false;
     hasMovedRef.current = false;
+    ignoreClickRef.current = false;
+    lastTouchAtRef.current = Date.now();
     setIsDragging(true);
 
     armLongPress();
@@ -242,32 +213,34 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     return () => el.removeEventListener('touchmove', onTouchMove);
   }, []);
 
+  const resetGesture = () => {
+    swipeOffsetRef.current = 0;
+    setSwipeOffset(0);
+    setIsDragging(false);
+    gestureAxisRef.current = 'none';
+  };
+
   const handleTouchEnd = () => {
     clearLongPressTimer();
+    lastTouchAtRef.current = Date.now();
     if (wasLongPressRef.current) {
       wasLongPressRef.current = false;
-      gestureAxisRef.current = 'none';
-      swipeOffsetRef.current = 0;
+      resetGesture();
       return;
     }
 
-    // Double tap: second touch within 250ms flips the card
-    if (!hasMovedRef.current) {
-      lastTouchAtRef.current = Date.now();
-      if (registerTap()) {
-        swipeOffsetRef.current = 0;
-        setSwipeOffset(0);
-        setIsDragging(false);
-        gestureAxisRef.current = 'none';
-        return;
-      }
+    const moved = hasMovedRef.current;
+    if (!moved) {
+      // Single-tap flip; suppress the trailing synthetic click so we do not flip twice.
+      ignoreClickRef.current = true;
+      resetGesture();
+      requestFlip();
+      return;
     }
 
+    ignoreClickRef.current = true;
     if (isFlipped) {
-      swipeOffsetRef.current = 0;
-      setSwipeOffset(0);
-      setIsDragging(false);
-      gestureAxisRef.current = 'none';
+      resetGesture();
       return;
     }
 
@@ -286,6 +259,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
     startPosRef.current = { x: e.clientX, y: e.clientY };
     wasLongPressRef.current = false;
     hasMovedRef.current = false;
+    ignoreClickRef.current = false;
     setIsDragging(true);
 
     armLongPress();
@@ -331,20 +305,16 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       return;
     }
 
-    // Double click: second mouseup within 250ms flips the card
-    if (!hasMovedRef.current) {
-      if (registerTap()) {
-        swipeOffsetRef.current = 0;
-        setSwipeOffset(0);
-        setIsDragging(false);
-        gestureAxisRef.current = 'none';
-        return;
-      }
+    const moved = hasMovedRef.current;
+    if (!moved) {
+      ignoreClickRef.current = false;
+      resetGesture();
+      return;
     }
 
+    ignoreClickRef.current = true;
     if (isFlipped) {
-      setSwipeOffset(0);
-      setIsDragging(false);
+      resetGesture();
       return;
     }
 
@@ -420,12 +390,23 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
-    // If it's already long-pressed and tapped, dismiss long-press
     if (isLongPressed) {
       e.stopPropagation();
       onDismissLongPress?.();
       return;
     }
+    if (ignoreClickRef.current) {
+      ignoreClickRef.current = false;
+      return;
+    }
+    if (hasMovedRef.current) return;
+    requestFlip();
+  };
+
+  const handleCardKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    requestFlip();
   };
 
   const tagLabel = habitCategoryBadge(habit.category);
@@ -531,6 +512,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
           role="button"
           tabIndex={0}
           onClick={handleCardClick}
+          onKeyDown={handleCardKeyDown}
           onContextMenu={(e) => e.preventDefault()}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
@@ -539,8 +521,6 @@ export const HabitCard: React.FC<HabitCardProps> = ({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseLeave}
-          onPointerUp={handleMouseUp}
-          onPointerLeave={handleMouseLeave}
           style={{ perspective: 1000 }}
           animate={{
             x: isLongPressed ? 0 : swipeOffset,
@@ -610,20 +590,6 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                           : 'bg-[#86efac] dark:bg-blue-400'
                       }`}
                     />
-                    {habit.isKeystone && (
-                      <span
-                        title="Keystone habit"
-                        className="shrink-0 text-[9px] font-black uppercase tracking-wide text-emerald-700 dark:text-blue-300 bg-emerald-50 dark:bg-blue-950/70 border border-emerald-300/80 dark:border-blue-500/50 rounded-md px-1 py-0.5"
-                      >
-                        K
-                      </span>
-                    )}
-                    <span
-                      title={resolveHabitTimeOfDay(habit) === 'night' ? 'Night bowl' : 'Morning bowl'}
-                      className="shrink-0 text-[9px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1 py-0.5"
-                    >
-                      {resolveHabitTimeOfDay(habit) === 'night' ? 'PM' : 'AM'}
-                    </span>
                     {!isScheduledOnActiveDay && (
                       <span
                         title="Not scheduled on this day"
@@ -781,55 +747,26 @@ export const HabitCard: React.FC<HabitCardProps> = ({
           </div>
         </div>
 
-        {/* BACK FACE (REVEALS PURPOSE ON DOUBLE TAP) */}
+        {/* BACK FACE (purpose + identity only; tap to flip) */}
         <div
           style={{
             backfaceVisibility: 'hidden',
             WebkitBackfaceVisibility: 'hidden',
             transform: 'rotateY(180deg)',
           }}
-          className="absolute inset-0 w-full h-full overflow-hidden bg-surface text-ink rounded-2xl p-4 border-2 border-accent shadow-xl flex flex-col justify-between select-none z-10"
+          className="absolute inset-0 w-full h-full overflow-hidden bg-surface text-ink rounded-2xl p-4 border-2 border-accent shadow-xl flex items-center justify-center select-none z-10"
         >
-          <div className="flex items-center justify-between border-b border-emerald-100/90 dark:border-blue-900/60 pb-1.5">
-            <div className="flex items-center space-x-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#23C15D] dark:bg-blue-500"></span>
-              <span className="text-[11px] font-bold text-emerald-800 dark:text-blue-300 uppercase tracking-wider">
-                Purpose
-              </span>
-            </div>
-            <span className="text-[10px] font-medium text-slate-400 dark:text-slate-400">
-              Double-tap to flip
-            </span>
-          </div>
-
-          <div className="py-2 flex-1 min-h-0 min-w-0 flex flex-col justify-center gap-2 overflow-hidden">
-            <p className="text-[13px] font-medium text-slate-800 dark:text-slate-100 leading-relaxed italic line-clamp-3">
+          <div className="min-h-0 min-w-0 px-1 flex flex-col justify-center gap-2 text-center">
+            <p className="text-[13px] font-medium text-slate-800 dark:text-slate-100 leading-relaxed italic line-clamp-4">
               {habit.purposeAnchor?.trim()
                 ? `"${habit.purposeAnchor.trim()}"`
                 : 'No purpose anchor set yet. Long press to edit.'}
             </p>
             {habit.identityStatement?.trim() ? (
-              <p className="text-[12px] font-semibold text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2">
+              <p className="text-[12px] font-semibold text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-3">
                 {habit.identityStatement.trim()}
               </p>
             ) : null}
-          </div>
-
-          <div className="flex items-center justify-between text-[10.5px] text-slate-400 dark:text-slate-400 pt-1.5 border-t border-slate-100 dark:border-slate-800">
-            <span className="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[180px]">
-              {habit.name}
-            </span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsFlipped(false);
-              }}
-              className="text-[10px] text-emerald-700 dark:text-blue-400 font-bold hover:underline cursor-pointer flex items-center space-x-1"
-            >
-              <span>Flip back</span>
-              <span>↺</span>
-            </button>
           </div>
         </div>
       </div>

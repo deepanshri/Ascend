@@ -1,6 +1,7 @@
 import React from 'react';
 
-export const SCREEN_INSET_CLASS = 'pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.5rem))]';
+export const SCREEN_INSET_CLASS =
+  'pt-[max(3rem,calc(env(safe-area-inset-top)+0.75rem))]';
 
 export const HEADER_ICON_BTN_CLASS =
   'w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-blue-500 text-emerald-800 dark:text-blue-400 shadow-xs hover:bg-emerald-50 dark:hover:bg-blue-950 cursor-pointer flex items-center justify-center shrink-0';
