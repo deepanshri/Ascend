@@ -108,6 +108,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
                 userEmail={userSession.email}
                 userName={userSession.name}
                 variant="icon"
+                mode="invite"
               />
             ) : null}
             <motion.button

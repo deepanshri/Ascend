@@ -68,7 +68,7 @@ const HOME_STEPS: DriveStep[] = [
     popover: {
       title: 'Daily Atomic Wisdom',
       description:
-        'Quotes and short feature tips rotate automatically every 5–6 hours. They are curated from your Personal interests, and fall back to Productivity / Atomic Habits in Guest mode or when no category match exists.',
+        'Quotes and short feature tips rotate automatically every 6 hours. They are curated from your Personal interests, and fall back to Productivity / Atomic Habits when signed out of cloud quotes or when no category match exists.',
       side: 'bottom',
       align: 'center',
     },

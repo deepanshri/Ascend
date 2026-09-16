@@ -23,7 +23,9 @@ import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import { tapPress } from '../lib/motionPresets';
 import { calculateMomentumScore, eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
 import { isHabitScheduledOnIso } from '../utils/schedule';
-import { CYCLE_DAY_OPTIONS, type BowlFill, type CycleDays } from '../services/reportService';
+import { habitCategoryBadge, habitCategoryLabel } from '../utils/categories';
+import { activeCycleWindow } from '../services/reportService';
+import { DaySelector } from './DaySelector';
 
 interface ReportViewProps {
   habits: Habit[];
@@ -41,11 +43,10 @@ interface ReportViewProps {
   momentumScore?: number;
   momentumEvents?: MomentumEvent[];
   completionEvents?: HabitCompletionEvent[];
-  cycleDays: CycleDays;
-  onCycleDaysChange: (days: CycleDays) => void;
-  bowlFill: BowlFill;
-  morningFill?: BowlFill;
-  nightFill?: BowlFill;
+  selectedDayIso?: string;
+  onSelectDayIso?: (iso: string) => void;
+  cycleDays?: number;
+  cycleStartIso?: string;
 }
 
 type TimeFilter = 'today' | 'week' | 'month' | 'momentum';
@@ -118,6 +119,87 @@ function habitBestScoreOnIso(
     best = Math.max(best, completionLogScore(event.type));
   }
   return best;
+}
+
+type HabitDayKind = 'full' | 'fallback' | 'none';
+
+function habitDayKindOnIso(
+  habitId: string,
+  iso: string,
+  momentumEvents: MomentumEvent[],
+  completionEvents: HabitCompletionEvent[]
+): HabitDayKind {
+  let sawFull = false;
+  let sawFallback = false;
+  for (const event of asArray(momentumEvents)) {
+    if (event.habitId !== habitId) continue;
+    if (resolveMomentumEventDate(event) !== iso) continue;
+    if (event.eventType === 'full') sawFull = true;
+    if (event.eventType === 'fallback') sawFallback = true;
+  }
+  for (const event of asArray(completionEvents)) {
+    if (event.habitId !== habitId) continue;
+    if (resolveEventIsoDate(event) !== iso) continue;
+    if (event.type === 'full') sawFull = true;
+    if (event.type === 'fallback_micro') sawFallback = true;
+  }
+  if (sawFull) return 'full';
+  if (sawFallback) return 'fallback';
+  return 'none';
+}
+
+interface HabitCycleStat {
+  habit: Habit;
+  targetDays: number;
+  completedDays: number;
+  fullDays: number;
+  fallbackDays: number;
+  percent: number;
+  identityPill: string;
+}
+
+function computeHabitCycleStats(
+  habits: Habit[],
+  startIso: string,
+  endIso: string,
+  momentumEvents: MomentumEvent[],
+  completionEvents: HabitCompletionEvent[]
+): HabitCycleStat[] {
+  const dates = isoRangeInclusive(startIso, endIso);
+  return asArray(habits)
+    .filter((habit) => !habit.archived)
+    .map((habit) => {
+      let targetDays = 0;
+      let completedDays = 0;
+      let fullDays = 0;
+      let fallbackDays = 0;
+      dates.forEach((iso) => {
+        if (!isHabitScheduledOnIso(habit, iso)) return;
+        targetDays += 1;
+        const kind = habitDayKindOnIso(habit.id, iso, momentumEvents, completionEvents);
+        if (kind === 'full') {
+          completedDays += 1;
+          fullDays += 1;
+        } else if (kind === 'fallback') {
+          completedDays += 1;
+          fallbackDays += 1;
+        }
+      });
+      const percent = targetDays === 0 ? 0 : Math.round((completedDays / targetDays) * 100);
+      const identityPill =
+        (habit.identityStatement || habit.purposeAnchor || habitCategoryLabel(habit.category) || '').trim() ||
+        habitCategoryBadge(habit.category);
+      return {
+        habit,
+        targetDays,
+        completedDays,
+        fullDays,
+        fallbackDays,
+        percent,
+        identityPill,
+      };
+    })
+    .sort((a, b) => b.percent - a.percent || a.habit.name.localeCompare(b.habit.name));
 }
 
 function categoryRateFromLogs(
@@ -288,17 +370,17 @@ export const ReportView: React.FC<ReportViewProps> = ({
   momentumScore = 0,
   momentumEvents: momentumProp,
   completionEvents: completionProp,
-  cycleDays,
-  onCycleDaysChange,
-  bowlFill,
-  morningFill,
-  nightFill,
+  selectedDayIso: selectedDayIsoProp,
+  onSelectDayIso,
+  cycleDays = 7,
+  cycleStartIso,
 }) => {
   const habits = asArray(habitsProp);
-  const evidenceList = asArray(evidenceProp);
-  const frictionAudits = asArray(frictionProp);
-  const momentumEvents = asArray(momentumProp);
-  const completionEvents = asArray(completionProp);
+  const activeHabitIds = useMemo(() => new Set(habits.map((habit) => habit.id)), [habits]);
+  const evidenceList = asArray(evidenceProp).filter((item) => activeHabitIds.has(item.habitId));
+  const frictionAudits = asArray(frictionProp).filter((item) => activeHabitIds.has(item.habitId));
+  const momentumEvents = asArray(momentumProp).filter((event) => activeHabitIds.has(event.habitId));
+  const completionEvents = asArray(completionProp).filter((event) => activeHabitIds.has(event.habitId));
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
   const [graphMode, setGraphMode] = useState<GraphMode>('rings');
   const [downloadSuccess, setDownloadSuccess] = useState(false);
@@ -314,10 +396,18 @@ export const ReportView: React.FC<ReportViewProps> = ({
   });
 
   const todayIso = toISODate();
+  const selectedDayIso = selectedDayIsoProp || todayIso;
   const hasSleepData = sleep.hasSleepData;
   const replicaVotes = identityVoteCount ?? evidenceList.length;
   const windowRange = useMemo(() => {
-    if (timeFilter === 'today') return { startIso: todayIso, endIso: todayIso, title: 'Today' };
+    if (timeFilter === 'today') {
+      const iso = selectedDayIso;
+      return {
+        startIso: iso,
+        endIso: iso,
+        title: iso === todayIso ? 'Today' : iso,
+      };
+    }
     if (timeFilter === 'week') return { startIso: addDaysIso(todayIso, -6), endIso: todayIso, title: 'Past 7 days' };
     if (timeFilter === 'month') return { startIso: addDaysIso(todayIso, -29), endIso: todayIso, title: 'Past 30 days' };
     return {
@@ -325,7 +415,50 @@ export const ReportView: React.FC<ReportViewProps> = ({
       endIso: todayIso,
       title: 'Momentum',
     };
-  }, [timeFilter, todayIso, momentumEvents, completionEvents]);
+  }, [timeFilter, todayIso, selectedDayIso, momentumEvents, completionEvents]);
+
+  const cycleWindow = useMemo(() => {
+    const fallbackStart = addDaysIso(todayIso, -(Math.max(1, Math.round(cycleDays)) - 1));
+    const range = activeCycleWindow(cycleDays, cycleStartIso || fallbackStart, todayIso);
+    return {
+      ...range,
+      title: `${Math.max(1, Math.round(cycleDays))}-day cycle`,
+    };
+  }, [cycleDays, cycleStartIso, todayIso]);
+
+  /** Habit Performance follows the active date filter; Cycle Volume stays on the bowl cycle. */
+  const performanceWindow = useMemo(() => {
+    if (timeFilter === 'momentum') return cycleWindow;
+    return windowRange;
+  }, [timeFilter, windowRange, cycleWindow]);
+
+  const habitPerformance = useMemo(
+    () =>
+      computeHabitCycleStats(
+        habits,
+        performanceWindow.startIso,
+        performanceWindow.endIso,
+        momentumEvents,
+        completionEvents
+      ),
+    [habits, performanceWindow, momentumEvents, completionEvents]
+  );
+
+  const cycleVolume = useMemo(() => {
+    const stats = computeHabitCycleStats(
+      habits,
+      cycleWindow.startIso,
+      cycleWindow.endIso,
+      momentumEvents,
+      completionEvents
+    );
+    const target = stats.reduce((sum, row) => sum + row.targetDays, 0);
+    const completed = stats.reduce((sum, row) => sum + row.completedDays, 0);
+    const full = stats.reduce((sum, row) => sum + row.fullDays, 0);
+    const fallback = stats.reduce((sum, row) => sum + row.fallbackDays, 0);
+    const percent = target === 0 ? 0 : Math.round((completed / target) * 100);
+    return { target, completed, full, fallback, percent, habitCount: stats.length };
+  }, [habits, cycleWindow, momentumEvents, completionEvents]);
 
   const keystones = useMemo(() => activeKeystoneHabits(habits), [habits]);
   const keystoneCompletionRate = useMemo(() => keystoneOverallCompletionRate(habits), [habits]);
@@ -527,6 +660,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
         habits,
         momentumEvents,
         localLogs: completionEvents,
+        evidenceList,
       });
       downloadCsvFile(`ascend-report-${timeFilter}-${todayIso}.csv`, csv);
       setDownloadSuccess(true);
@@ -617,71 +751,14 @@ export const ReportView: React.FC<ReportViewProps> = ({
         }
       />
 
-      <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Accumulation cycle
-          </span>
-          <span className="text-[11px] font-semibold tabular-nums text-slate-600 dark:text-slate-300">
-            {morningFill && nightFill
-              ? `AM ${morningFill.votes}/${morningFill.capacity} · Night ${nightFill.votes}/${nightFill.capacity}`
-              : `${bowlFill.votes}/${bowlFill.capacity} · ${Math.round(bowlFill.fillPercent)}%`}
-            {bowlFill.isOverflowing ? ' · overflow' : ''}
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {CYCLE_DAY_OPTIONS.map((days) => {
-            const active = cycleDays === days;
-            return (
-              <button
-                key={days}
-                type="button"
-                onClick={() => onCycleDaysChange(days)}
-                className={`flex-1 py-1.5 rounded-xl text-[12px] font-bold cursor-pointer transition ${
-                  active
-                    ? 'bg-emerald-600 text-white dark:bg-blue-600'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-                }`}
-              >
-                {days}d
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-[10.5px] text-slate-400 dark:text-slate-500">
-          Capacity is morning habits × cycle days and night habits × cycle days, capped at 10 days. Overflow starts at 80%.
-        </p>
-      </section>
-
-      <section data-tour="report-momentum" className="bg-[#EFF3F6] dark:bg-slate-800/80 p-1 rounded-2xl flex items-center">
-        {(['today', 'week', 'month', 'momentum'] as TimeFilter[]).map((tab) => {
-          const isActive = timeFilter === tab;
-          const label = tab === 'today' ? 'Today' : tab === 'week' ? 'Week' : tab === 'month' ? 'Month' : '⚡ Momentum';
-          return (
-            <motion.button
-              key={tab}
-              id={`filter-tab-${tab}`}
-              type="button"
-              whileTap={tapPress}
-              onClick={() => setTimeFilter(tab)}
-              className={`relative flex-1 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-xl cursor-pointer text-center ${
-                isActive
-                  ? 'text-emerald-800 dark:text-white'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
-              }`}
-            >
-              {isActive && (
-                <motion.div
-                  layoutId="report-filter-pill"
-                  className="absolute inset-0 bg-white dark:bg-blue-600 rounded-xl shadow-xs"
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                />
-              )}
-              <span className="relative z-10">{label}</span>
-            </motion.button>
-          );
-        })}
-      </section>
+      <DaySelector
+        selectedIso={selectedDayIso}
+        onSelectIso={(iso) => {
+          onSelectDayIso?.(iso);
+          setTimeFilter('today');
+        }}
+        isDark={isDark}
+      />
 
       <section data-tour="report-rings" className="relative w-full flex flex-col items-center justify-center">
         <div className="relative w-full min-h-[230px] flex items-center justify-center">
@@ -901,6 +978,36 @@ export const ReportView: React.FC<ReportViewProps> = ({
         )}
       </section>
 
+      <section data-tour="report-momentum" className="bg-[#EFF3F6] dark:bg-slate-800/80 p-1 rounded-2xl flex items-center">
+        {(['today', 'week', 'month', 'momentum'] as TimeFilter[]).map((tab) => {
+          const isActive = timeFilter === tab;
+          const label = tab === 'today' ? 'Today' : tab === 'week' ? 'Week' : tab === 'month' ? 'Month' : '⚡ Momentum';
+          return (
+            <motion.button
+              key={tab}
+              id={`filter-tab-${tab}`}
+              type="button"
+              whileTap={tapPress}
+              onClick={() => setTimeFilter(tab)}
+              className={`relative flex-1 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-xl cursor-pointer text-center ${
+                isActive
+                  ? 'text-emerald-800 dark:text-white'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              {isActive && (
+                <motion.div
+                  layoutId="report-filter-pill"
+                  className="absolute inset-0 bg-white dark:bg-blue-600 rounded-xl shadow-xs"
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                />
+              )}
+              <span className="relative z-10">{label}</span>
+            </motion.button>
+          );
+        })}
+      </section>
+
       <section className="bg-white dark:bg-slate-900 rounded-2xl p-4.5 border border-slate-100 dark:border-slate-800 shadow-xs space-y-4">
         <div className="flex items-center space-x-2.5">
           <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-blue-950/60 flex items-center justify-center text-emerald-800 dark:text-blue-400 shrink-0">
@@ -1003,12 +1110,104 @@ export const ReportView: React.FC<ReportViewProps> = ({
         )}
       </section>
 
+      <section
+        data-tour="report-cycle-volume"
+        className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-xs space-y-3"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight">
+              Cycle Volume
+            </h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+              {cycleWindow.title} · {cycleWindow.startIso} → {cycleWindow.endIso}
+            </p>
+          </div>
+          <span className="text-[15px] font-extrabold tabular-nums text-emerald-700 dark:text-blue-400">
+            {cycleVolume.percent}%
+          </span>
+        </div>
+        <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+          <div
+            className="h-full rounded-full bg-emerald-500 dark:bg-blue-500 transition-[width] duration-300"
+            style={{ width: `${Math.min(100, Math.max(0, cycleVolume.percent))}%` }}
+          />
+        </div>
+        <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold tabular-nums">
+          <span className="px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+            {cycleVolume.completed}/{cycleVolume.target} days
+          </span>
+          <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-blue-950/50 text-emerald-800 dark:text-blue-300">
+            {cycleVolume.full} full
+          </span>
+          <span className="px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-slate-800 text-amber-800 dark:text-slate-300">
+            {cycleVolume.fallback} fallback
+          </span>
+          <span className="px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+            {cycleVolume.habitCount} habits
+          </span>
+        </div>
+      </section>
+
+      <section
+        data-tour="report-habit-performance"
+        className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-xs space-y-3"
+      >
+        <div>
+          <h2 className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Habit Performance
+          </h2>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+            {performanceWindow.title} · per-habit completion
+          </p>
+        </div>
+        {habitPerformance.length === 0 ? (
+          <p className="text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
+            No active habits yet.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {habitPerformance.map((row) => (
+              <li
+                key={row.habit.id}
+                className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 px-3 py-2.5 space-y-1.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate">
+                      {row.habit.name}
+                    </p>
+                    <span className="mt-1 inline-flex max-w-full truncate rounded-md border border-slate-200/80 dark:border-slate-700 bg-white/80 dark:bg-slate-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                      {row.identityPill}
+                    </span>
+                  </div>
+                  <span className="shrink-0 text-[11px] font-bold tabular-nums text-slate-700 dark:text-slate-200">
+                    {row.completedDays}/{row.targetDays} · {row.percent}%
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-200/80 dark:bg-slate-700 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 dark:bg-blue-500 transition-[width] duration-300"
+                    style={{ width: `${Math.min(100, Math.max(0, row.percent))}%` }}
+                  />
+                </div>
+                <p className="text-[10.5px] font-medium tabular-nums text-slate-500 dark:text-slate-400">
+                  {row.fullDays} full · {row.fallbackDays} fallback
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <FriendsFeed
         userId={userId}
         isGuest={isGuest}
         userEmail={userEmail}
         userName={userName}
         variant="full"
+        mode="roster"
+        cycleDays={cycleDays}
       />
     </div>
   );

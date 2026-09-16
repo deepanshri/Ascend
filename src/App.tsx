@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
+import { useAnyModalOpen, useKeyboardVisible } from './hooks/useKeyboardVisible';
 import { tapPress, toastMotion } from './lib/motionPresets';
 import { MotionModal } from './components/MotionModal';
 import {
@@ -47,11 +48,11 @@ import {
   remindersSyncService,
   upsertPublicReminder,
 } from './lib/supabase';
-import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted } from './lib/profile';
+import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted, resolveTutorialCompleted } from './lib/profile';
 import { persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from './data/avatars';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
 import { mergeHabitsByUpdatedAt, mergeRemindersByUpdatedAt, touchHabit } from './lib/syncMerge';
-import { fetchActiveHabits, fetchHabitLogsForDate, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable } from './lib/habitsApi';
+import { fetchActiveHabits, fetchHabitLogsForDate, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable, omitDeletedHabitRefs, omitDeletedHabits, rememberDeletedHabit } from './lib/habitsApi';
 import {
   destroyAscendSpotlightTutorial,
   hasScreenTutorialCompleted,
@@ -75,16 +76,22 @@ import {
 } from './lib/notifications';
 import { ledgerEvidenceForHabits, displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
 import { deleteHabit, stableHabitLogId } from './services/habitService';
-import { completionConfirmCopy } from './services/notificationService';
+import { completionConfirmCopy, shouldNotifyHabitSwipe } from './services/notificationService';
 import {
   accumulationPiecesFromLogs,
+  activeCycleWindow,
+  archiveCompletedCycle,
   clampCycleDays,
-  cycleWindow,
   persistCycleDays,
+  readBowlCycleEpoch,
+  readCycleHistory,
   readStoredCycleDays,
+  resetBowlCycleEpoch,
   summarizeDualBowlFill,
-  themeBowlMode,
+  summarizeBowlFill,
+  type CompletedCycleSummary,
   type CycleDays,
+  type AccumulationPiece,
 } from './services/reportService';
 import { HomeView } from './components/HomeView';
 import { useHabits, withHabitTimeOfDay } from './hooks/useHabits';
@@ -141,13 +148,24 @@ function resolveActiveTab(tab: ActiveTab | string | null | undefined): ActiveTab
 
 export default function App() {
   useKeyboardInset(true);
+  const isKeyboardOpen = useKeyboardVisible();
+  const isAnyModalOpen = useAnyModalOpen();
   // Authentication & Session State
   const [session, setSession] = useState<UserSession | null>(() => {
     const stored = getStoredSession();
-    if (stored && !stored.isGuest) {
+    // Guest sessions are retired — require real auth before Home.
+    if (stored?.isGuest || stored?.id?.startsWith('guest_')) {
+      try {
+        setStoredSession(null);
+      } catch {
+        // ignore
+      }
+      return null;
+    }
+    if (stored) {
       return { ...stored, syncStatus: stored.syncStatus === 'error' ? 'error' : 'syncing' };
     }
-    return stored;
+    return null;
   });
   const sessionRef = useRef<UserSession | null>(session);
   sessionRef.current = session;
@@ -258,7 +276,7 @@ export default function App() {
   const [frictionAudits, setFrictionAudits] = useState<FrictionAudit[]>(() => {
     try {
       const saved = localStorage.getItem('ascend_friction_audits');
-      if (saved) return JSON.parse(saved);
+      if (saved) return omitDeletedHabitRefs(JSON.parse(saved) as FrictionAudit[]);
     } catch {}
     return [];
   });
@@ -271,12 +289,14 @@ export default function App() {
       const saved = localStorage.getItem('habit_tracker_habits');
       if (saved) {
         const parsed = JSON.parse(saved) as Habit[];
-        return parsed
-          .filter((h) => !isSeedHabitId(h.id))
-          .map((h) => {
-          const category = normalizeHabitCategory(h.category);
-          return hydrateHabitTimeOfDay({ ...h, category, tags: [habitCategoryBadge(category)] });
-        });
+        return omitDeletedHabits(
+          parsed
+            .filter((h) => !isSeedHabitId(h.id))
+            .map((h) => {
+            const category = normalizeHabitCategory(h.category);
+            return hydrateHabitTimeOfDay({ ...h, category, tags: [habitCategoryBadge(category)] });
+          }),
+        );
       }
     } catch {}
     return [];
@@ -288,7 +308,7 @@ export default function App() {
       const saved = localStorage.getItem('ascend_completion_events');
       if (saved) {
         const parsed = JSON.parse(saved) as HabitCompletionEvent[];
-        return parsed.filter((event) => !isSeedHabitId(event.habitId));
+        return omitDeletedHabitRefs(parsed.filter((event) => !isSeedHabitId(event.habitId)));
       }
     } catch {}
     return [];
@@ -296,16 +316,20 @@ export default function App() {
 
   const [momentumEvents, setMomentumEvents] = useState<MomentumEvent[]>(() => {
     const stored = loadLocalMomentumEvents();
-    if (stored) return stored.filter((event) => !isSeedHabitId(event.habitId));
+    if (stored) {
+      return omitDeletedHabitRefs(stored.filter((event) => !isSeedHabitId(event.habitId)));
+    }
     try {
       const saved = localStorage.getItem('ascend_completion_events');
       const logs: HabitCompletionEvent[] = saved ? JSON.parse(saved) : [];
-      const userLogs = logs.filter((event) => !isSeedHabitId(event.habitId));
+      const userLogs = omitDeletedHabitRefs(logs.filter((event) => !isSeedHabitId(event.habitId)));
       let seedHabits: Habit[] = [];
       try {
         const habitSaved = localStorage.getItem('habit_tracker_habits');
         if (habitSaved) {
-          seedHabits = (JSON.parse(habitSaved) as Habit[]).filter((habit) => !isSeedHabitId(habit.id));
+          seedHabits = omitDeletedHabits(
+            (JSON.parse(habitSaved) as Habit[]).filter((habit) => !isSeedHabitId(habit.id)),
+          );
         }
       } catch {}
       return momentumEventsFromCompletionLog(userLogs, seedHabits);
@@ -351,7 +375,7 @@ export default function App() {
           return next;
         });
       }
-      setHasCompletedTutorial(Boolean(profile.has_completed_tutorial));
+      setHasCompletedTutorial(resolveTutorialCompleted(profile.has_completed_tutorial));
     })();
 
     return () => {
@@ -376,6 +400,12 @@ export default function App() {
   }, [activeFallbackIds]);
 
   const [cycleDays, setCycleDays] = useState<CycleDays>(() => readStoredCycleDays());
+  const [bowlEpoch, setBowlEpoch] = useState(() => readBowlCycleEpoch(toISODate()));
+  const [cycleHistory, setCycleHistory] = useState<CompletedCycleSummary[]>(() => readCycleHistory());
+  const [bowlCelebrating, setBowlCelebrating] = useState(false);
+  const [celebrationPieces, setCelebrationPieces] = useState<AccumulationPiece[] | null>(null);
+  const bowlCelebrateLockRef = useRef(false);
+  const pendingCycleResetRef = useRef<{ endIso: string; resetAt: number } | null>(null);
 
   const handleCycleDaysChange = (days: CycleDays) => {
     const next = clampCycleDays(days);
@@ -695,8 +725,8 @@ export default function App() {
   const { morningHabits, nightHabits } = useHabits(activeHabits);
 
   const bowlWindow = useMemo(
-    () => cycleWindow(cycleDays, toISODate(calendarOrigin)),
-    [cycleDays, calendarOrigin]
+    () => activeCycleWindow(cycleDays, bowlEpoch.startIso, toISODate(calendarOrigin)),
+    [cycleDays, bowlEpoch.startIso, calendarOrigin]
   );
   const morningPieces = useMemo(
     () =>
@@ -705,9 +735,10 @@ export default function App() {
         morningHabits.map((habit) => habit.id),
         bowlWindow.startIso,
         bowlWindow.endIso,
-        calendarOrigin
+        calendarOrigin,
+        bowlEpoch.resetAt
       ),
-    [completionEvents, morningHabits, bowlWindow, calendarOrigin]
+    [completionEvents, morningHabits, bowlWindow, calendarOrigin, bowlEpoch.resetAt]
   );
   const nightPieces = useMemo(
     () =>
@@ -716,9 +747,10 @@ export default function App() {
         nightHabits.map((habit) => habit.id),
         bowlWindow.startIso,
         bowlWindow.endIso,
-        calendarOrigin
+        calendarOrigin,
+        bowlEpoch.resetAt
       ),
-    [completionEvents, nightHabits, bowlWindow, calendarOrigin]
+    [completionEvents, nightHabits, bowlWindow, calendarOrigin, bowlEpoch.resetAt]
   );
   const dualBowlFill = useMemo(
     () =>
@@ -731,9 +763,78 @@ export default function App() {
       ),
     [morningHabits.length, morningPieces.length, nightHabits.length, nightPieces.length, cycleDays]
   );
-  const bowlMode = themeBowlMode(isDark);
-  const bowlPieces = bowlMode === 'night' ? nightPieces : morningPieces;
-  const bowlFill = bowlMode === 'night' ? dualBowlFill.night : dualBowlFill.morning;
+
+  /**
+   * Theme only skins the bowl (morning glass + green vs night glass + blue).
+   * Pieces accumulate across the active cycle window (epoch start → today),
+   * not today alone — cleared only when a cycle completes and the epoch resets.
+   */
+  const bowlPieces = useMemo(() => {
+    const byId = new Map<string, (typeof morningPieces)[number]>();
+    for (const piece of morningPieces) byId.set(piece.id, piece);
+    for (const piece of nightPieces) byId.set(piece.id, piece);
+    return Array.from(byId.values()).sort(
+      (a, b) => a.isoDate.localeCompare(b.isoDate) || a.id.localeCompare(b.id)
+    );
+  }, [morningPieces, nightPieces]);
+
+  const bowlFill = useMemo(
+    () => summarizeBowlFill(activeHabits.length, bowlPieces.length, cycleDays),
+    [activeHabits.length, bowlPieces.length, cycleDays]
+  );
+
+  // Bowl full → celebrate, archive cycle history, then reset epoch after pour-out.
+  // Never touches Identity Ledger / momentum_events / habit_logs.
+  useEffect(() => {
+    if (bowlCelebrating || bowlCelebrateLockRef.current) return;
+    if (bowlFill.capacity <= 0) return;
+    if (bowlFill.votes < bowlFill.capacity) return;
+
+    bowlCelebrateLockRef.current = true;
+    setCelebrationPieces(bowlPieces);
+    setBowlCelebrating(true);
+
+    const entry = archiveCompletedCycle({
+      cycleDays: bowlFill.cycleDays,
+      startIso: bowlWindow.startIso,
+      endIso: bowlWindow.endIso,
+      votes: bowlFill.votes,
+      capacity: bowlFill.capacity,
+      fillPercent: bowlFill.fillPercent,
+      isOverflowing: bowlFill.isOverflowing,
+      morningVotes: dualBowlFill.morning.votes,
+      nightVotes: dualBowlFill.night.votes,
+    });
+    pendingCycleResetRef.current = { endIso: bowlWindow.endIso, resetAt: entry.completedAt };
+    setCycleHistory((prev) => [entry, ...prev.filter((item) => item.id !== entry.id)].slice(0, 40));
+  }, [
+    bowlFill.votes,
+    bowlFill.capacity,
+    bowlFill.cycleDays,
+    bowlFill.fillPercent,
+    bowlFill.isOverflowing,
+    bowlCelebrating,
+    bowlPieces,
+    bowlWindow.startIso,
+    bowlWindow.endIso,
+    dualBowlFill.morning.votes,
+    dualBowlFill.night.votes,
+  ]);
+
+  const handleBowlCelebrationDone = () => {
+    const pending = pendingCycleResetRef.current;
+    if (pending) {
+      setBowlEpoch(resetBowlCycleEpoch(pending.endIso, pending.resetAt));
+      pendingCycleResetRef.current = null;
+    } else {
+      setBowlEpoch(readBowlCycleEpoch(toISODate(calendarOrigin)));
+    }
+    setCelebrationPieces(null);
+    setBowlCelebrating(false);
+    window.setTimeout(() => {
+      bowlCelebrateLockRef.current = false;
+    }, 400);
+  };
 
   const keystoneCompletedOnViewedDay = useMemo(
     () => activeHabits.filter((habit) => habit.isKeystone && habit.days?.[currentDayIndex]).map((habit) => habit.id),
@@ -807,13 +908,16 @@ export default function App() {
       completionEvents: completionEventsRef.current,
       momentumEvents: momentumEventsRef.current,
       interests: selectedInterestsRef.current,
-      hasCompletedTutorial: Boolean(hasCompletedTutorialRef.current),
+      hasCompletedTutorial:
+        getLocalTutorialCompleted() || hasCompletedTutorialRef.current === true,
       momentumScore: momentumScoreRef.current,
       getLatestHabits: () => habitsRef.current,
     });
     setHabits((prev) => mergeHabitsByUpdatedAt(prev, result.habits));
-    setCompletionEvents(result.completionEvents);
-    setMomentumEvents((prev) => mergeMomentumEvents(prev, result.momentumEvents));
+    setCompletionEvents(omitDeletedHabitRefs(result.completionEvents));
+    setMomentumEvents((prev) =>
+      omitDeletedHabitRefs(mergeMomentumEvents(prev, result.momentumEvents)),
+    );
     if (result.ok) {
       hydratedUserIdRef.current = targetSession.id;
     }
@@ -901,23 +1005,27 @@ export default function App() {
         fetchMomentumEventsFromTable(session.id),
       ]);
       if (cancelled) return;
-      setHabits((prev) => mergeHabitsByUpdatedAt(prev, remoteHabits));
-      const userDateLogs = dateLogs.filter((event) => !isSeedHabitId(event.habitId));
+      setHabits((prev) => omitDeletedHabits(mergeHabitsByUpdatedAt(prev, remoteHabits)));
+      const userDateLogs = omitDeletedHabitRefs(dateLogs.filter((event) => !isSeedHabitId(event.habitId)));
       if (userDateLogs.length > 0) {
         setCompletionEvents((prev) =>
-          mergeCompletionEvents(
-            prev.filter((event) => !isSeedHabitId(event.habitId)),
-            userDateLogs,
-            calendarOrigin
+          omitDeletedHabitRefs(
+            mergeCompletionEvents(
+              prev.filter((event) => !isSeedHabitId(event.habitId)),
+              userDateLogs,
+              calendarOrigin
+            )
           )
         );
       }
-      const userMomentum = remoteMomentum.filter((event) => !isSeedHabitId(event.habitId));
+      const userMomentum = omitDeletedHabitRefs(remoteMomentum.filter((event) => !isSeedHabitId(event.habitId)));
       if (userMomentum.length > 0) {
         setMomentumEvents((prev) =>
-          mergeMomentumEvents(
-            prev.filter((event) => !isSeedHabitId(event.habitId)),
-            userMomentum
+          omitDeletedHabitRefs(
+            mergeMomentumEvents(
+              prev.filter((event) => !isSeedHabitId(event.habitId)),
+              userMomentum
+            )
           )
         );
       }
@@ -932,7 +1040,9 @@ export default function App() {
     let cancelled = false;
     void fetchFrictionReasonsFromTable(session.id).then((rows) => {
       if (cancelled || rows.length === 0) return;
-      setFrictionAudits((prev) => mergeFrictionAuditsFromLogs(prev, rows, habitsRef.current));
+      setFrictionAudits((prev) =>
+        omitDeletedHabitRefs(mergeFrictionAuditsFromLogs(prev, rows, habitsRef.current)),
+      );
     });
     return () => {
       cancelled = true;
@@ -964,7 +1074,6 @@ export default function App() {
     const targetHabit = habits.find((habit) => habit.id === habitId);
     if (!targetHabit) return;
     if (!isHabitScheduledOnIso(targetHabit, loggedDate)) {
-      showNotification('Off day — not counted as a miss');
       return;
     }
 
@@ -1069,7 +1178,9 @@ export default function App() {
       };
       setFrictionAudits((prevAudits) => [newAudit, ...prevAudits]);
     }
-    showNotification(completionConfirmCopy(targetHabit.name));
+    if (shouldNotifyHabitSwipe(targetHabit, todayDayIndex, calendarOrigin)) {
+      showNotification(completionConfirmCopy(targetHabit.name));
+    }
   };
 
   // GESTURE / TAP ACTION: Toggle Fallback Mode for Today (Does NOT mark complete; allows cancel / revert)
@@ -1078,7 +1189,7 @@ export default function App() {
     const targetHabit = habits.find((h) => h.id === habitId);
     if (!targetHabit) return;
     if (!isHabitScheduledOnDayIndex(targetHabit, todayDayIndex, calendarOrigin) && !activeFallbackIds.includes(habitId)) {
-      showNotification('Off day — fallback only on scheduled days');
+      // Off day: no fallback, no toast.
       return;
     }
 
@@ -1162,11 +1273,15 @@ export default function App() {
     );
   };
 
-  // Delete habit (optimistic) + cascade remote logs/row
+  // Delete habit (optimistic) + purge every local trace so Report Analysis cannot resurface it
   const handleDeleteHabit = (habitId: string) => {
+    rememberDeletedHabit(habitId);
     setHabits((prev) => prev.filter((h) => h.id !== habitId));
     setCompletionEvents((prev) => prev.filter((e) => e.habitId !== habitId));
+    setMomentumEvents((prev) => prev.filter((e) => e.habitId !== habitId));
     setEvidenceList((prev) => prev.filter((item) => item.habitId !== habitId));
+    setFrictionAudits((prev) => prev.filter((item) => item.habitId !== habitId));
+    setPendingFriction((prev) => prev.filter((item) => item.habitId !== habitId));
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
     if (detailHabit && detailHabit.id === habitId) {
       setDetailHabit(null);
@@ -1295,7 +1410,7 @@ export default function App() {
       setIsOnboarded(false);
       setOnboardingCompleted(false);
       setHasCompletedTutorial(false);
-      setLocalTutorialCompleted(false);
+      setLocalTutorialCompleted(false, { force: true });
       tutorialLockRef.current = false;
     } else {
       setHabits((prev) => prev.filter((habit) => !isSeedHabitId(habit.id)));
@@ -1596,6 +1711,9 @@ export default function App() {
   useEffect(() => {
     setIsNavVisible(true);
     lastScrollYRef.current = 0;
+    if (activeTab === 'report') {
+      setCurrentSelectedDate(toISODate());
+    }
   }, [activeTab]);
 
   const handleMainScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -1760,11 +1878,10 @@ export default function App() {
             momentumScore={todayMomentumScore}
             momentumEvents={momentumEvents ?? []}
             completionEvents={completionEvents ?? []}
+            selectedDayIso={currentSelectedDate}
+            onSelectDayIso={setCurrentSelectedDate}
             cycleDays={cycleDays}
-            onCycleDaysChange={handleCycleDaysChange}
-            bowlFill={bowlFill}
-            morningFill={dualBowlFill.morning}
-            nightFill={dualBowlFill.night}
+            cycleStartIso={bowlEpoch.startIso}
           />
           </motion.div>
         ) : safeActiveTab === 'personal' ? (
@@ -1867,6 +1984,7 @@ export default function App() {
                     userEmail={session.email}
                     userName={session.name}
                     variant="icon"
+                    mode="invite"
                   />
                   <motion.button
                     id="add-habit-btn-above-list"
@@ -1884,10 +2002,13 @@ export default function App() {
             />
 
             <HomeView
-              pieces={bowlPieces}
+              pieces={celebrationPieces ?? bowlPieces}
               bowlFill={bowlFill}
               isDark={isDark}
+              momentumScore={todayMomentumScore}
               onCycleDaysChange={handleCycleDaysChange}
+              celebrating={bowlCelebrating}
+              onCelebrationDone={handleBowlCelebrationDone}
             >
               <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
 
@@ -1948,12 +2069,12 @@ export default function App() {
         </div>
         </ErrorBoundary>
 
-        {/* Floating Bottom Navigation: shrinks on scroll down, pops up on scroll up */}
+        {/* Floating Bottom Navigation: hide on scroll, keyboard, or modal */}
         <BottomNav
           activeTab={safeActiveTab}
           onTabChange={(tab) => setActiveTab(resolveActiveTab(tab))}
           pendingRemindersCount={pendingRemindersCount}
-          isNavVisible={isNavVisible}
+          isNavVisible={isNavVisible && !isKeyboardOpen && !isAnyModalOpen}
           isBlurred={Boolean(longPressedHabitId)}
         />
 
@@ -2127,7 +2248,7 @@ export default function App() {
                     value={upgradeName}
                     onChange={(e) => setUpgradeName(e.target.value)}
                     placeholder="e.g. Maya Lin"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12.5px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[12.5px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-blue-500"
                   />
                 </div>
 
@@ -2141,7 +2262,7 @@ export default function App() {
                     value={upgradeEmail}
                     onChange={(e) => setUpgradeEmail(e.target.value)}
                     placeholder="name@example.com"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12.5px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[12.5px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-blue-500"
                   />
                 </div>
 
@@ -2155,7 +2276,7 @@ export default function App() {
                     value={upgradePassword}
                     onChange={(e) => setUpgradePassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12.5px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[12.5px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-blue-500"
                   />
                 </div>
 
@@ -2172,7 +2293,7 @@ export default function App() {
                     type="submit"
                     whileTap={upgradeLoading ? undefined : tapPress}
                     disabled={upgradeLoading}
-                    className="flex-1 py-2 rounded-xl bg-emerald-600 text-white font-bold text-[11.5px] hover:bg-emerald-700 cursor-pointer disabled:opacity-50"
+                    className="flex-1 py-2 rounded-xl bg-emerald-600 dark:bg-blue-600 text-white font-bold text-[11.5px] hover:bg-emerald-700 dark:hover:bg-blue-500 cursor-pointer disabled:opacity-50"
                   >
                     {upgradeLoading ? 'Saving...' : 'Upgrade Now'}
                   </motion.button>
@@ -2205,7 +2326,7 @@ export default function App() {
               </div>
 
               {passwordStatusMsg && (
-                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11.5px]">
+                <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-blue-950 border border-emerald-200 dark:border-blue-800 text-emerald-800 dark:text-blue-300 text-[11.5px]">
                   {passwordStatusMsg}
                 </div>
               )}
@@ -2231,7 +2352,7 @@ export default function App() {
                     value={newPasswordText}
                     onChange={(e) => setNewPasswordText(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12.5px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[12.5px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-blue-500"
                   />
                 </div>
 

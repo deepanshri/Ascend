@@ -62,19 +62,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
     }
   };
 
-  const handleGuestLogin = async () => {
-    setErrorMsg(null);
-    setIsLoading(true);
-    try {
-      const session = await authService.signInAsGuest();
-      onAuthSuccess(session, true);
-    } catch (err: any) {
-      setErrorMsg('Could not initialize guest session.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forgotEmail.trim()) return;
@@ -292,31 +279,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
               )}
             </button>
           </form>
-
-          {/* Divider */}
-          <div className="relative my-4 flex items-center justify-center">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-200 dark:border-slate-800" />
-            </div>
-            <span className="relative px-3 bg-white dark:bg-slate-900 text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-              or
-            </span>
-          </div>
-
-          {/* Anonymous / Guest Access */}
-          <button
-            id="auth-guest-btn"
-            type="button"
-            onClick={handleGuestLogin}
-            disabled={isLoading}
-            className="w-full py-2.5 px-4 bg-emerald-50/60 dark:bg-blue-950/60 hover:bg-emerald-100/80 dark:hover:bg-blue-900/60 border border-emerald-200/80 dark:border-blue-800 text-emerald-900 dark:text-blue-200 rounded-xl font-bold text-[12.5px] transition active:scale-[0.99] cursor-pointer flex items-center justify-center space-x-2"
-          >
-            <span>👤</span>
-            <span>Continue as Guest / Anonymous</span>
-          </button>
-          <p className="text-[10.5px] text-slate-400 text-center mt-2">
-            Local device storage with zero sign-up required. Upgrade anytime.
-          </p>
         </div>
       </div>
 

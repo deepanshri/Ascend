@@ -1,5 +1,6 @@
 import { generateFriendCode, isValidFriendCode, normalizeFriendCode } from '../utils/friendCode';
 import { resolveAvatarId } from '../data/avatars';
+import { toISODate } from '../utils/dates';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 /** Canonical social graph. Live DB and client queries both use public.friendships. */
@@ -186,30 +187,26 @@ export async function connectByFriendCode(
     const existing = await fetchFriendships(userId);
     const overlap = existing.find((edge) => edge.peerId === String(peer.id));
     if (overlap?.status === 'accepted') return { ok: true, message: 'Already connected.' };
-    if (overlap) {
-      const { error: upgradeError } = await supabase
-        .from(FRIENDSHIPS_TABLE)
-        .update({ status: 'accepted' })
-        .eq('id', overlap.id);
-      if (upgradeError) return { ok: false, message: 'Could not connect.' };
-      return { ok: true, message: 'You are now friends.' };
+    if (overlap?.status === 'pending' && overlap.userId === userId) {
+      return { ok: true, message: 'Request already sent.' };
+    }
+    if (overlap?.status === 'pending' && overlap.friendId === userId) {
+      const accepted = await respondToFriendRequest(overlap.id, 'accepted');
+      return accepted
+        ? { ok: true, message: 'Friend request accepted.' }
+        : { ok: false, message: 'Could not accept request.' };
     }
 
     const { error: insertError } = await supabase.from(FRIENDSHIPS_TABLE).insert({
       user_id: userId,
       friend_id: String(peer.id),
-      status: 'accepted',
+      status: 'pending',
     });
     if (insertError) {
       console.warn('friend code connect failed:', insertError.message);
-      return { ok: false, message: 'Could not connect.' };
+      return { ok: false, message: 'Could not send request.' };
     }
-    await supabase.from(FRIENDSHIPS_TABLE).insert({
-      user_id: String(peer.id),
-      friend_id: userId,
-      status: 'accepted',
-    });
-    return { ok: true, message: 'You are now friends.' };
+    return { ok: true, message: 'Friend request sent.' };
   } catch {
     return { ok: false, message: 'Could not connect.' };
   }
@@ -535,15 +532,14 @@ export async function retractAffirmationGlow(fromUserId: string, eventId: string
   }
 }
 
-async function loadHabitNames(friendIds: string[]): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
-  if (!supabase || friendIds.length === 0) return names;
-  const { data } = await supabase.from('habits').select('id, title, name, user_id').in('user_id', friendIds);
+async function loadLiveHabitIds(friendIds: string[]): Promise<Set<string>> {
+  const ids = new Set<string>();
+  if (!supabase || friendIds.length === 0) return ids;
+  const { data } = await supabase.from('habits').select('id, user_id').in('user_id', friendIds);
   (data || []).forEach((row) => {
-    const title = String(row.title || row.name || '').trim();
-    if (row.id && title) names.set(String(row.id), title);
+    if (row.id) ids.add(String(row.id));
   });
-  return names;
+  return ids;
 }
 
 async function loadVoteTotals(friendIds: string[]): Promise<Map<string, number>> {
@@ -562,13 +558,70 @@ async function loadVoteTotals(friendIds: string[]): Promise<Map<string, number>>
   return totals;
 }
 
+/** Privacy-safe: today's completion count per friend (no habit titles). */
+export async function fetchFriendTodayCompletionCounts(
+  userId: string,
+  edges: FriendEdge[],
+  todayIso: string
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (!canUse(userId) || !supabase) return counts;
+  const friendIds = acceptedFriendIds(edges, userId);
+  if (friendIds.length === 0) return counts;
+
+  try {
+    const nextIso = (() => {
+      const [y, m, d] = todayIso.split('-').map(Number);
+      const dt = new Date(y, (m || 1) - 1, (d || 1) + 1);
+      const yy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      return `${yy}-${mm}-${dd}`;
+    })();
+
+    const [{ data: events, error }, liveHabitIds] = await Promise.all([
+      supabase
+        .from('momentum_events')
+        .select('user_id, habit_id, timestamp')
+        .in('user_id', friendIds)
+        .in('event_type', ['full', 'fallback'])
+        .gte('timestamp', `${todayIso}T00:00:00`)
+        .lt('timestamp', `${nextIso}T00:00:00`)
+        .limit(500),
+      loadLiveHabitIds(friendIds),
+    ]);
+
+    if (error) {
+      console.warn('friend today counts fetch failed:', error.message);
+      return counts;
+    }
+
+    const byFriend = new Map<string, Set<string>>();
+    (events || []).forEach((row) => {
+      const friendId = String(row.user_id || '');
+      const habitId = String(row.habit_id || '');
+      if (!friendId || !habitId) return;
+      // Deleted habits must not surface in friend counts.
+      if (liveHabitIds.size > 0 && !liveHabitIds.has(habitId)) return;
+      if (!byFriend.has(friendId)) byFriend.set(friendId, new Set());
+      byFriend.get(friendId)!.add(habitId);
+    });
+
+    friendIds.forEach((id) => counts.set(id, byFriend.get(id)?.size ?? 0));
+    return counts;
+  } catch {
+    return counts;
+  }
+}
+
 export async function fetchFriendActivity(userId: string, edges: FriendEdge[]): Promise<FriendActivityItem[]> {
   if (!canUse(userId) || !supabase) return [];
   const friendIds = acceptedFriendIds(edges, userId);
   if (friendIds.length === 0) return [];
 
   try {
-    const [{ data: events, error }, habitNames] = await Promise.all([
+    // Privacy: never attach habit titles. Only anonymous milestone pulses remain.
+    const [{ data: events, error }, liveHabitIds] = await Promise.all([
       supabase
         .from('momentum_events')
         .select('id, user_id, habit_id, event_type, timestamp')
@@ -576,7 +629,7 @@ export async function fetchFriendActivity(userId: string, edges: FriendEdge[]): 
         .in('event_type', ['full', 'fallback'])
         .order('timestamp', { ascending: false })
         .limit(80),
-      loadHabitNames(friendIds),
+      loadLiveHabitIds(friendIds),
     ]);
 
     if (error) {
@@ -584,7 +637,11 @@ export async function fetchFriendActivity(userId: string, edges: FriendEdge[]): 
       return [];
     }
 
-    const recent = events || [];
+    const recent = (events || []).filter((row) => {
+      const habitId = String(row.habit_id || '');
+      if (!habitId) return false;
+      return liveHabitIds.size === 0 || liveHabitIds.has(habitId);
+    });
     const activeFriendIds = Array.from(new Set(recent.map((row) => String(row.user_id || '')).filter(Boolean)));
     const remainingVotes = await loadVoteTotals(activeFriendIds);
     const names = new Map(edges.map((edge) => [edge.peerId, edge.peerName]));
@@ -611,18 +668,6 @@ export async function fetchFriendActivity(userId: string, edges: FriendEdge[]): 
         });
       }
       remainingVotes.set(friendId, previous);
-
-      const habitName = habitNames.get(String(row.habit_id || '')) || 'a habit';
-      const verb = row.event_type === 'fallback' ? 'protected momentum on' : 'completed';
-      items.push({
-        id: String(row.id),
-        friendId,
-        friendName,
-        friendAvatar,
-        kind: 'habit',
-        text: `${friendName} ${verb} ${habitName}`,
-        timestamp,
-      });
     });
 
     return items.slice(0, 40);
@@ -640,4 +685,93 @@ export interface FriendFeedItem {
 
 export function loadFriendsFeed(): FriendFeedItem[] {
   return [];
+}
+
+export interface FriendIdentityLedger {
+  friendId: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  identityStatement: string;
+  cycleCompletions: number;
+  cycleDays: number;
+}
+
+/**
+ * Privacy-safe friend snapshot for Reports:
+ * display name + identity statement (no habit titles) + cycle completion count.
+ */
+export async function fetchFriendIdentityLedger(
+  viewerId: string,
+  friendId: string,
+  cycleDays = 7
+): Promise<FriendIdentityLedger | null> {
+  if (!canUse(viewerId) || !supabase || !friendId) return null;
+  const edges = await fetchFriendships(viewerId);
+  const edge = edges.find((item) => item.peerId === friendId && item.status === 'accepted');
+  if (!edge) return null;
+
+  const days = Math.min(10, Math.max(1, Math.round(cycleDays)));
+  const endIso = toISODate();
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (days - 1));
+  const y = start.getFullYear();
+  const m = String(start.getMonth() + 1).padStart(2, '0');
+  const d = String(start.getDate()).padStart(2, '0');
+  const startIso = `${y}-${m}-${d}`;
+
+  try {
+    const [{ data: habitRows }, { data: events }] = await Promise.all([
+      supabase
+        .from('habits')
+        .select('identity_statement, purpose_anchor, is_keystone, archived, is_archived')
+        .eq('user_id', friendId),
+      supabase
+        .from('momentum_events')
+        .select('habit_id, timestamp')
+        .eq('user_id', friendId)
+        .in('event_type', ['full', 'fallback'])
+        .gte('timestamp', `${startIso}T00:00:00`)
+        .lt('timestamp', `${endIso}T23:59:59.999`)
+        .limit(400),
+    ]);
+
+    const activeHabits = (habitRows || []).filter(
+      (row) => !row.archived && !row.is_archived
+    );
+    const keystone = activeHabits.find(
+      (row) => row.is_keystone && String(row.identity_statement || '').trim()
+    );
+    const anyStatement = activeHabits.find((row) => String(row.identity_statement || '').trim());
+    const purpose = activeHabits.find((row) => String(row.purpose_anchor || '').trim());
+    const identityStatement =
+      String(keystone?.identity_statement || '').trim() ||
+      String(anyStatement?.identity_statement || '').trim() ||
+      String(purpose?.purpose_anchor || '').trim() ||
+      'Building consistency, one vote at a time.';
+
+    const uniqueHabits = new Set<string>();
+    (events || []).forEach((row) => {
+      const habitId = String(row.habit_id || '');
+      if (habitId) uniqueHabits.add(habitId);
+    });
+
+    return {
+      friendId,
+      displayName: edge.peerName || 'Friend',
+      avatarUrl: edge.peerAvatar ?? null,
+      identityStatement,
+      cycleCompletions: uniqueHabits.size,
+      cycleDays: days,
+    };
+  } catch {
+    return {
+      friendId,
+      displayName: edge.peerName || 'Friend',
+      avatarUrl: edge.peerAvatar ?? null,
+      identityStatement: 'Building consistency, one vote at a time.',
+      cycleCompletions: 0,
+      cycleDays: days,
+    };
+  }
 }

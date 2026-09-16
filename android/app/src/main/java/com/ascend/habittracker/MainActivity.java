@@ -10,7 +10,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(HealthSleepPlugin.class);
         registerPlugin(WidgetBridgePlugin.class);
         super.onCreate(savedInstanceState);
-        WidgetBridgePlugin.dispatchIntent(this, getIntent());
+        WidgetBridgePlugin  .dispatchIntent(this, getIntent());
     }
 
     @Override

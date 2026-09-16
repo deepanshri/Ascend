@@ -17,15 +17,20 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   isNavVisible = true,
   isBlurred = false,
 }) => {
+  const shown = Boolean(isNavVisible);
+
   return (
     <nav
       id="floating-bottom-nav"
       data-tour="bottom-nav"
       aria-label="App Navigation"
+      aria-hidden={!shown}
       style={{
-        transform: isNavVisible ? 'translateY(0)' : 'translateY(120%)',
-        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        pointerEvents: isNavVisible && !isBlurred ? 'auto' : 'none',
+        transform: shown ? 'translateY(0)' : 'translateY(120%)',
+        opacity: shown ? 1 : 0,
+        transition:
+          'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease',
+        pointerEvents: shown && !isBlurred ? 'auto' : 'none',
       }}
       className={`absolute bottom-0 left-0 right-0 z-40 mx-4 mb-[max(1.25rem,env(safe-area-inset-bottom))] h-[68px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-full nav-pill-shadow border border-slate-100/90 dark:border-slate-800 px-2 flex items-center justify-between ${
         isBlurred ? 'filter blur-[4px]' : ''

@@ -62,10 +62,41 @@ export function rowToHabit(row: Record<string, unknown>): Habit | null {
 }
 
 /** Session-local tombstones so a deleted habit cannot be resurrected by fetch/upsert. */
+const DELETED_HABITS_STORAGE_KEY = 'ascend_deleted_habit_ids';
 const deletedHabitIds = new Set<string>();
 
+function hydrateDeletedHabitIds(): void {
+  try {
+    const raw = localStorage.getItem(DELETED_HABITS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return;
+    parsed.forEach((id) => {
+      if (typeof id === 'string' && id) deletedHabitIds.add(id);
+    });
+  } catch {
+    // private mode
+  }
+}
+
+function persistDeletedHabitIds(): void {
+  try {
+    localStorage.setItem(DELETED_HABITS_STORAGE_KEY, JSON.stringify([...deletedHabitIds]));
+  } catch {
+    // private mode
+  }
+}
+
+hydrateDeletedHabitIds();
+
 export function rememberDeletedHabit(habitId: string): void {
-  if (habitId) deletedHabitIds.add(habitId);
+  if (!habitId) return;
+  deletedHabitIds.add(habitId);
+  persistDeletedHabitIds();
+}
+
+export function isDeletedHabitId(habitId: string): boolean {
+  return Boolean(habitId) && deletedHabitIds.has(habitId);
 }
 
 export function omitDeletedHabits<T extends { id: string }>(habits: T[]): T[] {
@@ -73,9 +104,9 @@ export function omitDeletedHabits<T extends { id: string }>(habits: T[]): T[] {
   return habits.filter((habit) => !deletedHabitIds.has(habit.id));
 }
 
-export function omitDeletedHabitRefs<T extends { habitId: string }>(rows: T[]): T[] {
+export function omitDeletedHabitRefs<T extends { habitId?: string }>(rows: T[]): T[] {
   if (deletedHabitIds.size === 0) return rows;
-  return rows.filter((row) => !deletedHabitIds.has(row.habitId));
+  return rows.filter((row) => !row.habitId || !deletedHabitIds.has(row.habitId));
 }
 
 export function habitToRow(habit: Habit, userId: string) {
@@ -268,12 +299,28 @@ export async function deleteHabitCascade(
   rememberDeletedHabit(habitId);
   if (!canSync(userId) || !supabase) return;
   try {
+    // Prefer RPC: removes habit_logs, momentum_events, affirmation_glows, habits.
+    const { error: rpcError } = await supabase.rpc('delete_habit_cascade', {
+      p_habit_id: habitId,
+    });
+    if (!rpcError) return;
+
+    console.warn('delete_habit_cascade RPC unavailable, falling back:', rpcError.message);
+
     const logs = await supabase
       .from('habit_logs')
       .delete()
       .eq('user_id', userId as string)
       .eq('habit_id', habitId);
     if (logs.error) console.warn('habit_logs cascade delete failed:', logs.error.message);
+
+    // Best-effort: append-only trigger may block until migration 015 is applied.
+    const events = await supabase
+      .from('momentum_events')
+      .delete()
+      .eq('user_id', userId as string)
+      .eq('habit_id', habitId);
+    if (events.error) console.warn('momentum_events cascade delete failed:', events.error.message);
 
     const habits = await supabase
       .from('habits')

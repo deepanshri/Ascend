@@ -45,7 +45,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   onCompleteToday,
   onToggleFallbackMode,
   onResetToday,
-  onNotify,
+  onNotify: _onNotify,
   onLongPress,
   onDismissLongPress,
   onOpenEdit: _onOpenEdit,
@@ -373,7 +373,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
         // In fallback mode -> swiped left again to cancel fallback and return to normal!
         onToggleFallbackMode(habit.id);
       } else if (!isScheduledToday) {
-        onNotify('Off day — fallback only on scheduled days');
+        // Off day: allow the gesture to settle without toast / native alerts.
       } else {
         // Normal -> switch to fallback mode (does NOT mark complete!)
         setCelebration('fallback');
@@ -558,7 +558,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                   : isFallbackActive && !isTodayDone
                   ? 'shadow-sm border-accent ring-1 ring-accent bg-accent-soft active:scale-[0.995]'
                   : habit.isKeystone
-                  ? 'overflow-visible bg-emerald-50/90 dark:bg-blue-950/40 border-blue-500/50 shadow-[0_0_12px_rgba(59,130,246,0.3)] active:scale-[0.995]'
+                  ? 'overflow-visible bg-emerald-50/90 dark:bg-blue-950/40 border-emerald-500/60 shadow-[0_0_12px_rgba(16,185,129,0.35)] dark:border-blue-500/60 dark:shadow-[0_0_12px_rgba(59,130,246,0.35)] active:scale-[0.995]'
                   : 'shadow-sm border-line active:scale-[0.995]'
               }`}
             >

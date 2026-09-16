@@ -10,6 +10,13 @@ export const MAX_CYCLE_DAYS = 10;
 export const DEFAULT_CYCLE_DAYS: CycleDays = 7;
 export const OVERFLOW_FILL_RATIO = 0.8;
 export const CYCLE_DAYS_STORAGE_KEY = 'ascend_accumulation_cycle_days';
+/** Inclusive start day of the active Bowl cycle (local calendar). */
+export const CYCLE_START_STORAGE_KEY = 'ascend_bowl_cycle_start_iso';
+/** ms epoch — completions with timestamp < this are excluded from the active Bowl (not from Ledger). */
+export const CYCLE_RESET_AT_STORAGE_KEY = 'ascend_bowl_cycle_reset_at';
+/** Completed Bowl cycle summaries for Report → Cycle History (local only). */
+export const CYCLE_HISTORY_STORAGE_KEY = 'ascend_bowl_cycle_history';
+const CYCLE_HISTORY_MAX = 40;
 
 export interface BowlFill {
   cycleDays: number;
@@ -25,6 +32,25 @@ export interface AccumulationPiece {
   habitId: string;
   isoDate: string;
   kind: 'full' | 'fallback';
+}
+
+export interface CompletedCycleSummary {
+  id: string;
+  cycleDays: number;
+  startIso: string;
+  endIso: string;
+  votes: number;
+  capacity: number;
+  fillPercent: number;
+  isOverflowing: boolean;
+  morningVotes: number;
+  nightVotes: number;
+  completedAt: number;
+}
+
+export interface BowlCycleEpoch {
+  startIso: string;
+  resetAt: number;
 }
 
 export function isCycleDays(value: unknown): value is CycleDays {
@@ -58,6 +84,84 @@ export function persistCycleDays(days: CycleDays): void {
   }
 }
 
+export function readBowlCycleEpoch(todayIso: string = toISODate()): BowlCycleEpoch {
+  try {
+    const startRaw = localStorage.getItem(CYCLE_START_STORAGE_KEY);
+    const resetRaw = localStorage.getItem(CYCLE_RESET_AT_STORAGE_KEY);
+    const startIso = startRaw && /^\d{4}-\d{2}-\d{2}$/.test(startRaw) ? startRaw : todayIso;
+    const resetAt = resetRaw ? Number(resetRaw) : 0;
+    return {
+      startIso: startIso > todayIso ? todayIso : startIso,
+      resetAt: Number.isFinite(resetAt) && resetAt > 0 ? resetAt : 0,
+    };
+  } catch {
+    return { startIso: todayIso, resetAt: 0 };
+  }
+}
+
+export function persistBowlCycleEpoch(epoch: BowlCycleEpoch): void {
+  try {
+    localStorage.setItem(CYCLE_START_STORAGE_KEY, epoch.startIso);
+    localStorage.setItem(CYCLE_RESET_AT_STORAGE_KEY, String(epoch.resetAt));
+  } catch {
+    // private mode
+  }
+}
+
+export function readCycleHistory(): CompletedCycleSummary[] {
+  try {
+    const raw = localStorage.getItem(CYCLE_HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as CompletedCycleSummary[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function persistCycleHistory(entries: CompletedCycleSummary[]): void {
+  try {
+    localStorage.setItem(CYCLE_HISTORY_STORAGE_KEY, JSON.stringify(entries.slice(0, CYCLE_HISTORY_MAX)));
+  } catch {
+    // private mode
+  }
+}
+
+/**
+ * Archive a finished Bowl cycle into local Cycle History only.
+ * Does NOT write habit_logs, momentum_events, or Identity Ledger evidence.
+ */
+export function archiveCompletedCycle(
+  summary: Omit<CompletedCycleSummary, 'id' | 'completedAt'>
+): CompletedCycleSummary {
+  const entry: CompletedCycleSummary = {
+    ...summary,
+    id: `cycle-${summary.endIso}-${Date.now()}`,
+    completedAt: Date.now(),
+  };
+  const history = [entry, ...readCycleHistory()].slice(0, CYCLE_HISTORY_MAX);
+  persistCycleHistory(history);
+  return entry;
+}
+
+/** Open a fresh Bowl epoch. Local cycle keys only — never Ledger / momentum_events. */
+export function resetBowlCycleEpoch(endIso: string, resetAt: number = Date.now()): BowlCycleEpoch {
+  const epoch = { startIso: endIso, resetAt };
+  persistBowlCycleEpoch(epoch);
+  return epoch;
+}
+
+/**
+ * Archive + reset in one step (tests / non-UI callers).
+ * Writes ONLY cycle localStorage keys — never habit_logs, momentum_events, or Identity Ledger evidence.
+ */
+export function completeBowlCycle(summary: Omit<CompletedCycleSummary, 'id' | 'completedAt'>): CompletedCycleSummary {
+  const entry = archiveCompletedCycle(summary);
+  resetBowlCycleEpoch(summary.endIso, entry.completedAt);
+  return entry;
+}
+
+/** Sliding fallback when no epoch is active (legacy). Prefer activeCycleWindow. */
 export function cycleWindow(
   cycleDays: number,
   endIso: string = toISODate()
@@ -67,6 +171,20 @@ export function cycleWindow(
     startIso: addDaysIso(endIso, -(days - 1)),
     endIso,
   };
+}
+
+/** Fixed cycle from epoch start through today (capped at cycleDays). */
+export function activeCycleWindow(
+  cycleDays: number,
+  epochStartIso: string,
+  todayIso: string = toISODate()
+): { startIso: string; endIso: string } {
+  const days = Math.min(MAX_CYCLE_DAYS, Math.max(1, Math.round(cycleDays)));
+  const startIso = epochStartIso || todayIso;
+  const naturalEnd = addDaysIso(startIso, days - 1);
+  const endIso = todayIso < naturalEnd ? todayIso : naturalEnd;
+  if (endIso < startIso) return { startIso, endIso: startIso };
+  return { startIso, endIso };
 }
 
 /** Light theme = Morning bowl, Dark theme = Night bowl. */
@@ -118,13 +236,15 @@ export function accumulationPiecesFromLogs(
   activeHabitIds: Iterable<string>,
   startIso: string,
   endIso: string,
-  origin: Date = new Date()
+  origin: Date = new Date(),
+  minTimestamp = 0
 ): AccumulationPiece[] {
   const allow = new Set(activeHabitIds);
   const byKey = new Map<string, AccumulationPiece & { timestamp: number }>();
 
   for (const event of events) {
     if (!allow.has(event.habitId)) continue;
+    if (minTimestamp > 0 && event.timestamp < minTimestamp) continue;
     const iso = resolveEventIsoDate(event, origin);
     if (!iso || iso < startIso || iso > endIso) continue;
     const id = `${event.habitId}::${iso}`;

@@ -6,18 +6,16 @@ import {
   FRIENDSHIPS_TABLE,
   connectByFriendCode,
   ensureProfileDirectory,
-  fetchFriendActivity,
+  fetchFriendIdentityLedger,
   fetchFriendships,
   fetchOwnFriendCode,
-  fetchReceivedGlows,
-  fetchSentGlowEventIds,
+  incomingPending,
+  outgoingPending,
   removeFriendship,
-  retractAffirmationGlow,
-  sendAffirmationGlow,
-  type FriendActivityItem,
+  respondToFriendRequest,
   type FriendEdge,
-  type ReceivedAffirmationGlow,
-} from '../services/socialService';
+  type FriendIdentityLedger,
+} from '../services/friendService';
 import { formatFriendCodeDisplay, isValidFriendCode, normalizeFriendCode } from '../utils/friendCode';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import { overlayFade, sheetMotion, tapPress } from '../lib/motionPresets';
@@ -31,21 +29,14 @@ export interface FriendsFeedProps {
   userEmail?: string;
   userName?: string;
   variant?: 'full' | 'drawer' | 'modal' | 'icon';
+  /**
+   * invite — Home/Personal: share code + send request + accept/decline (no roster details)
+   * roster — Reports: accepted friends only; tap opens identity ledger
+   */
+  mode?: 'invite' | 'roster';
   isOpen?: boolean;
   onClose?: () => void;
-}
-
-function formatActivityTime(timestamp: number): string {
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
-  const delta = Date.now() - timestamp;
-  const minutes = Math.floor(delta / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  return new Date(timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  cycleDays?: number;
 }
 
 export const FriendsFeed: React.FC<FriendsFeedProps> = ({
@@ -54,11 +45,12 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   userEmail = '',
   userName = '',
   variant = 'full',
+  mode = variant === 'full' ? 'roster' : 'invite',
   isOpen,
   onClose,
+  cycleDays = 7,
 }) => {
   const [edges, setEdges] = useState<FriendEdge[]>([]);
-  const [activity, setActivity] = useState<FriendActivityItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(variant !== 'drawer' && variant !== 'icon');
   const [friendCode, setFriendCode] = useState('');
@@ -67,8 +59,9 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<'ok' | 'error'>('ok');
-  const [sentGlows, setSentGlows] = useState<Set<string>>(new Set());
-  const [receivedGlows, setReceivedGlows] = useState<ReceivedAffirmationGlow[]>([]);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [ledger, setLedger] = useState<FriendIdentityLedger | null>(null);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -79,11 +72,19 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   }, []);
 
   const modalVisible = variant === 'modal' ? Boolean(isOpen ?? true) : variant === 'icon' && drawerOpen;
-  const keyboardInset = useKeyboardInset(modalVisible);
+  const keyboardInset = useKeyboardInset(modalVisible || Boolean(ledger));
   const signedIn = Boolean(userId && !isGuest && !String(userId).startsWith('guest_'));
   const accepted = useMemo(
     () => (Array.isArray(edges) ? edges : []).filter((edge) => edge.status === 'accepted'),
     [edges]
+  );
+  const incoming = useMemo(
+    () => (signedIn && userId ? incomingPending(edges, userId) : []),
+    [edges, signedIn, userId]
+  );
+  const outgoing = useMemo(
+    () => (signedIn && userId ? outgoingPending(edges, userId) : []),
+    [edges, signedIn, userId]
   );
 
   const flash = (message: string, tone: 'ok' | 'error' = 'ok') => {
@@ -98,9 +99,6 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     if (!signedIn || !userId) {
       if (!mountedRef.current) return;
       setEdges([]);
-      setActivity([]);
-      setSentGlows(new Set());
-      setReceivedGlows([]);
       setFriendCode('');
       return;
     }
@@ -109,23 +107,12 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
       const code = await ensureProfileDirectory(userId, userEmail, userName);
       const nextCode = code || (await fetchOwnFriendCode(userId));
       const nextEdges = (await fetchFriendships(userId)) ?? [];
-      const [nextActivity, nextSent, nextReceived] = await Promise.all([
-        fetchFriendActivity(userId, nextEdges),
-        fetchSentGlowEventIds(userId),
-        fetchReceivedGlows(userId),
-      ]);
       if (!mountedRef.current) return;
       setFriendCode(nextCode);
       setEdges(Array.isArray(nextEdges) ? nextEdges : []);
-      setActivity(Array.isArray(nextActivity) ? nextActivity : []);
-      setSentGlows(nextSent instanceof Set ? nextSent : new Set());
-      setReceivedGlows(Array.isArray(nextReceived) ? nextReceived : []);
     } catch {
       if (!mountedRef.current) return;
       setEdges([]);
-      setActivity([]);
-      setSentGlows(new Set());
-      setReceivedGlows([]);
     } finally {
       if (mountedRef.current) setLoading(false);
     }
@@ -138,21 +125,15 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   useEffect(() => {
     if (!signedIn || !supabase || !isSupabaseConfigured) return;
     const channel = supabase
-      .channel(`friends-feed-${userId}`)
+      .channel(`friends-feed-${userId}-${mode}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: FRIENDSHIPS_TABLE }, () => {
-        void refresh();
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'momentum_events' }, () => {
-        void refresh();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'affirmation_glows' }, () => {
         void refresh();
       })
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [signedIn, userId, refresh]);
+  }, [signedIn, userId, mode, refresh]);
 
   const handleCopyCode = async () => {
     if (!friendCode) return;
@@ -192,38 +173,201 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     }
   };
 
+  const handleRespond = async (edgeId: string, status: 'accepted' | 'declined') => {
+    setRespondingId(edgeId);
+    const ok = await respondToFriendRequest(edgeId, status);
+    setRespondingId(null);
+    flash(
+      ok
+        ? status === 'accepted'
+          ? 'Friend request accepted.'
+          : 'Request declined.'
+        : 'Could not update request.',
+      ok ? 'ok' : 'error'
+    );
+    if (ok) await refresh();
+  };
+
   const handleUnfriend = async (edge: FriendEdge) => {
     if (!userId) return;
     const ok = await removeFriendship(edge.id, { userId, peerId: edge.peerId });
     flash(ok ? 'Friend removed.' : 'Could not remove friend.', ok ? 'ok' : 'error');
-    if (ok) await refresh();
+    if (ok) {
+      if (ledger?.friendId === edge.peerId) setLedger(null);
+      await refresh();
+    }
   };
 
-  const handleGlow = async (item: FriendActivityItem) => {
-    if (!userId) return;
-    if (sentGlows.has(item.id)) {
-      const ok = await retractAffirmationGlow(userId, item.id);
-      if (ok) {
-        setSentGlows((prev) => {
-          const next = new Set(prev);
-          next.delete(item.id);
-          return next;
-        });
-        flash('Glow taken back.');
-      }
-      return;
-    }
-    const result = await sendAffirmationGlow(userId, item.friendId, item.id);
-    flash(result.message, result.ok ? 'ok' : 'error');
-    if (result.ok) {
-      setSentGlows((prev) => new Set(prev).add(item.id));
+  const openFriendLedger = async (edge: FriendEdge) => {
+    if (!userId || edge.status !== 'accepted') return;
+    setLedgerLoading(true);
+    setLedger({
+      friendId: edge.peerId,
+      displayName: edge.peerName,
+      avatarUrl: edge.peerAvatar,
+      identityStatement: 'Loading…',
+      cycleCompletions: 0,
+      cycleDays,
+    });
+    const snapshot = await fetchFriendIdentityLedger(userId, edge.peerId, cycleDays);
+    if (!mountedRef.current) return;
+    setLedgerLoading(false);
+    if (snapshot) setLedger(snapshot);
+    else {
+      setLedger(null);
+      flash('Could not load friend ledger.', 'error');
     }
   };
+
+  const inviteBody = (
+    <>
+      <div className="rounded-2xl border border-[#22C55E]/30 dark:border-[#3B82F6]/40 bg-emerald-50/70 dark:bg-blue-950/40 p-3.5 space-y-2">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Your Friend Code</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[26px] font-black tracking-[0.18em] text-ink tabular-nums">
+            {friendCode ? formatFriendCodeDisplay(friendCode) : '------'}
+          </p>
+          <motion.button
+            type="button"
+            whileTap={friendCode ? tapPress : undefined}
+            onClick={() => void handleCopyCode()}
+            disabled={!friendCode}
+            className="px-3 py-2 rounded-xl bg-[#22C55E] dark:bg-[#3B82F6] text-white text-[12px] font-bold cursor-pointer disabled:opacity-50 shrink-0"
+          >
+            {copied ? 'Copied' : 'Copy Code'}
+          </motion.button>
+        </div>
+      </div>
+
+      <form onSubmit={(event) => void handleConnect(event)} className="space-y-2">
+        <label className="block text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+          Add Friend
+        </label>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            inputMode="text"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={6}
+            value={connectCode}
+            onChange={(event) => setConnectCode(normalizeFriendCode(event.target.value))}
+            placeholder="A3K9Q2"
+            className="flex-1 px-3.5 py-2 rounded-xl border border-line bg-surface-muted text-ink text-[14px] font-bold tracking-[0.18em] uppercase outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6]"
+          />
+          <motion.button
+            type="submit"
+            whileTap={connecting ? undefined : tapPress}
+            disabled={connecting || !isValidFriendCode(normalizeFriendCode(connectCode))}
+            className="px-3.5 py-2 rounded-xl bg-[#22C55E] dark:bg-[#3B82F6] text-white text-[12px] font-bold cursor-pointer disabled:opacity-50 shrink-0"
+          >
+            {connecting ? '…' : 'Invite'}
+          </motion.button>
+        </div>
+        <p className="text-[11px] text-ink-muted leading-relaxed">
+          They must Accept before you appear in each other&apos;s Reports.
+        </p>
+      </form>
+
+      {incoming.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+            Incoming Requests ({incoming.length})
+          </p>
+          {incoming.map((edge) => (
+            <div
+              key={edge.id}
+              className="p-2.5 rounded-xl border border-amber-200/80 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/30 flex items-center justify-between gap-2"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <ProfileAvatar
+                  value={edge.peerAvatar}
+                  alt={`${edge.peerName} avatar`}
+                  className="w-10 h-10 rounded-xl"
+                />
+                <p className="text-[13px] font-semibold text-ink truncate">{edge.peerName}</p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  disabled={respondingId === edge.id}
+                  onClick={() => void handleRespond(edge.id, 'accepted')}
+                  className="px-2.5 py-1 rounded-lg bg-[#22C55E] dark:bg-[#3B82F6] text-white text-[11px] font-bold cursor-pointer disabled:opacity-50"
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  disabled={respondingId === edge.id}
+                  onClick={() => void handleRespond(edge.id, 'declined')}
+                  className="px-2.5 py-1 rounded-lg border border-line text-ink text-[11px] font-bold cursor-pointer disabled:opacity-50"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {outgoing.length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+            Pending Invites ({outgoing.length})
+          </p>
+          {outgoing.map((edge) => (
+            <p key={edge.id} className="text-[12.5px] text-ink-muted px-1">
+              Waiting on <span className="font-semibold text-ink">{edge.peerName}</span> to accept
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+
+  const rosterBody = (
+    <div className="space-y-2">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+        Connected Friends ({accepted.length})
+      </p>
+      {loading && accepted.length === 0 ? (
+        <p className="text-[12.5px] text-ink-muted">Loading friends…</p>
+      ) : accepted.length === 0 ? (
+        <p className="text-[12.5px] text-ink-muted leading-relaxed">
+          No accepted friends yet. Send an invite from Home or Personal — they must Accept first.
+        </p>
+      ) : (
+        accepted.map((edge) => (
+          <button
+            key={edge.id}
+            type="button"
+            onClick={() => void openFriendLedger(edge)}
+            className="w-full p-2.5 rounded-xl border border-line bg-surface-muted flex items-center justify-between gap-2 cursor-pointer text-left hover:border-emerald-300/70 dark:hover:border-blue-700/70 transition"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <ProfileAvatar
+                value={edge.peerAvatar}
+                alt={`${edge.peerName} avatar`}
+                className="w-12 h-12 rounded-xl"
+              />
+              <p className="text-[13px] font-semibold text-ink truncate">{edge.peerName}</p>
+            </div>
+            <span className="text-[11px] font-bold text-emerald-700 dark:text-blue-400 shrink-0">
+              Ledger →
+            </span>
+          </button>
+        ))
+      )}
+    </div>
+  );
 
   const body = (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-[16px] font-extrabold text-ink tracking-tight">Friends</h2>
+        <h2 className="text-[16px] font-extrabold text-ink tracking-tight">
+          {mode === 'roster' ? 'Friend Reports' : 'Add Friends'}
+        </h2>
         {(onClose || variant === 'icon') && (
           <button
             type="button"
@@ -240,162 +384,85 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
       </div>
 
       {!signedIn ? (
-        <p className="text-[12.5px] text-ink-muted leading-relaxed">Sign in to share your friend code and connect instantly.</p>
+        <p className="text-[12.5px] text-ink-muted leading-relaxed">
+          Sign in to {mode === 'roster' ? 'view friend reports.' : 'share your friend code and send invites.'}
+        </p>
+      ) : mode === 'invite' ? (
+        inviteBody
       ) : (
-        <>
-          <div className="rounded-2xl border border-[#22C55E]/30 dark:border-[#3B82F6]/40 bg-emerald-50/70 dark:bg-blue-950/40 p-3.5 space-y-2">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Your Friend Code</p>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[26px] font-black tracking-[0.18em] text-ink tabular-nums">
-                {friendCode ? formatFriendCodeDisplay(friendCode) : '------'}
-              </p>
-              <motion.button
-                type="button"
-                whileTap={friendCode ? tapPress : undefined}
-                onClick={() => void handleCopyCode()}
-                disabled={!friendCode}
-                className="px-3 py-2 rounded-xl bg-[#22C55E] dark:bg-[#3B82F6] text-white text-[12px] font-bold cursor-pointer disabled:opacity-50 shrink-0"
-              >
-                {copied ? 'Copied' : 'Copy Code'}
-              </motion.button>
-            </div>
-          </div>
-
-          <form onSubmit={(event) => void handleConnect(event)} className="space-y-2">
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-ink-muted">
-              Connect via Code
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                inputMode="text"
-                autoCapitalize="characters"
-                autoCorrect="off"
-                spellCheck={false}
-                maxLength={6}
-                value={connectCode}
-                onChange={(event) => setConnectCode(normalizeFriendCode(event.target.value))}
-                placeholder="A3K9Q2"
-                className="flex-1 px-3.5 py-2 rounded-xl border border-line bg-surface-muted text-ink text-[14px] font-bold tracking-[0.18em] uppercase outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6]"
-              />
-              <motion.button
-                type="submit"
-                whileTap={connecting ? undefined : tapPress}
-                disabled={connecting || !isValidFriendCode(normalizeFriendCode(connectCode))}
-                className="px-3.5 py-2 rounded-xl bg-[#22C55E] dark:bg-[#3B82F6] text-white text-[12px] font-bold cursor-pointer disabled:opacity-50 shrink-0"
-              >
-                {connecting ? '…' : 'Connect'}
-              </motion.button>
-            </div>
-          </form>
-
-          <div className="space-y-2">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Friends ({accepted.length})</p>
-            {accepted.length === 0 ? (
-              <p className="text-[12.5px] text-ink-muted leading-relaxed">
-                No friends yet. Share your code or enter theirs to connect immediately.
-              </p>
-            ) : (
-              accepted.map((edge) => (
-                <div
-                  key={edge.id}
-                  className="p-2.5 rounded-xl border border-line bg-surface-muted flex items-center justify-between gap-2"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <ProfileAvatar
-                      value={edge.peerAvatar}
-                      alt={`${edge.peerName} avatar`}
-                      className="w-12 h-12 rounded-xl"
-                    />
-                    <p className="text-[13px] font-semibold text-ink truncate">{edge.peerName}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleUnfriend(edge)}
-                    className="px-2 py-1 rounded-xl border border-line text-ink text-[11px] font-bold cursor-pointer shrink-0"
-                  >
-                    Unfriend
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Activity</p>
-            {loading && activity.length === 0 && receivedGlows.length === 0 ? (
-              <p className="text-[12.5px] text-ink-muted">Loading friend activity…</p>
-            ) : (
-              <div className="space-y-2">
-                {receivedGlows.length > 0 ? (
-                  <ul className="space-y-1.5">
-                    {receivedGlows.map((glow) => (
-                      <li key={glow.id} className="p-2.5 rounded-xl border border-amber-200/80 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/30 flex items-center gap-2">
-                        <ProfileAvatar
-                          value={glow.fromAvatar}
-                          alt={`${glow.fromName} avatar`}
-                          className="w-12 h-12 rounded-xl"
-                        />
-                        <div className="min-w-0">
-                          <p className="text-[12.5px] text-ink leading-relaxed">{glow.fromName} sent you an Affirmation Glow</p>
-                          {glow.note ? <p className="text-[11px] text-ink-muted mt-0.5 leading-relaxed">{glow.note}</p> : null}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                {activity.length === 0 ? (
-                  <p className="text-[12.5px] text-ink-muted leading-relaxed">
-                    {accepted.length === 0 ? 'Connect to see friend activity here.' : 'Friends have not logged habits yet.'}
-                  </p>
-                ) : (
-                  <ul className="space-y-1.5">
-                    {activity.map((item) => {
-                      const glowed = sentGlows.has(item.id);
-                      return (
-                        <li key={item.id} className="p-2.5 rounded-xl border border-line bg-surface-muted flex items-start justify-between gap-2">
-                          <div className="flex items-start gap-2 min-w-0">
-                            <ProfileAvatar
-                              value={item.friendAvatar}
-                              alt={`${item.friendName} avatar`}
-                              className="w-12 h-12 rounded-xl"
-                            />
-                            <div className="min-w-0">
-                              <p className="text-[12.5px] text-ink leading-relaxed">{item.text}</p>
-                              <p className="text-[10.5px] text-ink-muted mt-0.5">{formatActivityTime(item.timestamp)}</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => void handleGlow(item)}
-                            title={glowed ? 'Take back Affirmation Glow' : 'Send Affirmation Glow'}
-                            aria-label={glowed ? 'Take back Affirmation Glow' : 'Send Affirmation Glow'}
-                            aria-pressed={glowed}
-                            className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 cursor-pointer transition ${
-                              glowed
-                                ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 ring-1 ring-amber-400/70'
-                                : 'bg-surface border border-line text-ink-muted hover:text-amber-700 hover:border-amber-300'
-                            }`}
-                          >
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill={glowed ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8">
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M12 21s-6.5-4.35-9.2-8.2C.7 9.9 2.2 6 6.1 6c1.9 0 3.1 1 3.9 2.2C10.8 7 12 6 13.9 6c3.9 0 5.4 3.9 3.3 6.8C18.5 16.65 12 21 12 21z"
-                              />
-                            </svg>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            )}
-          </div>
-        </>
+        rosterBody
       )}
     </div>
+  );
+
+  const ledgerModal = (
+    <AnimatePresence>
+      {ledger && (
+        <motion.div
+          className="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-slate-900/45 backdrop-blur-xs transform-gpu"
+          initial={overlayFade.initial}
+          animate={overlayFade.animate}
+          exit={overlayFade.exit}
+          transition={overlayFade.transition}
+          style={{
+            paddingTop: 'max(1rem, env(safe-area-inset-top))',
+            paddingBottom: `max(1rem, calc(1rem + ${keyboardInset}px))`,
+          }}
+          onClick={() => setLedger(null)}
+        >
+          <motion.div
+            className="w-full max-w-[390px] bg-surface rounded-2xl p-4 border border-line shadow-2xl space-y-3 transform-gpu"
+            initial={sheetMotion.initial}
+            animate={sheetMotion.animate}
+            exit={sheetMotion.exit}
+            transition={sheetMotion.transition}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <ProfileAvatar
+                  value={ledger.avatarUrl}
+                  alt={`${ledger.displayName} avatar`}
+                  className="w-12 h-12 rounded-xl"
+                />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+                    Identity Ledger
+                  </p>
+                  <h3 className="text-[16px] font-extrabold text-ink truncate">{ledger.displayName}</h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLedger(null)}
+                className="w-8 h-8 rounded-xl bg-surface-muted text-ink-muted leading-none cursor-pointer shrink-0"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <blockquote className="rounded-xl border border-line bg-surface-muted px-3.5 py-3 text-[13px] text-ink leading-relaxed">
+              {ledgerLoading ? 'Loading…' : `"${ledger.identityStatement}"`}
+            </blockquote>
+            <p className="inline-flex items-center rounded-full border border-emerald-200/80 dark:border-blue-800/70 bg-emerald-50/80 dark:bg-blue-950/40 px-3 py-1.5 text-[12px] font-bold text-emerald-800 dark:text-blue-200 tabular-nums">
+              {ledgerLoading
+                ? '…'
+                : `${ledger.cycleCompletions} Habit${ledger.cycleCompletions === 1 ? '' : 's'} Completed · ${ledger.cycleDays}d cycle`}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const edge = accepted.find((item) => item.peerId === ledger.friendId);
+                if (edge) void handleUnfriend(edge);
+              }}
+              className="w-full py-2 rounded-xl border border-line text-[12px] font-bold text-ink-muted cursor-pointer"
+            >
+              Unfriend
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 
   if (variant === 'drawer') {
@@ -406,12 +473,20 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
           onClick={() => setDrawerOpen((prev) => !prev)}
           className="w-full p-3.5 px-4 flex items-center justify-between cursor-pointer"
         >
-          <span className="text-[14.5px] font-bold text-ink">Friends</span>
-          <svg className={`w-4 h-4 text-ink-muted transition-transform ${drawerOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <span className="text-[14.5px] font-bold text-ink">
+            {mode === 'roster' ? 'Friend Reports' : 'Friends'}
+          </span>
+          <svg
+            className={`w-4 h-4 text-ink-muted transition-transform ${drawerOpen ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M19 9l-7 7-7-7" />
           </svg>
         </button>
         {drawerOpen && <div className="px-4 pb-4">{body}</div>}
+        {ledgerModal}
         <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
       </section>
     );
@@ -459,13 +534,14 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
           type="button"
           whileTap={tapPress}
           onClick={() => setDrawerOpen(true)}
-          aria-label="Friends"
-          title="Friends"
+          aria-label="Add Friends"
+          title="Add Friends"
           className={HEADER_ICON_BTN_CLASS}
         >
           <UserPlus className="w-4 h-4" strokeWidth={2.2} />
         </motion.button>
         {friendsModal}
+        {ledgerModal}
         <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
       </span>
     );
@@ -475,6 +551,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     return (
       <>
         {friendsModal}
+        {ledgerModal}
         <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
       </>
     );
@@ -483,6 +560,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   return (
     <section className="bg-surface rounded-2xl p-4.5 border border-line shadow-xs space-y-3">
       {body}
+      {ledgerModal}
       <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
     </section>
   );

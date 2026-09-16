@@ -90,9 +90,10 @@ export async function syncAuthenticatedAccount(
   const profile = await fetchUserProfile(session, input.interests);
   const interests = profile.interests.length > 0 ? profile.interests : input.interests;
   const hasCompletedTutorial = profile.has_completed_tutorial || input.hasCompletedTutorial;
+  // Sticky: once completed locally or remotely, never push false back to profiles.
   await persistUserProfile(session, {
     interests,
-    has_completed_tutorial: hasCompletedTutorial,
+    has_completed_tutorial: Boolean(hasCompletedTutorial),
   });
 
   await purgeSeedHabitsFromTable(session.id);

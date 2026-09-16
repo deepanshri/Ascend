@@ -22,6 +22,10 @@ export function useBowlMode(): {
 }
 
 /** Ensure fetched/local habits always carry a resolved `timeOfDay` for bowl routing. */
+/**
+ * Habits split by morning/night for dual-bowl capacity analytics.
+ * Home Accumulation Bowl still merges both across the active multi-day cycle window.
+ */
 export function useHabits(habits: Habit[]): {
   habits: Habit[];
   morningHabits: Habit[];
@@ -56,10 +60,10 @@ export function netDailyCompletionCount(
 }
 
 /** Stamp the habit's bowl on a completion or momentum payload. */
-export function withHabitTimeOfDay<T extends { timeOfDay?: TimeOfDay }>(
+export function withHabitTimeOfDay<T>(
   payload: T,
   habit: Pick<Habit, 'timeOfDay' | 'timestamp'>
-): T {
+): T & { timeOfDay: TimeOfDay } {
   return { ...payload, timeOfDay: resolveHabitTimeOfDay(habit) };
 }
 

@@ -1,6 +1,6 @@
 /**
- * Social graph + affirmation glows.
- * All client queries target public.friendships (never public.friends).
+ * Friend request / roster workflows.
+ * Thin service layer over lib/friends + social graph RPCs.
  */
 export {
   FRIENDSHIPS_TABLE,
@@ -22,10 +22,10 @@ export {
   outgoingPending,
   removeFriendship,
   respondToFriendRequest,
-  retractAffirmationGlow,
   searchProfiles,
   sendAffirmationGlow,
   sendFriendRequest,
+  retractAffirmationGlow,
 } from '../lib/friends';
 
 export type {

@@ -26,6 +26,11 @@ const config: CapacitorConfig = {
     LocalNotifications: {
       iconColor: '#23C15D',
     },
+    Keyboard: {
+      resize: 'body',
+      style: 'DARK',
+      resizeOnFullScreen: true,
+    },
     SystemBars: {
       insetsHandling: 'css',
       style: 'LIGHT',

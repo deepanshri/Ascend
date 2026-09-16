@@ -13,10 +13,20 @@ export function getLocalTutorialCompleted(): boolean {
   }
 }
 
-export function setLocalTutorialCompleted(completed: boolean) {
+export function setLocalTutorialCompleted(completed: boolean, options?: { force?: boolean }) {
   try {
+    // Completion is sticky against sync races, but auth/logout may force reset.
+    if (!completed && !options?.force && getLocalTutorialCompleted()) return;
     localStorage.setItem(TUTORIAL_STORAGE_KEY, completed ? 'true' : 'false');
   } catch {}
+}
+
+/** True if local cache, memory, or remote says the tour was finished. */
+export function resolveTutorialCompleted(
+  remoteOrCached?: boolean | null,
+  memory?: boolean | null
+): boolean {
+  return Boolean(remoteOrCached) || Boolean(memory) || getLocalTutorialCompleted();
 }
 
 function parseInterests(raw: unknown): string[] {
@@ -87,7 +97,10 @@ export async function fetchUserProfile(
     const profile: UserProfile = {
       id: String(data.id || session.id),
       interests: interests.length > 0 ? interests : fallbackInterests,
-      has_completed_tutorial: Boolean(data.has_completed_tutorial) || fallback.has_completed_tutorial,
+      has_completed_tutorial: resolveTutorialCompleted(
+        Boolean(data.has_completed_tutorial),
+        fallback.has_completed_tutorial
+      ),
       avatar_url,
     };
     cacheProfileLocally(profile);
@@ -107,17 +120,27 @@ export async function persistUserProfile(
     persistStoredAvatarId(nextPatch.avatar_url);
   }
   if (typeof nextPatch.has_completed_tutorial === 'boolean') {
-    setLocalTutorialCompleted(nextPatch.has_completed_tutorial);
+    if (nextPatch.has_completed_tutorial) {
+      setLocalTutorialCompleted(true);
+    } else if (!getLocalTutorialCompleted()) {
+      setLocalTutorialCompleted(false);
+    } else {
+      // Local already completed — do not let a sync race write false upstream.
+      nextPatch.has_completed_tutorial = true;
+    }
   }
 
   const cached = readCachedProfile(session.id);
+  const resolvedTutorial = resolveTutorialCompleted(
+    typeof nextPatch.has_completed_tutorial === 'boolean'
+      ? nextPatch.has_completed_tutorial
+      : null,
+    cached?.has_completed_tutorial
+  );
   cacheProfileLocally({
     id: session.id,
     interests: nextPatch.interests ?? cached?.interests ?? [],
-    has_completed_tutorial:
-      typeof nextPatch.has_completed_tutorial === 'boolean'
-        ? nextPatch.has_completed_tutorial
-        : Boolean(cached?.has_completed_tutorial),
+    has_completed_tutorial: resolvedTutorial,
     avatar_url:
       typeof nextPatch.avatar_url === 'string'
         ? nextPatch.avatar_url
@@ -128,5 +151,11 @@ export async function persistUserProfile(
     return;
   }
 
-  await syncProfilePatch(session.id, nextPatch);
+  await syncProfilePatch(session.id, {
+    ...nextPatch,
+    has_completed_tutorial:
+      typeof nextPatch.has_completed_tutorial === 'boolean'
+        ? resolvedTutorial
+        : nextPatch.has_completed_tutorial,
+  });
 }

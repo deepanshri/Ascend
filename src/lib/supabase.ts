@@ -141,7 +141,7 @@ export async function fetchSequentialMomentumEvents(
           timeOfDay: isTimeOfDay(timeOfDayRaw) ? timeOfDayRaw : undefined,
         } satisfies MomentumEventRecord;
       })
-      .filter((row): row is MomentumEventRecord => row !== null);
+      .filter((row): row is NonNullable<typeof row> => row !== null);
   } catch (err) {
     console.warn('momentum_events fetch offline:', err);
     return [];
@@ -279,12 +279,20 @@ export const authService = {
         setStoredSession(session);
         return session;
       }
-      if (stored?.isGuest) return stored;
+      // Guest sessions are no longer accepted — force Auth screen.
+      if (stored?.isGuest || stored?.id?.startsWith('guest_')) {
+        setStoredSession(null);
+        return null;
+      }
       if (stored && !stored.isGuest) return 'pending';
       return null;
     } catch (err) {
       console.warn('Auth restore offline:', err);
-      return stored?.isGuest ? stored : stored ? 'pending' : null;
+      if (stored?.isGuest || stored?.id?.startsWith('guest_')) {
+        setStoredSession(null);
+        return null;
+      }
+      return stored ? 'pending' : null;
     }
   },
 

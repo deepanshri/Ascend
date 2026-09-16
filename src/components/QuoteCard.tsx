@@ -409,7 +409,7 @@ async function fetchQuotesFromSupabase(categories: string[]): Promise<Quote[]> {
   }
 }
 
-const ROTATE_MS = 12_000;
+const ROTATE_MS = 6 * 60 * 60 * 1000;
 
 interface QuoteCardProps {
   selectedInterests?: string[];

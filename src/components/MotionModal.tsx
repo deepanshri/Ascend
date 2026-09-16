@@ -39,6 +39,9 @@ export const MotionModal: React.FC<MotionModalProps> = ({
             if (closeOnBackdrop && event.target === event.currentTarget) onClose();
           }}
           className={`fixed inset-0 z-50 flex items-center justify-center px-4 transform-gpu ${overlayClassName}`}
+          data-ascend-modal="true"
+          role="dialog"
+          aria-modal="true"
           style={{
             paddingTop: 'max(1rem, env(safe-area-inset-top))',
             paddingBottom: `max(1rem, calc(1rem + ${keyboardInset}px))`,

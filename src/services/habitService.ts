@@ -37,7 +37,7 @@ export function stableHabitLogId(habitId: string, loggedDate: string): string {
   return `${h1.slice(0, 8)}-${h2.slice(0, 4)}-4${h2.slice(4, 7)}-a${h3.slice(0, 3)}-${h3.slice(3, 7)}${h4.slice(0, 8)}`;
 }
 
-/** Permanent habit delete: drops the habits row and associated habit_logs. */
+/** Permanent habit delete: habits + logs + momentum_events (+ glows via RPC). */
 export async function deleteHabit(userId: string | null | undefined, habitId: string): Promise<void> {
   rememberDeletedHabit(habitId);
   await deleteHabitCascade(userId, habitId);

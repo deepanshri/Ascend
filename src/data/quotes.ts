@@ -74,14 +74,59 @@ export const FEATURE_TIPS: Quote[] = [
 ];
 
 export function mergeQuoteBank(quotes: Quote[]): Quote[] {
+  return interleaveQuotesAndTips(quotes, FEATURE_TIPS, 2);
+}
+
+/**
+ * Build a rotation pool where every `quotesPerTip` motivational quotes
+ * are followed by one tip: [Q, Q, Tip, Q, Q, Tip, …].
+ */
+export function interleaveQuotesAndTips(
+  quotes: Quote[],
+  tips: Quote[] = FEATURE_TIPS,
+  quotesPerTip = 2
+): Quote[] {
   const seen = new Set<string>();
-  const merged: Quote[] = [];
-  for (const item of [...quotes, ...FEATURE_TIPS]) {
+  const uniqueQuotes: Quote[] = [];
+  for (const item of quotes) {
     const key = item.text.trim().toLowerCase();
+    if (!key || seen.has(key) || item.kind === 'tip' || item.category === 'Tip') continue;
+    seen.add(key);
+    uniqueQuotes.push({ ...item, kind: item.kind || 'quote' });
+  }
+
+  const uniqueTips: Quote[] = [];
+  for (const tip of tips) {
+    const key = tip.text.trim().toLowerCase();
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    merged.push(item);
+    uniqueTips.push({ ...tip, kind: 'tip', category: tip.category || 'Tip' });
   }
+
+  if (uniqueQuotes.length === 0) return uniqueTips;
+  if (uniqueTips.length === 0) return uniqueQuotes;
+
+  const stride = Math.max(2, Math.min(3, Math.round(quotesPerTip)));
+  const merged: Quote[] = [];
+  let tipIndex = 0;
+  let sinceTip = 0;
+
+  for (const quote of uniqueQuotes) {
+    merged.push(quote);
+    sinceTip += 1;
+    if (sinceTip >= stride && uniqueTips.length > 0) {
+      merged.push(uniqueTips[tipIndex % uniqueTips.length]);
+      tipIndex += 1;
+      sinceTip = 0;
+    }
+  }
+
+  // If the bank is short, still surface remaining tips after the quotes.
+  while (tipIndex < uniqueTips.length && tipIndex < uniqueQuotes.length) {
+    merged.push(uniqueTips[tipIndex]);
+    tipIndex += 1;
+  }
+
   return merged;
 }
 

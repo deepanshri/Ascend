@@ -341,7 +341,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
         className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm flex items-center justify-between cursor-pointer hover:border-slate-200 dark:hover:border-slate-700 transition group"
       >
         <div className="flex items-center space-x-3 min-w-0 pr-2">
-          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-blue-950/70 text-[#165B33] dark:text-blue-300 flex items-center justify-center shrink-0">
             <Target className="w-5 h-5" />
           </div>
           <div className="min-w-0">
@@ -361,7 +361,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-blue-950/70 text-[#165B33] dark:text-blue-300 flex items-center justify-center">
               <Heart className="w-5 h-5 fill-current" />
             </div>
             <div>
@@ -388,7 +388,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                   onClick={() => toggleInterest(tag)}
                   className={`px-3.5 py-1.5 rounded-xl text-[12.5px] font-medium border transition cursor-pointer active:scale-95 ${
                     isSelected
-                      ? 'bg-[#E8F8EE] dark:bg-emerald-950 text-[#165B33] dark:text-emerald-300 border-[#23C15D]/60 font-bold shadow-xs'
+                      ? 'bg-[#E8F8EE] dark:bg-blue-950 text-[#165B33] dark:text-blue-300 border-[#23C15D]/60 dark:border-blue-500/60 font-bold shadow-xs'
                       : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
                   }`}
                 >
@@ -407,7 +407,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
         className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm space-y-3.5"
       >
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-blue-950/70 text-[#165B33] dark:text-blue-300 flex items-center justify-center">
             <Shield className="w-5 h-5" />
           </div>
           <div>
@@ -427,7 +427,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
             disabled={!examShieldActive && Boolean(examShieldStatus && !examShieldStatus.canEnable)}
             className={`py-3 px-3.5 rounded-2xl border text-left transition ${
               examShieldActive
-                ? 'bg-[#E8F8EE] dark:bg-emerald-950/90 border-[#23C15D] text-[#165B33] dark:text-emerald-300 shadow-sm ring-1 ring-[#23C15D] cursor-pointer active:scale-[0.99]'
+                ? 'bg-[#E8F8EE] dark:bg-blue-950/90 border-[#23C15D] dark:border-blue-500 text-[#165B33] dark:text-blue-300 shadow-sm ring-1 ring-[#23C15D] dark:ring-blue-500 cursor-pointer active:scale-[0.99]'
                 : examShieldStatus && !examShieldStatus.canEnable
                   ? 'bg-slate-50/90 dark:bg-slate-800 border-slate-200/90 dark:border-slate-700 text-slate-500 cursor-not-allowed'
                   : 'bg-slate-50/90 dark:bg-slate-800 border-slate-200/90 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer active:scale-[0.99]'
@@ -435,13 +435,13 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <GraduationCap className={`w-4.5 h-4.5 ${examShieldActive ? 'text-[#165B33] dark:text-emerald-300' : 'text-slate-500'}`} />
+                <GraduationCap className={`w-4.5 h-4.5 ${examShieldActive ? 'text-[#165B33] dark:text-blue-300' : 'text-slate-500'}`} />
                 <span className="text-[13px] font-bold">Exam Shield</span>
               </div>
               <span
                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   examShieldActive
-                    ? 'bg-emerald-200/70 dark:bg-emerald-900/80 text-[#165B33] dark:text-emerald-200'
+                    ? 'bg-emerald-200/70 dark:bg-blue-900/80 text-[#165B33] dark:text-blue-200'
                     : 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400'
                 }`}
               >
@@ -471,19 +471,19 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
             onClick={onToggleVacationMode}
             className={`py-3 px-3.5 rounded-2xl border text-left transition cursor-pointer active:scale-[0.99] ${
               vacationModeActive
-                ? 'bg-[#E8F8EE] dark:bg-emerald-950/90 border-[#23C15D] text-[#165B33] dark:text-emerald-300 shadow-sm ring-1 ring-[#23C15D]'
+                ? 'bg-[#E8F8EE] dark:bg-blue-950/90 border-[#23C15D] dark:border-blue-500 text-[#165B33] dark:text-blue-300 shadow-sm ring-1 ring-[#23C15D] dark:ring-blue-500'
                 : 'bg-slate-50/90 dark:bg-slate-800 border-slate-200/90 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
             }`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <Plane className={`w-4.5 h-4.5 ${vacationModeActive ? 'text-[#165B33] dark:text-emerald-300' : 'text-slate-500'}`} />
+                <Plane className={`w-4.5 h-4.5 ${vacationModeActive ? 'text-[#165B33] dark:text-blue-300' : 'text-slate-500'}`} />
                 <span className="text-[13px] font-bold">Vacation</span>
               </div>
               <span
                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   vacationModeActive
-                    ? 'bg-emerald-200/70 dark:bg-emerald-900/80 text-[#165B33] dark:text-emerald-200'
+                    ? 'bg-emerald-200/70 dark:bg-blue-900/80 text-[#165B33] dark:text-blue-200'
                     : 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400'
                 }`}
               >
@@ -503,7 +503,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
 
         {/* Protection Mode feedback */}
         {(examShieldActive || vacationModeActive) && (
-          <div className="p-2.5 rounded-xl bg-[#E8F8EE]/70 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/50 text-[11.5px] text-[#165B33] dark:text-emerald-300 flex items-center space-x-2">
+          <div className="p-2.5 rounded-xl bg-[#E8F8EE]/70 dark:bg-blue-950/40 border border-emerald-200/60 dark:border-blue-800/50 text-[11.5px] text-[#165B33] dark:text-blue-300 flex items-center space-x-2">
             <span className="shrink-0 font-bold">🛡️</span>
             <span>
               {examShieldActive && vacationModeActive
@@ -522,7 +522,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
         className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm flex items-center justify-between"
       >
         <div className="flex items-center space-x-3 min-w-0 pr-2">
-          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-blue-950/70 text-[#165B33] dark:text-blue-300 flex items-center justify-center shrink-0">
             <Users className="w-5 h-5" />
           </div>
           <div className="min-w-0">
@@ -530,14 +530,14 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
               Friends
             </h2>
             <p className="text-[12px] text-slate-400 dark:text-slate-400 mt-0.5">
-              Share your 6-digit code to connect instantly.
+              Share your code or send an invite — they must Accept.
             </p>
           </div>
         </div>
         <button
           type="button"
           onClick={() => setIsFriendModalOpen(true)}
-          className="w-10 h-10 rounded-full bg-[#E8F8EE] dark:bg-emerald-950 text-[#165B33] dark:text-emerald-300 flex items-center justify-center hover:scale-105 active:scale-95 transition cursor-pointer shrink-0 border border-emerald-100 dark:border-emerald-800/40 shadow-xs"
+          className="w-10 h-10 rounded-full bg-[#E8F8EE] dark:bg-blue-950 text-[#165B33] dark:text-blue-300 flex items-center justify-center hover:scale-105 active:scale-95 transition cursor-pointer shrink-0 border border-emerald-100 dark:border-blue-800/40 shadow-xs"
           title="Open friends"
         >
           <Plus className="w-5 h-5 stroke-[2.5]" />
@@ -550,7 +550,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
         className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm flex items-center justify-between cursor-pointer hover:border-slate-200 dark:hover:border-slate-700 transition group"
       >
         <div className="flex items-center space-x-3 min-w-0 pr-2">
-          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-emerald-950/70 text-[#165B33] dark:text-emerald-300 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] dark:bg-blue-950/70 text-[#165B33] dark:text-blue-300 flex items-center justify-center shrink-0">
             <MessageSquare className="w-5 h-5" />
           </div>
           <div className="min-w-0">
@@ -634,7 +634,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                   value={tempName}
                   onChange={(e) => setTempName(e.target.value)}
                   required
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium outline-none focus:border-emerald-500 dark:focus:border-blue-500"
                 />
               </div>
 
@@ -647,7 +647,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                   value={tempDob}
                   onChange={(e) => setTempDob(e.target.value)}
                   placeholder="e.g. 12 Mar 2004"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium outline-none focus:border-emerald-500 dark:focus:border-blue-500"
                 />
               </div>
 
@@ -660,7 +660,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                   value={tempUniversity}
                   onChange={(e) => setTempUniversity(e.target.value)}
                   placeholder="e.g. SASTRA University"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium outline-none focus:border-emerald-500 dark:focus:border-blue-500"
                 />
               </div>
 
@@ -673,7 +673,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                   value={tempLocation}
                   onChange={(e) => setTempLocation(e.target.value)}
                   placeholder="e.g. India"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium outline-none focus:border-emerald-500 dark:focus:border-blue-500"
                 />
               </div>
 
@@ -689,7 +689,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                 <motion.button
                   type="submit"
                   whileTap={tapPress}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-bold cursor-pointer"
                 >
                   Save Changes
                 </motion.button>
@@ -706,7 +706,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       >
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center space-x-2">
-                <Target className="w-5 h-5 text-emerald-600" />
+                <Target className="w-5 h-5 text-emerald-600 dark:text-blue-400" />
                 <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">
                   What do you want to become?
                 </h3>
@@ -729,7 +729,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                 value={tempBecoming}
                 onChange={(e) => setTempBecoming(e.target.value)}
                 placeholder="e.g. I am a world-class engineer building high-impact tools with relentless discipline..."
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium outline-none focus:border-emerald-500 text-[13px]"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium outline-none focus:border-emerald-500 dark:focus:border-blue-500 text-[13px]"
               />
 
               <div className="pt-2 flex space-x-2">
@@ -744,7 +744,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                 <motion.button
                   type="submit"
                   whileTap={tapPress}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-bold cursor-pointer"
                 >
                   Save Identity
                 </motion.button>
@@ -758,6 +758,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
         userEmail={userSession.email}
         userName={name || userSession.name}
         variant="modal"
+        mode="invite"
         isOpen={isFriendModalOpen}
         onClose={() => setIsFriendModalOpen(false)}
       />
@@ -771,7 +772,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       >
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center space-x-2">
-                <HelpCircle className="w-5 h-5 text-emerald-600" />
+                <HelpCircle className="w-5 h-5 text-emerald-600 dark:text-blue-400" />
                 <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">
                   Help & Feedback
                 </h3>
@@ -793,17 +794,17 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                 </span>
                 <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 space-y-1.5">
                   <div className="font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
-                    <span className="w-2 h-2 rounded-full bg-[#16a34a]" />
+                    <span className="w-2 h-2 rounded-full bg-[#16a34a] dark:bg-blue-500" />
                     <span>Priority Dots</span>
                   </div>
                   <p className="text-slate-600 dark:text-slate-400 text-[11.5px] leading-relaxed">
-                    Green = High, Light Green = Mid, and Grey = Low priority. Visible only as a small dot beside the habit title.
+                    High / Mid / Low priority show as a small accent dot beside the habit title (green in light mode, blue in dark mode).
                   </p>
                 </div>
 
                 <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 space-y-1.5">
                   <div className="font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
-                    <GraduationCap className="w-3.5 h-3.5 text-[#165B33] dark:text-emerald-300" />
+                    <GraduationCap className="w-3.5 h-3.5 text-[#165B33] dark:text-blue-300" />
                     <span>Exam Shield & Vacation</span>
                   </div>
                   <p className="text-slate-600 dark:text-slate-400 text-[11.5px] leading-relaxed">
@@ -823,13 +824,13 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
                   onChange={(e) => setFeedbackText(e.target.value)}
                   required
                   placeholder="Tell us what you'd like to improve or see added..."
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-[12px] outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-[12px] outline-none focus:border-emerald-500 dark:focus:border-blue-500"
                 />
                 <motion.button
                   type="submit"
                   whileTap={feedbackSent ? undefined : tapPress}
                   disabled={feedbackSent}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center space-x-2 cursor-pointer"
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-bold flex items-center justify-center space-x-2 cursor-pointer"
                 >
                   {feedbackSent ? (
                     <>

@@ -351,10 +351,25 @@ html, body, #root {
   }
 }
 
+@keyframes subtlePulseDark {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+    filter: drop-shadow(0 0 5px rgba(59, 130, 246, 0.65));
+  }
+}
+
 .pulse-dot {
   animation: subtlePulse 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   transform-origin: center;
   transform-box: fill-box;
+}
+.dark .pulse-dot {
+  animation-name: subtlePulseDark;
 }
 .pulse-dot-delayed {
   animation: subtlePulse 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
@@ -362,11 +377,17 @@ html, body, #root {
   transform-origin: center;
   transform-box: fill-box;
 }
+.dark .pulse-dot-delayed {
+  animation-name: subtlePulseDark;
+}
 .pulse-dot-delayed-2 {
   animation: subtlePulse 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   animation-delay: 1.8s;
   transform-origin: center;
   transform-box: fill-box;
+}
+.dark .pulse-dot-delayed-2 {
+  animation-name: subtlePulseDark;
 }
 
 .chart-ring {
