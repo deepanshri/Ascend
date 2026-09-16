@@ -22,4 +22,5 @@ object WidgetContract {
 
     const val ROW_COUNT = 5
     const val HABITS_LIST_VIEW_ID = "widget_habits_list"
+    const val TASKS_LIST_VIEW_ID = "widget_tasks_list"
 }

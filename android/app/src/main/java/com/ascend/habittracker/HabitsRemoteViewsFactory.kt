@@ -27,7 +27,7 @@ class HabitsRemoteViewsFactory(
     override fun getCount(): Int = rows.length()
 
     override fun getViewAt(position: Int): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.widget_habit_item)
+        val views = RemoteViews(context.packageName, R.layout.widget_item_habit)
         val row = rows.optJSONObject(position) ?: JSONObject()
         val id = row.optString("id")
         val completed = row.optBoolean("completed", false)
