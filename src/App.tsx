@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
@@ -173,6 +173,9 @@ export default function App() {
   const todayDayIndexRef = useRef(3);
   const handleCompleteTodayRef = useRef<(habitId: string, isFallback?: boolean) => void>(() => {});
   const handleResetTodayRef = useRef<(habitId: string) => void>(() => {});
+  const handleToggleFallbackModeRef = useRef<(habitId: string) => void>(() => {});
+  const handleToggleKeystoneRef = useRef<(habitId: string, next: boolean) => void>(() => {});
+  const showNotificationRef = useRef<(message: string) => void>(() => {});
   const handleSetReminderCompletedRef = useRef<(id: string, completed: boolean) => void>(() => {});
   const [isOnboarded, setIsOnboarded] = useState<boolean>(() => isOnboardingCompleted());
 
@@ -722,6 +725,8 @@ export default function App() {
   const activeHabits = useMemo(() => {
     return derivedHabits.filter((h) => !h.archived);
   }, [derivedHabits]);
+  const activeKeystoneCount = useMemo(() => countActiveKeystones(habits), [habits]);
+  const activeFallbackIdSet = useMemo(() => new Set(activeFallbackIds), [activeFallbackIds]);
   const { morningHabits, nightHabits } = useHabits(activeHabits);
 
   const bowlWindow = useMemo(
@@ -1572,7 +1577,44 @@ export default function App() {
   todayDayIndexRef.current = todayDayIndex;
   handleCompleteTodayRef.current = handleCompleteToday;
   handleResetTodayRef.current = handleResetToday;
+  handleToggleFallbackModeRef.current = handleToggleFallbackMode;
+  handleToggleKeystoneRef.current = handleToggleKeystone;
+  showNotificationRef.current = showNotification;
   handleSetReminderCompletedRef.current = handleSetReminderCompleted;
+
+  const stableCompleteToday = useCallback((habitId: string, isFallback?: boolean) => {
+    handleCompleteTodayRef.current(habitId, isFallback);
+  }, []);
+  const stableResetToday = useCallback((habitId: string) => {
+    handleResetTodayRef.current(habitId);
+  }, []);
+  const stableToggleFallbackMode = useCallback((habitId: string) => {
+    handleToggleFallbackModeRef.current(habitId);
+  }, []);
+  const stableToggleKeystone = useCallback((habitId: string, next: boolean) => {
+    handleToggleKeystoneRef.current(habitId, next);
+  }, []);
+  const stableNotify = useCallback((message: string) => {
+    showNotificationRef.current(message);
+  }, []);
+  const stableLongPress = useCallback((h: Habit, rect?: DOMRect) => {
+    setLongPressedHabitId(h.id);
+    setLongPressedRect(rect || null);
+  }, []);
+  const stableDismissLongPress = useCallback(() => {
+    setLongPressedHabitId(null);
+    setLongPressedRect(null);
+  }, []);
+  const stableOpenEdit = useCallback((h: Habit) => {
+    setLongPressedHabitId(null);
+    setLongPressedRect(null);
+    setDetailHabit(h);
+  }, []);
+  const stableOpenDeleteConfirm = useCallback((h: Habit) => {
+    setLongPressedHabitId(null);
+    setLongPressedRect(null);
+    setDeleteConfirmHabit(h);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2019,7 +2061,10 @@ export default function App() {
                   No habits active yet. Tap &quot;+&quot; in the header to create one!
                 </div>
               ) : (
-                (activeHabits ?? []).map((habit, habitIndex) => (
+                (activeHabits ?? []).map((habit, habitIndex) => {
+                  const keystoneAtCap =
+                    !habit.isKeystone && activeKeystoneCount >= MAX_KEYSTONE_HABITS;
+                  return (
                   <HabitCard
                     key={habit.id}
                     habit={habit}
@@ -2028,38 +2073,25 @@ export default function App() {
                     gesturesLocked={!isViewingToday}
                     isLongPressed={longPressedHabitId === habit.id}
                     isOtherLongPressed={Boolean(longPressedHabitId && longPressedHabitId !== habit.id)}
-                    isFallbackActive={isViewingToday && activeFallbackIds.includes(habit.id)}
+                    isFallbackActive={isViewingToday && activeFallbackIdSet.has(habit.id)}
                     isTourTarget={habitIndex === 0}
-                    onCompleteToday={handleCompleteToday}
-                    onToggleFallbackMode={handleToggleFallbackMode}
-                    onResetToday={handleResetToday}
-                    onNotify={showNotification}
-                    onLongPress={(h, rect) => {
-                      setLongPressedHabitId(h.id);
-                      setLongPressedRect(rect || null);
-                    }}
-                    onDismissLongPress={() => {
-                      setLongPressedHabitId(null);
-                      setLongPressedRect(null);
-                    }}
-                    onOpenEdit={(h) => {
-                      setLongPressedHabitId(null);
-                      setLongPressedRect(null);
-                      setDetailHabit(h);
-                    }}
-                    onOpenDeleteConfirm={(h) => {
-                      setLongPressedHabitId(null);
-                      setLongPressedRect(null);
-                      setDeleteConfirmHabit(h);
-                    }}
-                    onToggleKeystone={handleToggleKeystone}
-                    keystoneAtCap={!habit.isKeystone && countActiveKeystones(habits) >= MAX_KEYSTONE_HABITS}
+                    onCompleteToday={stableCompleteToday}
+                    onToggleFallbackMode={stableToggleFallbackMode}
+                    onResetToday={stableResetToday}
+                    onNotify={stableNotify}
+                    onLongPress={stableLongPress}
+                    onDismissLongPress={stableDismissLongPress}
+                    onOpenEdit={stableOpenEdit}
+                    onOpenDeleteConfirm={stableOpenDeleteConfirm}
+                    onToggleKeystone={stableToggleKeystone}
+                    keystoneAtCap={keystoneAtCap}
                     keystoneBoosted={
                       keystoneCompletedOnViewedDay.length > 0 && !keystoneCompletedOnViewedDay.includes(habit.id)
                     }
                     weekOrigin={calendarOrigin}
                   />
-                ))
+                  );
+                })
               )}
             </section>
             </HomeView>

@@ -145,12 +145,14 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
   }, [selectedInterests]);
 
   const toastTimerRef = useRef<number | null>(null);
+  const feedbackTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
+      if (feedbackTimerRef.current != null) window.clearTimeout(feedbackTimerRef.current);
     };
   }, []);
 
@@ -216,7 +218,9 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     e.preventDefault();
     if (!feedbackText.trim()) return;
     setFeedbackSent(true);
-    setTimeout(() => {
+    if (feedbackTimerRef.current != null) window.clearTimeout(feedbackTimerRef.current);
+    feedbackTimerRef.current = window.setTimeout(() => {
+      if (!mountedRef.current) return;
       setFeedbackSent(false);
       setFeedbackText('');
       setIsHelpModalOpen(false);

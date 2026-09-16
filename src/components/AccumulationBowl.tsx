@@ -263,7 +263,7 @@ function BowlShellFallback({ isDark }: { isDark: boolean }) {
   );
 }
 
-export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
+export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(function AccumulationBowl({
   pieces,
   fillPercent,
   isOverflowing,
@@ -274,7 +274,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
   onCycleDaysChange,
   celebrating = false,
   onCelebrationDone,
-}) => {
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [bowlBroken, setBowlBroken] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -506,4 +506,4 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = ({
       </div>
     </section>
   );
-};
+});

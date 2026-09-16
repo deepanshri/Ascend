@@ -148,6 +148,20 @@ function isMissingTimeOfDayColumn(message: string): boolean {
   return /time_of_day/i.test(message);
 }
 
+async function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export async function fetchHabitsFromTable(userId?: string | null): Promise<{
   ok: boolean;
   habits: Habit[];
@@ -157,10 +171,11 @@ export async function fetchHabitsFromTable(userId?: string | null): Promise<{
     return { ok: false, habits: [], error: 'Supabase is not connected' };
   }
   try {
-    const { data, error } = await supabase
-      .from('habits')
-      .select('*')
-      .eq('user_id', userId as string);
+    const { data, error } = await withTimeout(
+      supabase.from('habits').select('*').eq('user_id', userId as string),
+      12_000,
+      'habits fetch'
+    );
 
     if (error) {
       console.warn('Habits fetch failed:', error.message);

@@ -63,11 +63,15 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   const [ledger, setLedger] = useState<FriendIdentityLedger | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
 
+  const noticeTimerRef = useRef<number | null>(null);
+  const copiedTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (noticeTimerRef.current != null) window.clearTimeout(noticeTimerRef.current);
+      if (copiedTimerRef.current != null) window.clearTimeout(copiedTimerRef.current);
     };
   }, []);
 
@@ -90,7 +94,8 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   const flash = (message: string, tone: 'ok' | 'error' = 'ok') => {
     setNoticeTone(tone);
     setNotice(message);
-    window.setTimeout(() => {
+    if (noticeTimerRef.current != null) window.clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = window.setTimeout(() => {
       if (mountedRef.current) setNotice(null);
     }, 2400);
   };
@@ -141,7 +146,8 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
       await navigator.clipboard.writeText(friendCode);
       setCopied(true);
       flash('Friend code copied.');
-      window.setTimeout(() => {
+      if (copiedTimerRef.current != null) window.clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = window.setTimeout(() => {
         if (mountedRef.current) setCopied(false);
       }, 1600);
     } catch {

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { MotionModal } from './MotionModal';
 import { tapPress } from '../lib/motionPresets';
@@ -61,8 +61,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const feedbackTimerRef = useRef<number | null>(null);
   const safeHabits = Array.isArray(habits) ? habits : [];
   const archivedHabits = safeHabits.filter((h) => h.archived);
+
+  useEffect(() => () => {
+    if (feedbackTimerRef.current != null) window.clearTimeout(feedbackTimerRef.current);
+  }, []);
+
+  const flashFeedback = (message: string, ms = 2000) => {
+    setExportFeedback(message);
+    if (feedbackTimerRef.current != null) window.clearTimeout(feedbackTimerRef.current);
+    feedbackTimerRef.current = window.setTimeout(() => setExportFeedback(null), ms);
+  };
 
   const handleExportJSON = () => {
     const exportPayload = {
@@ -86,8 +97,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     a.click();
     URL.revokeObjectURL(url);
 
-    setExportFeedback('JSON Exported ✓');
-    setTimeout(() => setExportFeedback(null), 2000);
+    flashFeedback('JSON Exported ✓');
   };
 
   const handleExportCSV = () => {
@@ -135,8 +145,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     a.click();
     URL.revokeObjectURL(url);
 
-    setExportFeedback('CSV Exported ✓');
-    setTimeout(() => setExportFeedback(null), 2000);
+    flashFeedback('CSV Exported ✓');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,8 +159,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         const parsed = JSON.parse(text);
         if (parsed && Array.isArray(parsed.habits)) {
           onImportJSON(parsed.habits, parsed.evidenceLedger, parsed.completionEvents, parsed.momentumEvents);
-          setExportFeedback('Imported Successfully ✓');
-          setTimeout(() => setExportFeedback(null), 2500);
+          flashFeedback('Imported Successfully ✓', 2500);
         } else {
           alert('Invalid Ascend backup format.');
         }
@@ -166,7 +174,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleClearCacheClick = () => {
     onClearCache();
     setCacheFeedback(true);
-    setTimeout(() => setCacheFeedback(false), 2000);
+    if (feedbackTimerRef.current != null) window.clearTimeout(feedbackTimerRef.current);
+    feedbackTimerRef.current = window.setTimeout(() => setCacheFeedback(false), 2000);
   };
 
   const handleDeleteAccountSubmit = (e: React.FormEvent) => {

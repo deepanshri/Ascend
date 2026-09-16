@@ -285,12 +285,15 @@ export async function flushOfflineQueue(): Promise<void> {
   }
 }
 
+let offlineSyncStarted = false;
+
 export function startOfflineSyncListener(): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || offlineSyncStarted) return;
+  offlineSyncStarted = true;
   window.addEventListener('online', () => {
-    void flushOfflineQueue();
+    void flushOfflineQueue().catch(() => {});
   });
   if (isOnline()) {
-    void flushOfflineQueue();
+    void flushOfflineQueue().catch(() => {});
   }
 }
