@@ -149,8 +149,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
     delta == null || delta === 0 ? null : delta > 0 ? `+${delta}` : `${delta}`;
 
   return (
-    <div className="mt-2 flex w-full flex-col items-center gap-3 pt-4">
-      <div className="flex w-full justify-center min-h-[44px] relative z-10">
+    <div className="mt-1 flex w-full flex-col items-center gap-2 pt-2">
+      <div className="relative z-10 my-2 flex w-full justify-center">
         <motion.div
           id="home-momentum-badge"
           data-tour="home-momentum-badge"
@@ -224,7 +224,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         />
       </div>
 
-      <div className="mt-4 flex w-full flex-col space-y-3">{children}</div>
+      <div className="mt-2 flex w-full flex-col gap-2">{children}</div>
     </div>
   );
 };

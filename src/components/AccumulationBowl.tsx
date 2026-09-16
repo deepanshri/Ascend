@@ -10,26 +10,28 @@ import { CYCLE_DAY_OPTIONS, clampCycleDays, type AccumulationPiece, type CycleDa
 import { tapPress } from '../lib/motionPresets';
 
 const DROP_SPRING = { type: 'spring' as const, stiffness: 220, damping: 26, mass: 0.75, restDelta: 0.4 };
-/** Start closer to the rim so the fall has less overshoot energy. */
-const SPAWN_Y = -96;
+/** Spawn above the rim as a % of bowl height so drops scale with the container. */
+const SPAWN_Y_PCT = -42;
 const MAX_VISIBLE_PIECES = 28;
 /** Compact 24px (w-6 h-6) so marbles nest inside the base arc. */
 const PIECE_SIZE = 24;
 const SPILL_ROW = 4;
 const SCATTER_COLS = 4;
-const MAX_X = 28;
+/** Horizontal scatter as % of bowl width (keeps pieces inside glass walls at any size). */
+const MAX_X_PCT = 16.5;
+const COL_STEP_X_PCT = 8.2;
 
 /**
- * Floor anchors sit inside the hollow glass base (not below the PNG foot).
- * Keep these conservative — spring overshoot must not push marbles under the bowl.
+ * Floor anchors as % of bowl height — marbles stay locked to the hollow glass
+ * base when the container is compacted (no hard-coded pixel offsets).
  */
 const THEME_LAYOUT = {
   light: {
-    floorAnchorY: 58,
+    floorAnchorYPct: 43,
     rimMask: 'radial-gradient(ellipse 50% 38% at 50% 50%, transparent 68%, #000 73%)',
   },
   dark: {
-    floorAnchorY: 60,
+    floorAnchorYPct: 44.5,
     rimMask: 'radial-gradient(ellipse 48% 36% at 50% 52%, transparent 66%, #000 71%)',
   },
 } as const;
@@ -66,10 +68,12 @@ interface AccumulationBowlProps {
 }
 
 interface ParticleCoords {
-  x: number;
-  y: number;
+  /** Horizontal offset as % of bowl width from center. */
+  xPct: number;
+  /** Vertical landing as % of bowl height from top. */
+  yPct: number;
   rotation: number;
-  entryX: number;
+  entryXPct: number;
   spills: boolean;
 }
 
@@ -124,20 +128,20 @@ function getParticleCoords(
   const col = index % cols;
   const topRowCount = Math.min(Math.max(total, 1), cols);
 
-  let xOffset = (col - (topRowCount - 1) / 2) * 14 + (row % 2 ? 6 : 0);
-  xOffset = Math.max(-MAX_X, Math.min(MAX_X, xOffset));
+  let xPct = (col - (topRowCount - 1) / 2) * COL_STEP_X_PCT + (row % 2 ? 3.5 : 0);
+  xPct = Math.max(-MAX_X_PCT, Math.min(MAX_X_PCT, xPct));
 
-  // Relative floor offset (~-4…+6 for early rows) — shallow stack, stays inside glass.
-  const yOffset = -2 + row * 6 + Math.pow(xOffset / 24, 2) * 0.8;
+  // Shallow stack in % of bowl height — stays inside the glass cavity.
+  const yOffsetPct = -1.5 + row * 4.5 + Math.pow(xPct / 14, 2) * 0.55;
   const rotation = (index * 35) % 360;
-  const entryX = ((index * 31) % 17) - 8;
+  const entryXPct = ((index * 31) % 17) - 8;
   const spills = isOverflowing && row >= SPILL_ROW;
 
   return {
-    x: xOffset,
-    y: layout.floorAnchorY + yOffset + (spills ? -10 : 0),
+    xPct,
+    yPct: layout.floorAnchorYPct + yOffsetPct + (spills ? -7.5 : 0),
     rotation: spills ? rotation * 0.2 : rotation * 0.04,
-    entryX,
+    entryXPct,
     spills,
   };
 }
@@ -150,8 +154,7 @@ const pieceBoxStyle = (zIndex: number): React.CSSProperties => ({
   maxWidth: PIECE_SIZE,
   maxHeight: PIECE_SIZE,
   aspectRatio: '1 / 1',
-  top: 0,
-  left: '50%',
+  position: 'absolute',
   marginLeft: -PIECE_SIZE / 2,
   zIndex,
 });
@@ -183,15 +186,15 @@ const MarblePiece: React.FC<{
 
   const motionProps = {
     initial: {
-      x: coords.x + coords.entryX * 0.35,
-      y: Math.min(SPAWN_Y, coords.y - 72),
+      left: `calc(50% + ${coords.xPct + coords.entryXPct * 0.35}%)`,
+      top: `${Math.min(SPAWN_Y_PCT, coords.yPct - 28)}%`,
       rotate: coords.rotation * 0.15,
       opacity: 0,
       scale: 0.9,
     },
     animate: {
-      x: coords.x,
-      y: coords.y,
+      left: `calc(50% + ${coords.xPct}%)`,
+      top: `${coords.yPct}%`,
       rotate: coords.rotation,
       opacity: 1,
       scale: 1,
@@ -202,8 +205,8 @@ const MarblePiece: React.FC<{
     },
     transition: {
       // Critically-damped-ish drop: no deep bounce under the bowl base.
-      x: { ...DROP_SPRING, stiffness: 260, damping: 28 },
-      y: DROP_SPRING,
+      left: { ...DROP_SPRING, stiffness: 260, damping: 28 },
+      top: DROP_SPRING,
       rotate: { ...DROP_SPRING, stiffness: 180, damping: 24 },
       opacity: { duration: 0.22, ease: 'easeOut' as const },
       scale: { type: 'spring' as const, stiffness: 280, damping: 24 },
@@ -346,7 +349,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
     <section
       id="accumulation-bowl"
       data-tour="accumulation-bowl"
-      className="relative mx-auto flex w-full flex-col items-center justify-center select-none"
+      className="relative mx-auto my-1 flex w-full flex-col items-center justify-center select-none"
       aria-label={`${darkMode ? 'Night' : 'Morning'} accumulation bowl, ${votes} of ${capacity} votes in a ${selectedCycle}-day cycle, ${roundedFill} percent full${isOverflowing ? ', overflowing' : ''}${celebrating ? ', cycle complete' : ''}`}
     >
       <AnimatePresence>
@@ -368,10 +371,10 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
         )}
       </AnimatePresence>
 
-      <div className="relative mx-auto h-[135px] w-[170px] overflow-visible">
+      <div className="relative mx-auto h-32 w-[140px] overflow-visible">
         {isOverflowing && !celebrating && (
           <div
-            className={`pointer-events-none absolute left-1/2 top-[24%] z-0 h-10 w-[78%] -translate-x-1/2 rounded-full blur-xl ${
+            className={`pointer-events-none absolute left-1/2 top-[24%] z-0 h-9 w-[78%] -translate-x-1/2 rounded-full blur-xl ${
               darkMode ? 'bg-blue-500/35' : 'bg-emerald-400/40'
             }`}
             aria-hidden="true"
@@ -393,7 +396,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
         )}
 
         {/* z-10 — marbles clipped so nothing bleeds under the glass base */}
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-hidden pb-4">
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-hidden pb-3">
           <div className="relative h-full w-full">
             <PieceLayer items={insidePieces} isDark={darkMode} />
           </div>
@@ -417,14 +420,14 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
 
         {isOverflowing && !celebrating && (
           <div
-            className={`pointer-events-none absolute left-1/2 top-[16%] z-[25] h-7 w-[68%] -translate-x-1/2 rounded-full blur-md ${
+            className={`pointer-events-none absolute left-1/2 top-[16%] z-[25] h-6 w-[68%] -translate-x-1/2 rounded-full blur-md ${
               darkMode ? 'bg-blue-400/25' : 'bg-emerald-300/30'
             }`}
             aria-hidden="true"
           />
         )}
 
-        <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden pb-4">
+        <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden pb-3">
           <PieceLayer items={spillPieces} isDark={darkMode} />
         </div>
 
@@ -441,7 +444,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
         )}
       </div>
 
-      <div ref={pickerRef} className="relative z-40 mt-3 flex w-full justify-center">
+      <div ref={pickerRef} className="relative z-40 mb-2 mt-2 flex w-full justify-center">
         <motion.button
           type="button"
           id="accumulation-cycle-pill"
