@@ -1,5 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Habit, HabitCompletionEvent } from '../types';
+import { Habit, HabitCompletionEvent, MomentumEvent } from '../types';
+import {
+  accumulationPiecesFromLogs,
+  accumulationPiecesFromMomentum,
+  mergeAccumulationPieces,
+  type AccumulationPiece,
+} from '../services/reportService';
 import {
   hydrateHabitTimeOfDay,
   persistBowlMode,
@@ -57,6 +63,41 @@ export function netDailyCompletionCount(
     keys.add(`${event.habitId}::${iso}`);
   }
   return keys.size;
+}
+
+/**
+ * Bowl pieces for the active cycle: habit_logs ∪ momentum_events between startIso..endIso.
+ * Resets only when minTimestamp (cycle resetAt) advances after a full-bowl celebration.
+ */
+export function buildCycleAccumulationPieces(input: {
+  completionEvents: HabitCompletionEvent[];
+  momentumEvents: MomentumEvent[];
+  activeHabitIds: Iterable<string>;
+  startIso: string;
+  endIso: string;
+  origin?: Date;
+  minTimestamp?: number;
+}): AccumulationPiece[] {
+  const ids = input.activeHabitIds;
+  const minTs = input.minTimestamp ?? 0;
+  const origin = input.origin ?? new Date();
+  return mergeAccumulationPieces(
+    accumulationPiecesFromLogs(
+      input.completionEvents,
+      ids,
+      input.startIso,
+      input.endIso,
+      origin,
+      minTs
+    ),
+    accumulationPiecesFromMomentum(
+      input.momentumEvents,
+      ids,
+      input.startIso,
+      input.endIso,
+      minTs
+    )
+  );
 }
 
 /** Stamp the habit's bowl on a completion or momentum payload. */

@@ -10,7 +10,7 @@
     <string name="widget_reminders_name">Reminders</string>
     <string name="widget_reminders_description">Today’s reminders with tap-to-complete circles.</string>
     <string name="widget_habits_name">Habits</string>
-    <string name="widget_habits_description">Today’s habit queue with quick-toggle checkboxes.</string>
+    <string name="widget_habits_description">Scrollable today’s habit queue with quick-toggle checkboxes.</string>
     <string name="widget_identity_name">Today’s identity ledger</string>
     <string name="widget_identity_description">Glanceable lock-screen identity votes. Resets at midnight.</string>
     <string name="widget_reminders_empty">No active reminders</string>

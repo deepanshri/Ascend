@@ -34,18 +34,6 @@ object WidgetViews {
     private val reminderTimeIds = intArrayOf(
         R.id.reminder_time_1, R.id.reminder_time_2, R.id.reminder_time_3, R.id.reminder_time_4, R.id.reminder_time_5
     )
-    private val habitRowIds = intArrayOf(
-        R.id.habit_row_1, R.id.habit_row_2, R.id.habit_row_3, R.id.habit_row_4, R.id.habit_row_5
-    )
-    private val habitCheckIds = intArrayOf(
-        R.id.habit_check_1, R.id.habit_check_2, R.id.habit_check_3, R.id.habit_check_4, R.id.habit_check_5
-    )
-    private val habitTitleIds = intArrayOf(
-        R.id.habit_title_1, R.id.habit_title_2, R.id.habit_title_3, R.id.habit_title_4, R.id.habit_title_5
-    )
-    private val habitStreakIds = intArrayOf(
-        R.id.habit_streak_1, R.id.habit_streak_2, R.id.habit_streak_3, R.id.habit_streak_4, R.id.habit_streak_5
-    )
     private val identityLineIds = intArrayOf(
         R.id.widget_identity_line_1, R.id.widget_identity_line_2
     )
@@ -134,40 +122,35 @@ object WidgetViews {
 
     fun updateHabits(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val rows = WidgetStore.readSnapshot(context).optJSONArray("habits") ?: JSONArray()
+        val count = rows.length()
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_habits)
             views.setOnClickPendingIntent(
                 R.id.widget_habits_header,
                 openApp(context, WidgetContract.ROUTE_HOME, widgetId)
             )
-            val count = min(WidgetContract.ROW_COUNT, rows.length())
             views.setViewVisibility(R.id.widget_habits_empty, if (count == 0) View.VISIBLE else View.GONE)
-            for (index in 0 until WidgetContract.ROW_COUNT) {
-                if (index >= count) {
-                    views.setViewVisibility(habitRowIds[index], View.GONE)
-                    continue
-                }
-                val row = rows.optJSONObject(index) ?: JSONObject()
-                val id = row.optString("id")
-                val completed = row.optBoolean("completed", false)
-                val streak = row.optInt("streak", 0)
-                views.setViewVisibility(habitRowIds[index], View.VISIBLE)
-                views.setTextViewText(habitTitleIds[index], row.optString("title", "Habit"))
-                views.setTextViewText(habitStreakIds[index], if (streak > 0) "${streak}d" else "")
-                views.setImageViewResource(
-                    habitCheckIds[index],
-                    if (completed) R.drawable.widget_box_on else R.drawable.widget_box_off
-                )
-                views.setOnClickPendingIntent(
-                    habitCheckIds[index],
-                    actionIntent(context, WidgetContract.ACTION_TOGGLE_HABIT, id, widgetId * 30 + index)
-                )
-                views.setOnClickPendingIntent(
-                    habitTitleIds[index],
-                    openApp(context, "${WidgetContract.ROUTE_HOME}?habit=${Uri.encode(id)}", widgetId * 30 + index + 10)
-                )
+            views.setViewVisibility(R.id.widget_habits_list, if (count == 0) View.GONE else View.VISIBLE)
+
+            val serviceIntent = Intent(context, HabitsWidgetService::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
             }
+            views.setRemoteAdapter(R.id.widget_habits_list, serviceIntent)
+            views.setEmptyView(R.id.widget_habits_list, R.id.widget_habits_empty)
+
+            val toggleTemplate = PendingIntent.getBroadcast(
+                context,
+                widgetId * 40,
+                Intent(context, WidgetActionReceiver::class.java).apply {
+                    action = WidgetContract.ACTION_TOGGLE_HABIT
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+            views.setPendingIntentTemplate(R.id.widget_habits_list, toggleTemplate)
+
             manager.updateAppWidget(widgetId, views)
+            manager.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_habits_list)
         }
     }
 

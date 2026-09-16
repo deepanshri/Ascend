@@ -1,5 +1,6 @@
-import { HabitCompletionEvent } from '../types';
+import { HabitCompletionEvent, MomentumEvent } from '../types';
 import { addDaysIso, resolveEventIsoDate, toISODate } from '../utils/dates';
+import { resolveMomentumEventDate } from '../utils/momentum';
 import type { TimeOfDay } from '../types/habit';
 
 export const CYCLE_DAY_OPTIONS = [3, 5, 7, 10] as const;
@@ -262,6 +263,54 @@ export function accumulationPiecesFromLogs(
   return Array.from(byKey.values())
     .sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id))
     .map(({ timestamp: _timestamp, ...piece }) => piece);
+}
+
+/**
+ * One piece per (habit, calendar day) from append-only momentum votes in the cycle window.
+ * Missed events never produce pieces. Survives week-roll of habit_logs.
+ */
+export function accumulationPiecesFromMomentum(
+  events: MomentumEvent[],
+  activeHabitIds: Iterable<string>,
+  startIso: string,
+  endIso: string,
+  minTimestamp = 0
+): AccumulationPiece[] {
+  const allow = new Set(activeHabitIds);
+  const byKey = new Map<string, AccumulationPiece & { timestamp: number }>();
+
+  for (const event of events) {
+    if (!allow.has(event.habitId)) continue;
+    if (event.eventType !== 'full' && event.eventType !== 'fallback') continue;
+    if (minTimestamp > 0 && event.timestamp < minTimestamp) continue;
+    const iso = resolveMomentumEventDate(event);
+    if (!iso || iso < startIso || iso > endIso) continue;
+    const id = `${event.habitId}::${iso}`;
+    const prev = byKey.get(id);
+    if (prev && event.timestamp < prev.timestamp) continue;
+    byKey.set(id, {
+      id,
+      habitId: event.habitId,
+      isoDate: iso,
+      kind: event.eventType === 'fallback' ? 'fallback' : 'full',
+      timestamp: event.timestamp,
+    });
+  }
+
+  return Array.from(byKey.values())
+    .sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id))
+    .map(({ timestamp: _timestamp, ...piece }) => piece);
+}
+
+/** Union of piece sources; later lists win on the same habit::day key when kind differs. */
+export function mergeAccumulationPieces(...lists: AccumulationPiece[][]): AccumulationPiece[] {
+  const byId = new Map<string, AccumulationPiece>();
+  for (const list of lists) {
+    for (const piece of list) byId.set(piece.id, piece);
+  }
+  return Array.from(byId.values()).sort(
+    (a, b) => a.isoDate.localeCompare(b.isoDate) || a.id.localeCompare(b.id)
+  );
 }
 
 export interface DualBowlFill {

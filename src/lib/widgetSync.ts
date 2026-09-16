@@ -206,7 +206,7 @@ export function buildWidgetSnapshot(input: WidgetSnapshotInput): WidgetSnapshot 
       completed: Boolean(item.completed),
     }));
 
-  const habits = scheduledToday.slice(0, 5).map((habit) => ({
+  const habits = scheduledToday.map((habit) => ({
     id: habit.id,
     title: habit.name,
     completed: hasTodayLedgerEntry(input.completionEvents, habit.id, todayIso, origin),

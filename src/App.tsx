@@ -78,7 +78,6 @@ import { ledgerEvidenceForHabits, displayedIdentityVoteCount, hasMomentumVoteOnI
 import { deleteHabit, stableHabitLogId } from './services/habitService';
 import { completionConfirmCopy, shouldNotifyHabitSwipe } from './services/notificationService';
 import {
-  accumulationPiecesFromLogs,
   activeCycleWindow,
   archiveCompletedCycle,
   clampCycleDays,
@@ -94,7 +93,7 @@ import {
   type AccumulationPiece,
 } from './services/reportService';
 import { HomeView } from './components/HomeView';
-import { useHabits, withHabitTimeOfDay } from './hooks/useHabits';
+import { buildCycleAccumulationPieces, useHabits, withHabitTimeOfDay } from './hooks/useHabits';
 import { hydrateHabitTimeOfDay, resolveHabitTimeOfDay } from './utils/timeOfDay';
 import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
 import { WidgetBridge } from './lib/widgetBridge';
@@ -733,30 +732,42 @@ export default function App() {
     () => activeCycleWindow(cycleDays, bowlEpoch.startIso, toISODate(calendarOrigin)),
     [cycleDays, bowlEpoch.startIso, calendarOrigin]
   );
-  const morningPieces = useMemo(
+
+  /**
+   * Theme only skins the bowl (morning glass + green vs night glass + blue).
+   * Pieces accumulate across the active cycle window (epoch start → today) from
+   * habit_logs ∪ momentum_events — cleared only when a cycle completes and the epoch resets.
+   */
+  const bowlPieces = useMemo(
     () =>
-      accumulationPiecesFromLogs(
+      buildCycleAccumulationPieces({
         completionEvents,
-        morningHabits.map((habit) => habit.id),
-        bowlWindow.startIso,
-        bowlWindow.endIso,
-        calendarOrigin,
-        bowlEpoch.resetAt
-      ),
-    [completionEvents, morningHabits, bowlWindow, calendarOrigin, bowlEpoch.resetAt]
+        momentumEvents,
+        activeHabitIds: activeHabits.map((habit) => habit.id),
+        startIso: bowlWindow.startIso,
+        endIso: bowlWindow.endIso,
+        origin: calendarOrigin,
+        minTimestamp: bowlEpoch.resetAt,
+      }),
+    [
+      completionEvents,
+      momentumEvents,
+      activeHabits,
+      bowlWindow.startIso,
+      bowlWindow.endIso,
+      calendarOrigin,
+      bowlEpoch.resetAt,
+    ]
   );
-  const nightPieces = useMemo(
-    () =>
-      accumulationPiecesFromLogs(
-        completionEvents,
-        nightHabits.map((habit) => habit.id),
-        bowlWindow.startIso,
-        bowlWindow.endIso,
-        calendarOrigin,
-        bowlEpoch.resetAt
-      ),
-    [completionEvents, nightHabits, bowlWindow, calendarOrigin, bowlEpoch.resetAt]
-  );
+
+  const morningPieces = useMemo(() => {
+    const morningIds = new Set(morningHabits.map((habit) => habit.id));
+    return bowlPieces.filter((piece) => morningIds.has(piece.habitId));
+  }, [bowlPieces, morningHabits]);
+  const nightPieces = useMemo(() => {
+    const nightIds = new Set(nightHabits.map((habit) => habit.id));
+    return bowlPieces.filter((piece) => nightIds.has(piece.habitId));
+  }, [bowlPieces, nightHabits]);
   const dualBowlFill = useMemo(
     () =>
       summarizeDualBowlFill(
@@ -768,20 +779,6 @@ export default function App() {
       ),
     [morningHabits.length, morningPieces.length, nightHabits.length, nightPieces.length, cycleDays]
   );
-
-  /**
-   * Theme only skins the bowl (morning glass + green vs night glass + blue).
-   * Pieces accumulate across the active cycle window (epoch start → today),
-   * not today alone — cleared only when a cycle completes and the epoch resets.
-   */
-  const bowlPieces = useMemo(() => {
-    const byId = new Map<string, (typeof morningPieces)[number]>();
-    for (const piece of morningPieces) byId.set(piece.id, piece);
-    for (const piece of nightPieces) byId.set(piece.id, piece);
-    return Array.from(byId.values()).sort(
-      (a, b) => a.isoDate.localeCompare(b.isoDate) || a.id.localeCompare(b.id)
-    );
-  }, [morningPieces, nightPieces]);
 
   const bowlFill = useMemo(
     () => summarizeBowlFill(activeHabits.length, bowlPieces.length, cycleDays),

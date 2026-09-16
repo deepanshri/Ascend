@@ -80,6 +80,11 @@
                 android:resource="@xml/widget_habits_info" />
         </receiver>
 
+        <service
+            android:name=".HabitsWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
         <receiver
             android:name=".IdentityLedgerWidget"
             android:exported="true"
