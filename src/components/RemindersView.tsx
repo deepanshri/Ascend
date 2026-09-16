@@ -27,7 +27,6 @@ interface RemindersViewProps {
   onSetReminderCompleted?: (id: string, completed: boolean) => void;
   onDeleteReminder: (id: string) => void;
   onSnoozeReminder?: (id: string, minutes: number) => void;
-  onNotify?: (message: string) => void;
   userSession?: UserSession | null;
   onSyncReminders?: () => void;
   onRemindersHydrated?: (reminders: StandaloneReminder[]) => void;
@@ -44,14 +43,12 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
   onSetReminderCompleted,
   onDeleteReminder,
   onSnoozeReminder,
-  onNotify,
   userSession,
   onRemindersHydrated,
   onScroll,
   onOpenSettings,
 }) => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [completedOpen, setCompletedOpen] = useState(true);
   const [longPressedReminder, setLongPressedReminder] = useState<StandaloneReminder | null>(null);
   const [longPressedRect, setLongPressedRect] = useState<DOMRect | null>(null);
   const [editingReminder, setEditingReminder] = useState<StandaloneReminder | null>(null);
@@ -78,16 +75,15 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
   }, [focusReminderId, reminders]);
 
   const safeReminders = Array.isArray(reminders) ? reminders.filter((item) => !item.deleted) : [];
-  const activeList = safeReminders
-    .filter((r) => !r.completed)
-    .sort((a, b) => `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`));
-  const completedList = safeReminders
-    .filter((r) => r.completed)
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-
-  useEffect(() => {
-    if (completedList.length === 0) setCompletedOpen(false);
-  }, [completedList.length]);
+  const hasTime = (r: StandaloneReminder) => Boolean(r.time && String(r.time).trim());
+  /** Timed (R) float above timeless to-dos (TD); then by date/time. */
+  const sortedList = [...safeReminders].sort((a, b) => {
+    const aTimed = hasTime(a) ? 0 : 1;
+    const bTimed = hasTime(b) ? 0 : 1;
+    if (aTimed !== bTimed) return aTimed - bTimed;
+    if (a.completed !== b.completed) return a.completed ? 1 : -1;
+    return `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`);
+  });
 
   return (
     <div
@@ -96,8 +92,8 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
       className={`absolute inset-0 w-full px-4 ${SCREEN_INSET_CLASS} pb-28 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none`}
     >
       <ScreenHeader
-        title="Reminders"
-        subtitle="Standalone alerts & focus checkpoints"
+        title="Tasks"
+        subtitle="Reminders (R) float above to-dos (TD)"
         onOpenSettings={onOpenSettings}
         actions={
           <>
@@ -116,8 +112,8 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
               type="button"
               whileTap={tapPress}
               onClick={() => setIsCreateOpen(true)}
-              aria-label="New Reminder"
-              title="New Reminder"
+              aria-label="New Task"
+              title="New Task"
               className={HEADER_ICON_BTN_CLASS}
             >
               <Plus className="w-4 h-4" strokeWidth={2.5} />
@@ -126,141 +122,48 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
         }
       />
 
-      <div className="space-y-2">
-        <div
-          data-tour="reminders-standalone"
-          className="px-1 text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed"
-        >
-          Standalone checkpoints stay off the habit log so a missed alert never rewrites identity votes.
-        </div>
-        <div
-          data-tour="reminders-dual-alerts"
-          className="px-1 text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed"
-        >
-          Timed reminders can fire twice: 10 minutes before, then at the exact time — on the device, not a browser timer.
-        </div>
-      </div>
+      <p
+        data-tour="reminders-standalone"
+        className="px-1 text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed"
+      >
+        Add a time for a Reminder (R). Skip time for a To-Do (TD). One continuous list — no split boxes.
+      </p>
 
-      <div className="space-y-4">
-        <section className="space-y-2.5">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-[12px] font-extrabold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-              Active ({activeList.length})
-            </span>
-            {activeList.length > 0 && (
-              <span className="text-[10.5px] text-slate-400 font-medium">Tap the checkmark to complete</span>
-            )}
-          </div>
-
-          <AnimatePresence initial={false} mode="popLayout">
-            {activeList.map((rem) => (
-              <motion.div
-                key={rem.id}
-                layout
-                initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-              >
-                <ReminderCard
-                  reminder={rem}
-                  onToggleComplete={(id) => {
-                    setCompletedOpen(true);
-                    onToggleComplete(id);
-                  }}
-                  onSetCompleted={(id, completed) => {
-                    if (completed) setCompletedOpen(true);
-                    onSetReminderCompleted?.(id, completed);
-                  }}
-                  onDeleteReminder={onDeleteReminder}
-                  onSnoozeReminder={onSnoozeReminder}
-                  onNotify={onNotify}
-                  onLongPress={(reminder, rect) => {
-                    setLongPressedReminder(reminder);
-                    setLongPressedRect(rect);
-                  }}
-                />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-
-          {activeList.length === 0 && (
-            <div className="py-6 text-center text-slate-400 dark:text-slate-500 space-y-1.5 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
-              <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">No active reminders</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 px-6">
-                {completedList.length > 0
-                  ? 'Completed items stay below — uncheck one to restore it here.'
-                  : 'Tap + to create a standalone checkpoint.'}
-              </p>
-            </div>
-          )}
-        </section>
-
-        {completedList.length > 0 && (
-          <section className="space-y-2 pt-1">
-            <motion.button
-              type="button"
-              whileTap={tapPress}
-              aria-expanded={completedOpen}
-              onClick={() => setCompletedOpen((prev) => !prev)}
-              className="w-full flex items-center justify-between px-1 py-1 cursor-pointer"
+      <section className="space-y-2.5">
+        <AnimatePresence initial={false} mode="popLayout">
+          {sortedList.map((rem) => (
+            <motion.div
+              key={rem.id}
+              layout
+              initial={{ opacity: 0, y: 8, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.98 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             >
-              <span className="text-[12px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Completed ({completedList.length})
-              </span>
-              <span className="flex items-center gap-1 text-[10.5px] text-slate-400 font-medium">
-                {completedOpen ? 'Hide' : 'Show'}
-                <motion.svg
-                  animate={{ rotate: completedOpen ? 180 : 0 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="w-3.5 h-3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M19 9l-7 7-7-7" />
-                </motion.svg>
-              </span>
-            </motion.button>
+              <ReminderCard
+                reminder={rem}
+                onToggleComplete={onToggleComplete}
+                onSetCompleted={onSetReminderCompleted}
+                onDeleteReminder={onDeleteReminder}
+                onSnoozeReminder={onSnoozeReminder}
+                onLongPress={(reminder, rect) => {
+                  setLongPressedReminder(reminder);
+                  setLongPressedRect(rect);
+                }}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
 
-            <AnimatePresence initial={false}>
-              {completedOpen && (
-                <motion.div
-                  key="completed-list"
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="overflow-hidden space-y-2.5 transform-gpu"
-                >
-                  {completedList.map((rem) => (
-                    <motion.div
-                      key={rem.id}
-                      layout
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                    >
-                      <ReminderCard
-                        reminder={rem}
-                        onToggleComplete={onToggleComplete}
-                        onSetCompleted={onSetReminderCompleted}
-                        onDeleteReminder={onDeleteReminder}
-                        onNotify={onNotify}
-                        onLongPress={(reminder, rect) => {
-                          setLongPressedReminder(reminder);
-                          setLongPressedRect(rect);
-                        }}
-                      />
-                    </motion.div>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </section>
+        {sortedList.length === 0 && (
+          <div className="py-6 text-center text-slate-400 dark:text-slate-500 space-y-1.5">
+            <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">No tasks yet</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 px-6">
+              Tap + to add a Reminder (with time) or a To-Do (no time).
+            </p>
+          </div>
         )}
-      </div>
+      </section>
 
       <CreateReminderModal
         isOpen={isCreateOpen}

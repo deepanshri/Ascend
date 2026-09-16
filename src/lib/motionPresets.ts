@@ -15,11 +15,5 @@ export const sheetMotion = {
   transition: { duration: MOTION_DURATION, ease: MOTION_EASE_OUT },
 };
 
-export const toastMotion = {
-  initial: { opacity: 0, y: -16, scale: 0.96 },
-  animate: { opacity: 1, y: 0, scale: 1 },
-  exit: { opacity: 0, y: -10, scale: 0.96 },
-  transition: { duration: MOTION_DURATION, ease: MOTION_EASE_OUT },
-};
 
 export const tapPress = { scale: 0.97 };

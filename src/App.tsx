@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
 import { useAnyModalOpen, useKeyboardVisible } from './hooks/useKeyboardVisible';
-import { tapPress, toastMotion } from './lib/motionPresets';
+import { tapPress } from './lib/motionPresets';
 import { MotionModal } from './components/MotionModal';
 import {
   Habit,
@@ -76,7 +76,6 @@ import {
 } from './lib/notifications';
 import { ledgerEvidenceForHabits, displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
 import { deleteHabit, stableHabitLogId } from './services/habitService';
-import { completionConfirmCopy, shouldNotifyHabitSwipe } from './services/notificationService';
 import {
   accumulationPiecesFromLogs,
   activeCycleWindow,
@@ -175,7 +174,6 @@ export default function App() {
   const handleResetTodayRef = useRef<(habitId: string) => void>(() => {});
   const handleToggleFallbackModeRef = useRef<(habitId: string) => void>(() => {});
   const handleToggleKeystoneRef = useRef<(habitId: string, next: boolean) => void>(() => {});
-  const showNotificationRef = useRef<(message: string) => void>(() => {});
   const handleSetReminderCompletedRef = useRef<(id: string, completed: boolean) => void>(() => {});
   const [isOnboarded, setIsOnboarded] = useState<boolean>(() => isOnboardingCompleted());
 
@@ -556,8 +554,7 @@ export default function App() {
   const [longPressedHabitId, setLongPressedHabitId] = useState<string | null>(null);
   const [longPressedRect, setLongPressedRect] = useState<DOMRect | null>(null);
   const [deleteConfirmHabit, setDeleteConfirmHabit] = useState<Habit | null>(null);
-  const [toastNotification, setToastNotification] = useState<string | null>(null);
-  const toastTimeoutRef = useRef<number | null>(null);
+  const [momentumPulse, setMomentumPulse] = useState(0);
   const tutorialLockRef = useRef(false);
   const [hasCompletedTutorial, setHasCompletedTutorial] = useState<boolean | null>(() => {
     try {
@@ -567,18 +564,9 @@ export default function App() {
     }
   });
 
-  const showNotification = (message: string) => {
-    setToastNotification(message);
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    toastTimeoutRef.current = window.setTimeout(() => setToastNotification(null), 2500);
-  };
-
   const handleToggleExamShield = () => {
     setProtection((prev) => {
       const result = toggleExamShield(prev);
-      if (!result.ok && result.reason) showNotification(result.reason);
-      else if (result.state.examShield.active) showNotification('Exam Shield on — miss decay paused');
-      else showNotification('Exam Shield off — 30-day cooldown started');
       return result.state;
     });
   };
@@ -587,9 +575,7 @@ export default function App() {
     setProtection((prev) => {
       const result = toggleVacation(prev);
       if (result.state.vacation.active) {
-        showNotification('Vacation on — 5-day window, miss decay paused');
       } else {
-        showNotification('Vacation off');
       }
       return result.state;
     });
@@ -995,21 +981,26 @@ export default function App() {
     });
   }, [notificationWindows, activeHabits, todayDayIndex, todayMomentumScore, completionEvents]);
 
-  // Home mount: fetch active habits + cycle-window habit_logs (optimistic local UI stays in place).
-  // Range query never resets bowlEpoch — only celebration/rollover does.
+  // Cycle-window habit_logs hydrate (Home + any tab once signed in).
+  // Range query is read-only — never resets bowlEpoch (celebration/rollover only).
   useEffect(() => {
-    if (activeTab !== 'home') return;
     if (!session || session.isGuest) return;
+    const startIso = bowlWindow.startIso;
+    const endIso = bowlWindow.endIso;
+    if (!startIso || !endIso || startIso > endIso) return;
+
     let cancelled = false;
     void (async () => {
       const [remoteHabits, cycleLogs, remoteMomentum] = await Promise.all([
         fetchActiveHabits(session.id),
-        fetchHabitLogsForDateRange(session.id, bowlWindow.startIso, bowlWindow.endIso),
+        fetchHabitLogsForDateRange(session.id, startIso, endIso),
         fetchMomentumEventsFromTable(session.id),
       ]);
       if (cancelled) return;
       setHabits((prev) => omitDeletedHabits(mergeHabitsByUpdatedAt(prev, remoteHabits)));
-      const userCycleLogs = omitDeletedHabitRefs(cycleLogs.filter((event) => !isSeedHabitId(event.habitId)));
+      const userCycleLogs = omitDeletedHabitRefs(
+        cycleLogs.filter((event) => !isSeedHabitId(event.habitId))
+      );
       if (userCycleLogs.length > 0) {
         setCompletionEvents((prev) =>
           omitDeletedHabitRefs(
@@ -1021,7 +1012,9 @@ export default function App() {
           )
         );
       }
-      const userMomentum = omitDeletedHabitRefs(remoteMomentum.filter((event) => !isSeedHabitId(event.habitId)));
+      const userMomentum = omitDeletedHabitRefs(
+        remoteMomentum.filter((event) => !isSeedHabitId(event.habitId))
+      );
       if (userMomentum.length > 0) {
         setMomentumEvents((prev) =>
           omitDeletedHabitRefs(
@@ -1037,7 +1030,6 @@ export default function App() {
       cancelled = true;
     };
   }, [
-    activeTab,
     session?.id,
     session?.isGuest,
     bowlWindow.startIso,
@@ -1101,6 +1093,7 @@ export default function App() {
     if (!alreadyMissed) {
       appendMomentumLog(createMomentumEvent(targetHabit, 'missed', loggedDate));
     }
+    setMomentumPulse((n) => n + 1);
 
     setLongPressedHabitId(null);
     setLongPressedRect(null);
@@ -1159,6 +1152,8 @@ export default function App() {
     if (!alreadyVotedMomentum) {
       appendMomentumLog(createMomentumEvent(targetHabit, isMicro ? 'fallback' : 'full', loggedDate, newEvent.timestamp));
     }
+    // Always pulse the Dynamic Island on a successful swipe-complete (score may round flat).
+    setMomentumPulse((n) => n + 1);
 
     const newEvidence: IdentityEvidence = {
       id: alreadyCompletedToday
@@ -1189,7 +1184,6 @@ export default function App() {
       setFrictionAudits((prevAudits) => [newAudit, ...prevAudits]);
     }
     if (shouldNotifyHabitSwipe(targetHabit, todayDayIndex, calendarOrigin)) {
-      showNotification(completionConfirmCopy(targetHabit.name));
     }
   };
 
@@ -1199,13 +1193,12 @@ export default function App() {
     const targetHabit = habits.find((h) => h.id === habitId);
     if (!targetHabit) return;
     if (!isHabitScheduledOnDayIndex(targetHabit, todayDayIndex, calendarOrigin) && !activeFallbackIds.includes(habitId)) {
-      // Off day: no fallback, no toast.
+      // Off day: no fallback.
       return;
     }
 
     if (activeFallbackIds.includes(habitId)) {
       setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
-      showNotification('Fallback cancelled — back to normal');
       return;
     }
 
@@ -1221,7 +1214,6 @@ export default function App() {
     }
 
     setActiveFallbackIds((prev) => [...prev, habitId]);
-    showNotification('fallback');
   };
 
   // GESTURE / TAP ACTION: Uncheck today. Daily habit_logs drop; momentum_events identity points stay.
@@ -1233,18 +1225,15 @@ export default function App() {
     );
     void deleteHabitLog(session?.id, habitId, loggedDate, todayDayIndex).catch(() => {});
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
-    showNotification('Card reset');
   };
 
   // Add new habit (optimistic). Remote insert is performed by AddHabitModal.
   const handleAddHabit = (newHabitData: Omit<Habit, 'id' | 'days' | 'microDays'>): Habit | null => {
     if (isAtActiveHabitCap(habits)) {
-      showNotification('Maximum limit of 20 active habits reached.');
       return null;
     }
     let payload = newHabitData;
     if (payload.isKeystone && !canEnableKeystone(habits)) {
-      showNotification(`You already have ${MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.`);
       payload = { ...payload, isKeystone: false };
     }
     const newHabit: Habit = {
@@ -1275,7 +1264,6 @@ export default function App() {
   const handleRestoreHabit = (habitId: string) => {
     const target = habits.find((habit) => habit.id === habitId);
     if (target?.archived && isAtActiveHabitCap(habits)) {
-      showNotification('Maximum limit of 20 active habits reached.');
       return;
     }
     setHabits((prev) =>
@@ -1303,7 +1291,6 @@ export default function App() {
   const handleUpdateHabit = (updatedHabit: Habit) => {
     let next = updatedHabit;
     if (next.isKeystone && !canEnableKeystone(habits, next.id)) {
-      showNotification(`You already have ${MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.`);
       next = { ...next, isKeystone: false };
     }
     setHabits((prev) =>
@@ -1314,7 +1301,6 @@ export default function App() {
 
   const handleToggleKeystone = (habitId: string, nextValue: boolean) => {
     if (nextValue && !canEnableKeystone(habits, habitId)) {
-      showNotification(`You already have ${MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.`);
       return;
     }
     setHabits((prev) =>
@@ -1525,7 +1511,6 @@ export default function App() {
     setReminders(updated);
     persistReminderSync(updated);
 
-    showNotification(hasTime ? 'Reminder scheduled with dual native alerts' : 'Reminder saved');
   };
 
   const handleToggleReminder = (id: string) => {
@@ -1584,7 +1569,6 @@ export default function App() {
   handleResetTodayRef.current = handleResetToday;
   handleToggleFallbackModeRef.current = handleToggleFallbackMode;
   handleToggleKeystoneRef.current = handleToggleKeystone;
-  showNotificationRef.current = showNotification;
   handleSetReminderCompletedRef.current = handleSetReminderCompleted;
 
   const stableCompleteToday = useCallback((habitId: string, isFallback?: boolean) => {
@@ -1598,9 +1582,6 @@ export default function App() {
   }, []);
   const stableToggleKeystone = useCallback((habitId: string, next: boolean) => {
     handleToggleKeystoneRef.current(habitId, next);
-  }, []);
-  const stableNotify = useCallback((message: string) => {
-    showNotificationRef.current(message);
   }, []);
   const stableLongPress = useCallback((h: Habit, rect?: DOMRect) => {
     setLongPressedHabitId(h.id);
@@ -1702,7 +1683,6 @@ export default function App() {
     const revised = updated.find((item) => item.id === id);
     if (revised) void upsertPublicReminder(session, revised);
     persistReminderSync(updated);
-    showNotification('Reminder updated');
   };
 
   const handleDeleteReminder = (id: string) => {
@@ -1721,7 +1701,6 @@ export default function App() {
       persistReminderSync([tombstone, ...updated]);
     }
     setReminders(updated);
-    showNotification('Reminder deleted');
   };
 
   const handleSnoozeReminder = (id: string, minutes: number) => {
@@ -1748,7 +1727,6 @@ export default function App() {
     const snoozed = updated.find((item) => item.id === id);
     if (snoozed) void upsertPublicReminder(session, snoozed);
     persistReminderSync(updated);
-    showNotification(`Snoozed for ${minutes} minutes`);
   };
 
   // Apple-style chrome: hide header/nav on scroll down, reveal on scroll up
@@ -1877,7 +1855,6 @@ export default function App() {
             onSetReminderCompleted={handleSetReminderCompleted}
             onDeleteReminder={handleDeleteReminder}
             onSnoozeReminder={handleSnoozeReminder}
-            onNotify={showNotification}
             userSession={session}
             onRemindersHydrated={(remote) => {
               const next = Array.isArray(remote) ? remote : [];
@@ -1889,11 +1866,6 @@ export default function App() {
               remindersSyncService.syncReminders(reminders ?? [], session).then((res) => {
                 if (seq !== reminderSyncSeqRef.current) return;
                 setReminders((prev) => mergeRemindersByUpdatedAt(prev, Array.isArray(res.reminders) ? res.reminders : []));
-                showNotification(
-                  res.status === 'synced'
-                    ? 'Reminders synchronized across devices'
-                    : 'Reminders saved on this device'
-                );
               });
             }}
             onScroll={handleMainScroll}
@@ -2053,6 +2025,7 @@ export default function App() {
               bowlFill={bowlFill}
               isDark={isDark}
               momentumScore={todayMomentumScore}
+              momentumPulse={momentumPulse}
               onCycleDaysChange={handleCycleDaysChange}
               celebrating={bowlCelebrating}
               onCelebrationDone={handleBowlCelebrationDone}
@@ -2083,7 +2056,6 @@ export default function App() {
                     onCompleteToday={stableCompleteToday}
                     onToggleFallbackMode={stableToggleFallbackMode}
                     onResetToday={stableResetToday}
-                    onNotify={stableNotify}
                     onLongPress={stableLongPress}
                     onDismissLongPress={stableDismissLongPress}
                     onOpenEdit={stableOpenEdit}
@@ -2114,28 +2086,6 @@ export default function App() {
           isNavVisible={isNavVisible && !isKeyboardOpen && !isAnyModalOpen}
           isBlurred={Boolean(longPressedHabitId)}
         />
-
-        {/* Top-Level Toast Notification */}
-        <AnimatePresence initial={false}>
-          {toastNotification && (
-            <motion.div
-              id="ascend-toast-notification"
-              role="status"
-              initial={toastMotion.initial}
-              animate={toastMotion.animate}
-              exit={toastMotion.exit}
-              transition={toastMotion.transition}
-              className="fixed top-20 left-1/2 -translate-x-1/2 z-50 mt-[env(safe-area-inset-top)] bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[12px] font-bold px-4 py-2 rounded-2xl shadow-2xl flex items-center space-x-2 border-2 border-[#23C15D] dark:border-blue-500 pointer-events-none transform-gpu"
-            >
-              <div className="w-4 h-4 rounded-full bg-emerald-50 dark:bg-blue-950 flex items-center justify-center text-[#23C15D] dark:text-blue-400 shrink-0">
-                <svg className="w-2.5 h-2.5 stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                </svg>
-              </div>
-              <span>{toastNotification}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Spotlighted Habit Overlay with Whole Screen Blur & Dustbin/Pen options */}
         <AnimatePresence>
@@ -2202,7 +2152,6 @@ export default function App() {
             if (deleteConfirmHabit) {
               handleDeleteHabit(deleteConfirmHabit.id);
               setDeleteConfirmHabit(null);
-              showNotification('Habit deleted');
             }
           }}
         />

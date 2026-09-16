@@ -1,5 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { StandaloneReminder } from '../types';
+
+const COMPLETE_GRACE_MS = 3000;
 
 interface ReminderCardProps {
   reminder: StandaloneReminder;
@@ -7,7 +9,6 @@ interface ReminderCardProps {
   onSetCompleted?: (id: string, completed: boolean) => void;
   onDeleteReminder?: (id: string) => void;
   onSnoozeReminder?: (id: string, minutes: number) => void;
-  onNotify?: (message: string) => void;
   onLongPress?: (reminder: StandaloneReminder, rect: DOMRect | null) => void;
 }
 
@@ -16,12 +17,14 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
   onToggleComplete,
   onSetCompleted,
   onSnoozeReminder,
-  onNotify,
   onLongPress,
 }) => {
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [localCompleted, setLocalCompleted] = useState(Boolean(reminder.completed));
+  const graceTimerRef = useRef<number | null>(null);
+  const pendingCommitRef = useRef(false);
 
   const cardRef = useRef<HTMLDivElement | null>(null);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -35,6 +38,54 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+  };
+
+  useEffect(() => {
+    if (!pendingCommitRef.current) {
+      setLocalCompleted(Boolean(reminder.completed));
+    }
+  }, [reminder.completed]);
+
+  useEffect(
+    () => () => {
+      if (graceTimerRef.current != null) window.clearTimeout(graceTimerRef.current);
+    },
+    []
+  );
+
+  const clearGraceTimer = () => {
+    if (graceTimerRef.current != null) {
+      window.clearTimeout(graceTimerRef.current);
+      graceTimerRef.current = null;
+    }
+  };
+
+  /** 3s undo window: optimistic UI first; cancel = zero-penalty revert. */
+  const requestCompleted = (next: boolean) => {
+    if (next) {
+      clearGraceTimer();
+      pendingCommitRef.current = true;
+      setLocalCompleted(true);
+      graceTimerRef.current = window.setTimeout(() => {
+        graceTimerRef.current = null;
+        pendingCommitRef.current = false;
+        if (onSetCompleted) onSetCompleted(reminder.id, true);
+        else onToggleComplete(reminder.id);
+      }, COMPLETE_GRACE_MS);
+      return;
+    }
+
+    // Uncheck / undo within grace → cancel pending sync with no penalty.
+    if (pendingCommitRef.current) {
+      clearGraceTimer();
+      pendingCommitRef.current = false;
+      setLocalCompleted(false);
+      return;
+    }
+
+    setLocalCompleted(false);
+    if (onSetCompleted) onSetCompleted(reminder.id, false);
+    else onToggleComplete(reminder.id);
   };
 
   // Format date and time for reminder card
@@ -114,7 +165,7 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
     }
   };
 
-  const statusBadge = getStatusBadge(reminder.date, reminder.time, reminder.completed);
+  const statusBadge = getStatusBadge(reminder.date, reminder.time, localCompleted);
 
   // TOUCH GESTURE HANDLERS
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -260,34 +311,20 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
   const finishSwipe = () => {
     const threshold = 40;
     if (swipeOffset > threshold) {
-      // Swiped Right -> Mark COMPLETED
-      if (!reminder.completed) {
-        if (onSetCompleted) {
-          onSetCompleted(reminder.id, true);
-        } else {
-          onToggleComplete(reminder.id);
-        }
+      // Swiped Right -> Mark COMPLETED (grace-delayed)
+      if (!localCompleted) {
+        requestCompleted(true);
         try {
           if (navigator.vibrate) navigator.vibrate(40);
         } catch {}
-        onNotify?.('Reminder completed');
-      } else {
-        onNotify?.('Already completed');
       }
     } else if (swipeOffset < -threshold) {
       // Swiped Left -> REMOVE MARK FOR COMPLETION
-      if (reminder.completed) {
-        if (onSetCompleted) {
-          onSetCompleted(reminder.id, false);
-        } else {
-          onToggleComplete(reminder.id);
-        }
+      if (localCompleted) {
+        requestCompleted(false);
         try {
           if (navigator.vibrate) navigator.vibrate(30);
         } catch {}
-        onNotify?.('Completion removed • Reminder active');
-      } else {
-        onNotify?.('Reminder is already active');
       }
     }
 
@@ -348,7 +385,7 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
           transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1)',
         }}
         className={`relative z-10 bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-100 dark:border-slate-800 flex items-start space-x-3.5 hover:border-slate-200 dark:hover:border-slate-700 transition-colors cursor-grab active:cursor-grabbing ${
-          reminder.completed ? 'opacity-85 hover:opacity-100' : ''
+          localCompleted ? 'opacity-85 hover:opacity-100' : ''
         }`}
       >
         {/* Tap-to-toggle completion checkbox:
@@ -358,17 +395,16 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            onToggleComplete(reminder.id);
-            onNotify?.(reminder.completed ? 'Reminder restored to active' : 'Reminder completed');
+            requestCompleted(!localCompleted);
           }}
           className={`mt-0.5 w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 cursor-pointer transition-all duration-150 ${
-            reminder.completed
+            localCompleted
               ? 'bg-[#23C15D] border-[#23C15D] dark:bg-blue-600 dark:border-blue-500 text-white shadow-xs'
               : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-blue-500'
           }`}
-          title={reminder.completed ? 'Mark pending' : 'Mark completed'}
+          title={localCompleted ? 'Mark pending' : 'Mark completed'}
         >
-          {reminder.completed && (
+          {localCompleted && (
             <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
@@ -380,14 +416,26 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
           <div className="flex items-center justify-between space-x-2">
             <h4
               className={`text-[14px] font-bold text-slate-900 dark:text-white truncate ${
-                reminder.completed ? 'line-through text-slate-500 dark:text-slate-400' : ''
+                localCompleted ? 'line-through text-slate-500 dark:text-slate-400' : ''
               }`}
             >
               {reminder.title}
             </h4>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-xl border shrink-0 ${statusBadge.color}`}>
-              {statusBadge.text}
-            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span
+                className={`text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md border ${
+                  reminder.time?.trim()
+                    ? 'border-emerald-300 text-emerald-800 bg-emerald-50 dark:border-blue-600 dark:text-blue-200 dark:bg-blue-950/50'
+                    : 'border-slate-300 text-slate-600 bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:bg-slate-800/60'
+                }`}
+                title={reminder.time?.trim() ? 'Timed reminder' : 'To-do (no time)'}
+              >
+                {reminder.time?.trim() ? 'R' : 'TD'}
+              </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-xl border ${statusBadge.color}`}>
+                {statusBadge.text}
+              </span>
+            </div>
           </div>
 
           {/* Scheduled Date & Time */}
@@ -427,7 +475,7 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
         </div>
 
         {/* Right Action: Snooze only (The dustbin icon has been removed from the card as requested) */}
-        {onSnoozeReminder && reminder.time && !reminder.completed && (
+        {onSnoozeReminder && reminder.time && !localCompleted && (
           <div className="flex flex-col items-center space-y-1 shrink-0">
             <button
               type="button"

@@ -84,18 +84,24 @@ export function persistCycleDays(days: CycleDays): void {
   }
 }
 
+/**
+ * Reads the active Bowl epoch. When no start is stored yet, returns an empty
+ * startIso so `activeCycleWindow` can fall back to the full sliding cycle
+ * (today − (D−1) → today) instead of collapsing to "today only".
+ */
 export function readBowlCycleEpoch(todayIso: string = toISODate()): BowlCycleEpoch {
   try {
     const startRaw = localStorage.getItem(CYCLE_START_STORAGE_KEY);
     const resetRaw = localStorage.getItem(CYCLE_RESET_AT_STORAGE_KEY);
-    const startIso = startRaw && /^\d{4}-\d{2}-\d{2}$/.test(startRaw) ? startRaw : todayIso;
+    const hasStored = Boolean(startRaw && /^\d{4}-\d{2}-\d{2}$/.test(startRaw));
+    const startIso = hasStored ? (startRaw as string) : '';
     const resetAt = resetRaw ? Number(resetRaw) : 0;
     return {
-      startIso: startIso > todayIso ? todayIso : startIso,
+      startIso: startIso && startIso > todayIso ? todayIso : startIso,
       resetAt: Number.isFinite(resetAt) && resetAt > 0 ? resetAt : 0,
     };
   } catch {
-    return { startIso: todayIso, resetAt: 0 };
+    return { startIso: '', resetAt: 0 };
   }
 }
 
@@ -173,18 +179,25 @@ export function cycleWindow(
   };
 }
 
-/** Fixed cycle from epoch start through today (capped at cycleDays). */
+/**
+ * Active Bowl window: always ends on today.
+ * Start is the later of (epoch start, today − (D−1)) so:
+ * - no epoch → full sliding cycle of D days (not today-only)
+ * - mid-cycle epoch → grows from epoch start through today
+ * - post-celebration epoch (start = today) → only today, then accumulates
+ * Never freezes endIso in the past (that made the bowl drop today's pieces).
+ */
 export function activeCycleWindow(
   cycleDays: number,
   epochStartIso: string,
   todayIso: string = toISODate()
 ): { startIso: string; endIso: string } {
   const days = Math.min(MAX_CYCLE_DAYS, Math.max(1, Math.round(cycleDays)));
-  const startIso = epochStartIso || todayIso;
-  const naturalEnd = addDaysIso(startIso, days - 1);
-  const endIso = todayIso < naturalEnd ? todayIso : naturalEnd;
-  if (endIso < startIso) return { startIso, endIso: startIso };
-  return { startIso, endIso };
+  const slidingStart = addDaysIso(todayIso, -(days - 1));
+  const epochStart = epochStartIso && /^\d{4}-\d{2}-\d{2}$/.test(epochStartIso) ? epochStartIso : slidingStart;
+  const startIso = epochStart > slidingStart ? epochStart : slidingStart;
+  if (startIso > todayIso) return { startIso: todayIso, endIso: todayIso };
+  return { startIso, endIso: todayIso };
 }
 
 /** Light theme = Morning bowl, Dark theme = Night bowl. */

@@ -20,7 +20,6 @@ import { formatFriendCodeDisplay, isValidFriendCode, normalizeFriendCode } from 
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import { overlayFade, sheetMotion, tapPress } from '../lib/motionPresets';
 import { HEADER_ICON_BTN_CLASS } from './ScreenHeader';
-import { FloatingToast } from './FloatingToast';
 import { ProfileAvatar } from './ProfileAvatar';
 
 export interface FriendsFeedProps {
@@ -57,20 +56,15 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   const [connectCode, setConnectCode] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [noticeTone, setNoticeTone] = useState<'ok' | 'error'>('ok');
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const [ledger, setLedger] = useState<FriendIdentityLedger | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
-
-  const noticeTimerRef = useRef<number | null>(null);
   const copiedTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (noticeTimerRef.current != null) window.clearTimeout(noticeTimerRef.current);
       if (copiedTimerRef.current != null) window.clearTimeout(copiedTimerRef.current);
     };
   }, []);
@@ -90,16 +84,6 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     () => (signedIn && userId ? outgoingPending(edges, userId) : []),
     [edges, signedIn, userId]
   );
-
-  const flash = (message: string, tone: 'ok' | 'error' = 'ok') => {
-    setNoticeTone(tone);
-    setNotice(message);
-    if (noticeTimerRef.current != null) window.clearTimeout(noticeTimerRef.current);
-    noticeTimerRef.current = window.setTimeout(() => {
-      if (mountedRef.current) setNotice(null);
-    }, 2400);
-  };
-
   const refresh = useCallback(async () => {
     if (!signedIn || !userId) {
       if (!mountedRef.current) return;
@@ -145,13 +129,12 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     try {
       await navigator.clipboard.writeText(friendCode);
       setCopied(true);
-      flash('Friend code copied.');
       if (copiedTimerRef.current != null) window.clearTimeout(copiedTimerRef.current);
       copiedTimerRef.current = window.setTimeout(() => {
         if (mountedRef.current) setCopied(false);
       }, 1600);
     } catch {
-      flash('Could not copy code.', 'error');
+      /* clipboard unavailable */
     }
   };
 
@@ -159,19 +142,11 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     event.preventDefault();
     if (!userId || connecting) return;
     const code = normalizeFriendCode(connectCode);
-    if (!isValidFriendCode(code)) {
-      flash('Enter a 6-character friend code.', 'error');
-      return;
-    }
-    if (code === friendCode) {
-      flash('You cannot connect with your own code.', 'error');
-      return;
-    }
+    if (!isValidFriendCode(code) || code === friendCode) return;
     setConnecting(true);
     const result = await connectByFriendCode(userId, code);
     if (mountedRef.current) {
       setConnecting(false);
-      flash(result.message, result.ok ? 'ok' : 'error');
       if (result.ok) {
         setConnectCode('');
         await refresh();
@@ -183,21 +158,12 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     setRespondingId(edgeId);
     const ok = await respondToFriendRequest(edgeId, status);
     setRespondingId(null);
-    flash(
-      ok
-        ? status === 'accepted'
-          ? 'Friend request accepted.'
-          : 'Request declined.'
-        : 'Could not update request.',
-      ok ? 'ok' : 'error'
-    );
     if (ok) await refresh();
   };
 
   const handleUnfriend = async (edge: FriendEdge) => {
     if (!userId) return;
     const ok = await removeFriendship(edge.id, { userId, peerId: edge.peerId });
-    flash(ok ? 'Friend removed.' : 'Could not remove friend.', ok ? 'ok' : 'error');
     if (ok) {
       if (ledger?.friendId === edge.peerId) setLedger(null);
       await refresh();
@@ -219,10 +185,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     if (!mountedRef.current) return;
     setLedgerLoading(false);
     if (snapshot) setLedger(snapshot);
-    else {
-      setLedger(null);
-      flash('Could not load friend ledger.', 'error');
-    }
+    else setLedger(null);
   };
 
   const inviteBody = (
@@ -493,7 +456,6 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
         </button>
         {drawerOpen && <div className="px-4 pb-4">{body}</div>}
         {ledgerModal}
-        <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
       </section>
     );
   }
@@ -548,7 +510,6 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
         </motion.button>
         {friendsModal}
         {ledgerModal}
-        <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
       </span>
     );
   }
@@ -558,7 +519,6 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
       <>
         {friendsModal}
         {ledgerModal}
-        <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
       </>
     );
   }
@@ -567,7 +527,6 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
     <section className="bg-surface rounded-2xl p-4.5 border border-line shadow-xs space-y-3">
       {body}
       {ledgerModal}
-      <FloatingToast message={notice} tone={noticeTone} id="friends-toast" />
     </section>
   );
 };

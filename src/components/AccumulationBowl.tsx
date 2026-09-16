@@ -9,8 +9,9 @@ import pieceBlueLight from '../assets/bowl/piece-blue-light.png';
 import { CYCLE_DAY_OPTIONS, clampCycleDays, type AccumulationPiece, type CycleDays } from '../services/reportService';
 import { tapPress } from '../lib/motionPresets';
 
-const SPRING = { type: 'spring' as const, stiffness: 140, damping: 15, mass: 1.1 };
-const SPAWN_Y = -280;
+const DROP_SPRING = { type: 'spring' as const, stiffness: 220, damping: 26, mass: 0.75, restDelta: 0.4 };
+/** Start closer to the rim so the fall has less overshoot energy. */
+const SPAWN_Y = -96;
 const MAX_VISIBLE_PIECES = 28;
 /** Compact 24px (w-6 h-6) so marbles nest inside the base arc. */
 const PIECE_SIZE = 24;
@@ -20,15 +21,15 @@ const MAX_X = 28;
 
 /**
  * Floor anchors sit inside the hollow glass base (not below the PNG foot).
- * Night asset is slightly shorter → nudge floor down a few px.
+ * Keep these conservative — spring overshoot must not push marbles under the bowl.
  */
 const THEME_LAYOUT = {
   light: {
-    floorAnchorY: 76,
+    floorAnchorY: 58,
     rimMask: 'radial-gradient(ellipse 50% 38% at 50% 50%, transparent 68%, #000 73%)',
   },
   dark: {
-    floorAnchorY: 78,
+    floorAnchorY: 60,
     rimMask: 'radial-gradient(ellipse 48% 36% at 50% 52%, transparent 66%, #000 71%)',
   },
 } as const;
@@ -126,8 +127,8 @@ function getParticleCoords(
   let xOffset = (col - (topRowCount - 1) / 2) * 14 + (row % 2 ? 6 : 0);
   xOffset = Math.max(-MAX_X, Math.min(MAX_X, xOffset));
 
-  // Relative floor offset (~-6…+8 for early rows) + shallow parabola
-  const yOffset = -4 + row * 8 + Math.pow(xOffset / 22, 2);
+  // Relative floor offset (~-4…+6 for early rows) — shallow stack, stays inside glass.
+  const yOffset = -2 + row * 6 + Math.pow(xOffset / 24, 2) * 0.8;
   const rotation = (index * 35) % 360;
   const entryX = ((index * 31) % 17) - 8;
   const spills = isOverflowing && row >= SPILL_ROW;
@@ -182,11 +183,11 @@ const MarblePiece: React.FC<{
 
   const motionProps = {
     initial: {
-      x: coords.x + coords.entryX,
-      y: SPAWN_Y,
-      rotate: coords.rotation * 0.2,
+      x: coords.x + coords.entryX * 0.35,
+      y: Math.min(SPAWN_Y, coords.y - 72),
+      rotate: coords.rotation * 0.15,
       opacity: 0,
-      scale: 0.88,
+      scale: 0.9,
     },
     animate: {
       x: coords.x,
@@ -200,11 +201,12 @@ const MarblePiece: React.FC<{
       opacity: 0,
     },
     transition: {
-      x: SPRING,
-      y: SPRING,
-      rotate: SPRING,
-      opacity: { duration: 0.28, ease: 'easeOut' as const },
-      scale: { duration: 0.28, ease: 'easeOut' as const },
+      // Critically-damped-ish drop: no deep bounce under the bowl base.
+      x: { ...DROP_SPRING, stiffness: 260, damping: 28 },
+      y: DROP_SPRING,
+      rotate: { ...DROP_SPRING, stiffness: 180, damping: 24 },
+      opacity: { duration: 0.22, ease: 'easeOut' as const },
+      scale: { type: 'spring' as const, stiffness: 280, damping: 24 },
     },
   };
 

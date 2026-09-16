@@ -93,9 +93,9 @@ export const CreateReminderModal: React.FC<CreateReminderModalProps> = ({
     >
             <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
-                <h2 className="text-[17px] font-bold text-slate-900 dark:text-white leading-tight">Create Reminder</h2>
+                <h2 className="text-[17px] font-bold text-slate-900 dark:text-white leading-tight">Create Task</h2>
                 <p className="text-[11.5px] text-slate-500 dark:text-slate-400">
-                  Native alerts fire 10 minutes before and at the exact time
+                  Add a time → Reminder (R). Leave time empty → To-Do (TD)
                 </p>
               </div>
               <motion.button

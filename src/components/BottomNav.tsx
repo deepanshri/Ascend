@@ -102,7 +102,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           )}
         </div>
         <span className={`text-[11px] mt-0.5 z-10 ${activeTab === 'reminders' ? 'font-semibold' : 'font-medium'}`}>
-          Reminders
+          Tasks
         </span>
         {activeTab === 'reminders' && (
           <motion.div

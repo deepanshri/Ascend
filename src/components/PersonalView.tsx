@@ -21,7 +21,6 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { IdentityEvidence, UserSession } from '../types';
 import { FriendsFeed } from './FriendsFeed';
-import { FloatingToast } from './FloatingToast';
 import { MotionModal } from './MotionModal';
 import { ProfileAvatar } from './ProfileAvatar';
 import { overlayFade, tapPress } from '../lib/motionPresets';
@@ -132,10 +131,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
   // Help & Feedback state
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackSent, setFeedbackSent] = useState(false);
-
-  // Sync state & toast
   const [isSyncing, setIsSyncing] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Persist interests
   useEffect(() => {
@@ -143,24 +139,15 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       localStorage.setItem('ascend_personal_interests', JSON.stringify(selectedInterests));
     } catch {}
   }, [selectedInterests]);
-
-  const toastTimerRef = useRef<number | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
       if (feedbackTimerRef.current != null) window.clearTimeout(feedbackTimerRef.current);
     };
   }, []);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToastMessage(null), 3000);
-  };
 
   const handleSaveDetails = (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,7 +166,6 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     }
 
     setIsEditDetailsOpen(false);
-    showToast('Personal details updated!');
   };
 
   const handleSaveBecoming = (e: React.FormEvent) => {
@@ -187,7 +173,6 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     setBecomingGoal(tempBecoming);
     localStorage.setItem('ascend_becoming_goal', tempBecoming);
     setIsBecomingModalOpen(false);
-    showToast('Identity goal updated!');
   };
 
   const handleSelectAvatar = (id: string) => {
@@ -197,7 +182,6 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     onUpdateAvatar?.(next);
     void persistUserProfile(userSession, { avatar_url: next });
     setIsAvatarSheetOpen(false);
-    showToast('Avatar updated');
   };
 
   useEffect(() => {
@@ -224,7 +208,6 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       setFeedbackSent(false);
       setFeedbackText('');
       setIsHelpModalOpen(false);
-      showToast('Thank you! Your feedback has been received.');
     }, 1000);
   };
 
@@ -232,9 +215,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     setIsSyncing(true);
     try {
       await onSyncNow();
-      showToast('✓ Synced successfully with cloud storage!');
     } catch {
-      showToast('Sync failed — you are offline or the cloud write did not succeed.');
     } finally {
       if (mountedRef.current) setIsSyncing(false);
     }
@@ -248,8 +229,6 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
       onScroll={onScroll}
       className={`absolute inset-0 px-4 ${SCREEN_INSET_CLASS} pb-24 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none`}
     >
-      <FloatingToast message={toastMessage} />
-
       <ScreenHeader
         title="Personal"
         subtitle="Your space. Your growth."

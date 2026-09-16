@@ -15,4 +15,5 @@
     <string name="widget_identity_description">Glanceable lock-screen identity votes. Resets at midnight.</string>
     <string name="widget_reminders_empty">No active reminders</string>
     <string name="widget_habits_empty">No habits scheduled today</string>
+    <string name="widget_habits_add">Open Ascend to add a habit</string>
 </resources>

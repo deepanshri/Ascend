@@ -125,8 +125,9 @@ object WidgetViews {
         val count = rows.length()
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_habits)
+            // Only the corner + opens the app; header/list stay in-widget.
             views.setOnClickPendingIntent(
-                R.id.widget_habits_header,
+                R.id.widget_habits_add,
                 openApp(context, WidgetContract.ROUTE_HOME, widgetId)
             )
             views.setViewVisibility(R.id.widget_habits_empty, if (count == 0) View.VISIBLE else View.GONE)

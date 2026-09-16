@@ -2,7 +2,6 @@ package com.ascend.habittracker
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import org.json.JSONArray
@@ -33,7 +32,6 @@ class HabitsRemoteViewsFactory(
         val id = row.optString("id")
         val completed = row.optBoolean("completed", false)
         val streak = row.optInt("streak", 0)
-        val openRoute = "${WidgetContract.ROUTE_HOME}?habit=${Uri.encode(id)}"
 
         views.setTextViewText(R.id.habit_title, row.optString("title", "Habit"))
         views.setTextViewText(R.id.habit_streak, if (streak > 0) "${streak}d" else "")
@@ -42,16 +40,13 @@ class HabitsRemoteViewsFactory(
             if (completed) R.drawable.widget_box_on else R.drawable.widget_box_off
         )
 
+        // Checkbox (and row) toggles completion in-widget — never launches the app.
         val toggleFill = Intent().apply {
             putExtra(WidgetContract.EXTRA_ITEM_ID, id)
         }
         views.setOnClickFillInIntent(R.id.habit_check, toggleFill)
-
-        val openFill = Intent().apply {
-            putExtra(WidgetContract.EXTRA_ROUTE, openRoute)
-        }
-        views.setOnClickFillInIntent(R.id.habit_title, openFill)
-        views.setOnClickFillInIntent(R.id.habit_row, openFill)
+        views.setOnClickFillInIntent(R.id.habit_title, toggleFill)
+        views.setOnClickFillInIntent(R.id.habit_row, toggleFill)
 
         return views
     }

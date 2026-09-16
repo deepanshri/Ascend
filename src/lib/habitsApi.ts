@@ -384,7 +384,10 @@ export async function fetchHabitLogsForDate(
   }
 }
 
-/** Inclusive habit_logs fetch for Bowl / Reports cycle window (startIso → endIso). */
+/** Inclusive habit_logs fetch for Bowl / Reports cycle window (startIso → endIso).
+ * Matches both `logged_date` and legacy `date` columns, then client-filters to the
+ * window. Read-only — never writes or resets cycle epoch.
+ */
 export async function fetchHabitLogsForDateRange(
   userId: string | null | undefined,
   startIso: string,
@@ -393,32 +396,48 @@ export async function fetchHabitLogsForDateRange(
   if (!canSync(userId) || !supabase) return [];
   if (!startIso || !endIso || startIso > endIso) return [];
   try {
-    let { data, error } = await supabase
+    const uid = userId as string;
+    const byLogged = await supabase
       .from('habit_logs')
       .select('*')
-      .eq('user_id', userId as string)
+      .eq('user_id', uid)
       .gte('logged_date', startIso)
       .lte('logged_date', endIso);
 
-    if (error) {
-      const fallback = await supabase
-        .from('habit_logs')
-        .select('*')
-        .eq('user_id', userId as string)
-        .gte('date', startIso)
-        .lte('date', endIso);
-      data = fallback.data;
-      error = fallback.error;
-    }
+    // Legacy / partially-migrated rows may only have `date` populated.
+    // Run this even when logged_date query "succeeds" with a partial set.
+    const byDate = await supabase
+      .from('habit_logs')
+      .select('*')
+      .eq('user_id', uid)
+      .gte('date', startIso)
+      .lte('date', endIso);
 
-    if (error) {
-      console.warn('habit_logs range fetch failed:', error.message);
+    if (byLogged.error && byDate.error) {
+      console.warn(
+        'habit_logs range fetch failed:',
+        byLogged.error.message || byDate.error.message
+      );
       return [];
     }
 
-    return (data as HabitLogRow[] | null || [])
+    const rowsById = new Map<string, HabitLogRow>();
+    const ingest = (rows: HabitLogRow[] | null | undefined) => {
+      for (const row of rows || []) {
+        const key = String(row.id || `${row.habit_id || row.habitId}-${row.logged_date || row.date || ''}`);
+        if (!rowsById.has(key)) rowsById.set(key, row);
+      }
+    };
+    if (!byLogged.error) ingest(byLogged.data as HabitLogRow[] | null);
+    if (!byDate.error) ingest(byDate.data as HabitLogRow[] | null);
+
+    return Array.from(rowsById.values())
       .map((row) => mapHabitLogRowToEvent(row))
-      .filter((event): event is HabitCompletionEvent => event !== null && !isSeedHabitId(event.habitId));
+      .filter((event): event is HabitCompletionEvent => {
+        if (!event || isSeedHabitId(event.habitId)) return false;
+        const iso = event.date || '';
+        return Boolean(iso && iso >= startIso && iso <= endIso);
+      });
   } catch (err) {
     console.warn('habit_logs range fetch offline:', err);
     return [];
