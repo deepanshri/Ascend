@@ -7,13 +7,14 @@
     <string name="health_permissions_rationale">Ascend reads sleep sessions from Health Connect to power the Sleep ring on Report.</string>
     <string name="widget_report_name">Report rings</string>
     <string name="widget_report_description">Daily momentum score and Work / SI rings.</string>
-    <string name="widget_reminders_name">Reminders</string>
-    <string name="widget_reminders_description">Today’s reminders with tap-to-complete circles.</string>
+    <string name="widget_reminders_name">Tasks</string>
+    <string name="widget_reminders_description">Today’s tasks — Reminders (R) above To-Dos (TD).</string>
+    <string name="widget_tasks_title">Tasks</string>
     <string name="widget_habits_name">Habits</string>
-    <string name="widget_habits_description">Scrollable today’s habit queue with quick-toggle checkboxes.</string>
+    <string name="widget_habits_description">Scrollable habit pills with in-widget check toggles.</string>
     <string name="widget_identity_name">Today’s identity ledger</string>
     <string name="widget_identity_description">Glanceable lock-screen identity votes. Resets at midnight.</string>
-    <string name="widget_reminders_empty">No active reminders</string>
+    <string name="widget_reminders_empty">No tasks yet</string>
     <string name="widget_habits_empty">No habits scheduled today</string>
-    <string name="widget_habits_add">Open Ascend to add a habit</string>
+    <string name="widget_habits_add">Open Ascend to add</string>
 </resources>

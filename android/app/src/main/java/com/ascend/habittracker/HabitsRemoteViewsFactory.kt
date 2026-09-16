@@ -37,7 +37,7 @@ class HabitsRemoteViewsFactory(
         views.setTextViewText(R.id.habit_streak, if (streak > 0) "${streak}d" else "")
         views.setImageViewResource(
             R.id.habit_check,
-            if (completed) R.drawable.widget_box_on else R.drawable.widget_box_off
+            if (completed) R.drawable.widget_check_on else R.drawable.widget_check_off
         )
 
         // Checkbox (and row) toggles completion in-widget — never launches the app.

@@ -196,6 +196,9 @@ export function buildWidgetSnapshot(input: WidgetSnapshotInput): WidgetSnapshot 
     .filter((item) => !item.deleted)
     .sort((a, b) => {
       if (a.completed !== b.completed) return a.completed ? 1 : -1;
+      const aTimed = a.time && String(a.time).trim() ? 0 : 1;
+      const bTimed = b.time && String(b.time).trim() ? 0 : 1;
+      if (aTimed !== bTimed) return aTimed - bTimed;
       return `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`);
     })
     .slice(0, 5)

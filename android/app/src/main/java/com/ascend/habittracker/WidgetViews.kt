@@ -83,13 +83,19 @@ object WidgetViews {
     }
 
     fun updateReminders(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
-        val rows = WidgetStore.readSnapshot(context).optJSONArray("reminders") ?: JSONArray()
+        val raw = WidgetStore.readSnapshot(context).optJSONArray("reminders") ?: JSONArray()
+        val rows = sortTasksForWidget(raw)
+        val openCount = countOpenTasks(rows)
         appWidgetIds.forEach { widgetId ->
-            val views = RemoteViews(context.packageName, R.layout.widget_reminders)
+            val views = RemoteViews(context.packageName, R.layout.widget_tasks)
+            // Only the corner + opens the app.
             views.setOnClickPendingIntent(
-                R.id.widget_reminders_header,
+                R.id.widget_tasks_add,
                 openApp(context, WidgetContract.ROUTE_REMINDERS, widgetId)
             )
+            views.setTextViewText(R.id.widget_tasks_count, openCount.toString())
+            views.setTextViewText(R.id.widget_reminders_header, context.getString(R.string.widget_tasks_title))
+
             val count = min(WidgetContract.ROW_COUNT, rows.length())
             views.setViewVisibility(R.id.widget_reminders_empty, if (count == 0) View.VISIBLE else View.GONE)
             for (index in 0 until WidgetContract.ROW_COUNT) {
@@ -100,36 +106,46 @@ object WidgetViews {
                 val row = rows.optJSONObject(index) ?: JSONObject()
                 val id = row.optString("id")
                 val completed = row.optBoolean("completed", false)
+                val timeLabel = row.optString("time", "").trim()
+                val kind = if (isTimedTask(timeLabel)) "R" else "TD"
+                val title = row.optString("title", "Task")
                 views.setViewVisibility(reminderRowIds[index], View.VISIBLE)
-                views.setTextViewText(reminderTitleIds[index], row.optString("title", "Reminder"))
-                views.setTextViewText(reminderTimeIds[index], row.optString("time", ""))
+                views.setTextViewText(reminderTitleIds[index], "$kind · $title")
+                views.setTextViewText(
+                    reminderTimeIds[index],
+                    if (isTimedTask(timeLabel)) timeLabel else "To-Do"
+                )
                 views.setImageViewResource(
                     reminderCheckIds[index],
                     if (completed) R.drawable.widget_check_on else R.drawable.widget_check_off
                 )
-                views.setOnClickPendingIntent(
-                    reminderCheckIds[index],
-                    actionIntent(context, WidgetContract.ACTION_TOGGLE_REMINDER, id, widgetId * 20 + index)
+                // Checkbox + whole pill toggle in-widget (no app launch).
+                val toggle = actionIntent(
+                    context,
+                    WidgetContract.ACTION_TOGGLE_REMINDER,
+                    id,
+                    widgetId * 20 + index
                 )
-                views.setOnClickPendingIntent(
-                    reminderTitleIds[index],
-                    openApp(context, "${WidgetContract.ROUTE_REMINDERS}?id=${Uri.encode(id)}", widgetId * 20 + index + 10)
-                )
+                views.setOnClickPendingIntent(reminderCheckIds[index], toggle)
+                views.setOnClickPendingIntent(reminderRowIds[index], toggle)
             }
             manager.updateAppWidget(widgetId, views)
         }
     }
 
     fun updateHabits(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
-        val rows = WidgetStore.readSnapshot(context).optJSONArray("habits") ?: JSONArray()
+        val snapshot = WidgetStore.readSnapshot(context)
+        val rows = snapshot.optJSONArray("habits") ?: JSONArray()
         val count = rows.length()
+        val done = snapshot.optInt("habitsCompleted", countCompletedHabits(rows))
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_habits)
-            // Only the corner + opens the app; header/list stay in-widget.
+            // Only the corner + opens the app; list toggles stay in-widget.
             views.setOnClickPendingIntent(
                 R.id.widget_habits_add,
                 openApp(context, WidgetContract.ROUTE_HOME, widgetId)
             )
+            views.setTextViewText(R.id.widget_habits_count, done.toString())
             views.setViewVisibility(R.id.widget_habits_empty, if (count == 0) View.VISIBLE else View.GONE)
             views.setViewVisibility(R.id.widget_habits_list, if (count == 0) View.GONE else View.VISIBLE)
 
@@ -194,6 +210,49 @@ object WidgetViews {
 
     private fun ids(context: Context, manager: AppWidgetManager, cls: Class<*>): IntArray {
         return manager.getAppWidgetIds(ComponentName(context, cls))
+    }
+
+    /** Timed reminders (R) above timeless to-dos (TD); open items before completed. */
+    private fun sortTasksForWidget(source: JSONArray): JSONArray {
+        val items = mutableListOf<JSONObject>()
+        for (i in 0 until source.length()) {
+            source.optJSONObject(i)?.let { items.add(it) }
+        }
+        items.sortWith(
+            compareBy<JSONObject> { if (it.optBoolean("completed", false)) 1 else 0 }
+                .thenBy { if (isTimedTask(it.optString("time", ""))) 0 else 1 }
+                .thenBy { it.optString("time", "") }
+                .thenBy { it.optString("title", "") }
+        )
+        val out = JSONArray()
+        items.forEach { out.put(it) }
+        return out
+    }
+
+    private fun isTimedTask(time: String): Boolean {
+        val raw = time.trim()
+        if (raw.isEmpty()) return false
+        if (raw.equals("Anytime", ignoreCase = true)) return false
+        if (raw.equals("To-Do", ignoreCase = true)) return false
+        return true
+    }
+
+    private fun countOpenTasks(rows: JSONArray): Int {
+        var open = 0
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONObject(i) ?: continue
+            if (!row.optBoolean("completed", false)) open += 1
+        }
+        return open
+    }
+
+    private fun countCompletedHabits(rows: JSONArray): Int {
+        var done = 0
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONObject(i) ?: continue
+            if (row.optBoolean("completed", false)) done += 1
+        }
+        return done
     }
 
     private fun isDark(context: Context): Boolean {
