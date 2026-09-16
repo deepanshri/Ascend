@@ -309,7 +309,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
         ...item,
         coords: {
           ...item.coords,
-          y: item.coords.y + 96,
+          yPct: item.coords.yPct + 28,
           spills: true,
         },
       }))

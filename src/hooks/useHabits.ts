@@ -85,6 +85,40 @@ export function buildCycleAccumulationPieces(input: {
   );
 }
 
+/**
+ * Merge authoritative cycle pieces with optimistic drops so marbles appear at t=0
+ * before (or without waiting on) remote hydration. Optimistic rows lose once the
+ * real completionEvents catch up with the same habitId::isoDate key.
+ */
+export function mergeOptimisticBowlPieces(
+  authoritative: AccumulationPiece[],
+  optimistic: AccumulationPiece[]
+): AccumulationPiece[] {
+  const byId = new Map<string, AccumulationPiece>();
+  for (const piece of authoritative) byId.set(piece.id, piece);
+  for (const piece of optimistic) {
+    if (!byId.has(piece.id)) byId.set(piece.id, piece);
+  }
+  return Array.from(byId.values()).sort(
+    (a, b) => a.isoDate.localeCompare(b.isoDate) || a.id.localeCompare(b.id)
+  );
+}
+
+/** Build a single optimistic marble for an immediate habit check. */
+export function makeOptimisticBowlPiece(input: {
+  habitId: string;
+  isoDate: string;
+  kind?: AccumulationPiece['kind'];
+}): AccumulationPiece {
+  const kind = input.kind ?? 'full';
+  return {
+    id: `${input.habitId}::${input.isoDate}`,
+    habitId: input.habitId,
+    isoDate: input.isoDate,
+    kind,
+  };
+}
+
 /** Stamp the habit's bowl on a completion or momentum payload. */
 export function withHabitTimeOfDay<T>(
   payload: T,

@@ -125,11 +125,13 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   const scheduleComplete = (isFallback: boolean) => {
     clearPendingComplete();
     setOptimisticDone(true);
+    // Commit local bowl + momentum immediately so the marble drops at t=0.
+    // Grace window still allows undo via reset with zero lasting penalty.
+    onCompleteToday(habit.id, isFallback);
     pendingCompleteRef.current = {
       isFallback,
       timer: window.setTimeout(() => {
         pendingCompleteRef.current = null;
-        onCompleteToday(habit.id, isFallback);
       }, COMPLETE_GRACE_MS),
     };
   };
@@ -139,6 +141,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       clearPendingComplete();
       setOptimisticDone(false);
       setCelebration('none');
+      onResetToday(habit.id);
       return;
     }
     setOptimisticDone(false);

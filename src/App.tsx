@@ -74,7 +74,7 @@ import {
   type NotificationWindowKey,
   type PsychologyNotificationWindows,
 } from './lib/notifications';
-import { ledgerEvidenceForHabits, displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
+import { ledgerEvidenceForHabits, displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, removeTodayEvidence, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
 import { deleteHabit, stableHabitLogId } from './services/habitService';
 import {
   accumulationPiecesFromLogs,
@@ -1071,6 +1071,28 @@ export default function App() {
     void appendMomentumEventRemote(sessionRef.current?.id, event);
   };
 
+  /** Local momentum rows awaiting remote flush — cleared on grace undo. */
+  const pendingGraceMomentumRef = useRef(
+    new Map<string, { event: MomentumEvent; timer: number }>()
+  );
+
+  const flushGraceMomentum = (habitId: string) => {
+    const pending = pendingGraceMomentumRef.current.get(habitId);
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingGraceMomentumRef.current.delete(habitId);
+    void appendMomentumEventRemote(sessionRef.current?.id, pending.event);
+  };
+
+  const cancelGraceMomentum = (habitId: string): boolean => {
+    const pending = pendingGraceMomentumRef.current.get(habitId);
+    if (!pending) return false;
+    window.clearTimeout(pending.timer);
+    pendingGraceMomentumRef.current.delete(habitId);
+    setMomentumEvents((prev) => prev.filter((row) => row.id !== pending.event.id));
+    return true;
+  };
+
   const activeFrictionPrompt = pendingFriction[0] ?? null;
 
   const handleFrictionSubmit = (reason: string) => {
@@ -1116,12 +1138,24 @@ export default function App() {
     );
 
     // One completion row per (habit, calendar day). Re-checking after uncheck replaces, never stacks.
+    // Local state updates immediately so bowl marbles drop at t=0 (remote sync is background).
     setCompletionEvents((prev) => replaceTodayCompletion(prev, newEvent, calendarOrigin));
     void upsertHabitLog(session?.id, newEvent).catch(() => {});
 
     // momentum_events stays append-only; skip a second full/fallback row for the same local day.
+    // Defer remote append briefly so a grace undo can drop the local row with zero penalty.
     if (!alreadyVotedMomentum) {
-      appendMomentumLog(createMomentumEvent(targetHabit, isMicro ? 'fallback' : 'full', loggedDate, newEvent.timestamp));
+      const momentumEvent = createMomentumEvent(
+        targetHabit,
+        isMicro ? 'fallback' : 'full',
+        loggedDate,
+        newEvent.timestamp
+      );
+      setMomentumEvents((prev) => mergeMomentumEvents(prev, [momentumEvent]));
+      const existing = pendingGraceMomentumRef.current.get(habitId);
+      if (existing) window.clearTimeout(existing.timer);
+      const timer = window.setTimeout(() => flushGraceMomentum(habitId), 3000);
+      pendingGraceMomentumRef.current.set(habitId, { event: momentumEvent, timer });
     }
     // Always pulse the Dynamic Island on a successful swipe-complete (score may round flat).
     setMomentumPulse((n) => n + 1);
@@ -1187,15 +1221,21 @@ export default function App() {
     setActiveFallbackIds((prev) => [...prev, habitId]);
   };
 
-  // GESTURE / TAP ACTION: Uncheck today. Daily habit_logs drop; momentum_events identity points stay.
+  // GESTURE / TAP ACTION: Uncheck today. Daily habit_logs drop; momentum_events identity points stay
+  // unless still inside the grace window (pending remote flush) — then local vote is rolled back.
   const handleResetToday = (habitId: string) => {
     if (!isViewingToday) return;
     const loggedDate = toISODate(calendarOrigin);
+    const rolledBackMomentum = cancelGraceMomentum(habitId);
     setCompletionEvents((prev) =>
       prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
     );
     void deleteHabitLog(session?.id, habitId, loggedDate, todayDayIndex).catch(() => {});
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
+    setEvidenceList((prev) => removeTodayEvidence(prev, habitId, loggedDate, calendarOrigin));
+    if (rolledBackMomentum) {
+      setMomentumPulse((n) => n + 1);
+    }
   };
 
   // Add new habit (optimistic). Remote insert is performed by AddHabitModal.
