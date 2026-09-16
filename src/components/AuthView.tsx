@@ -11,6 +11,58 @@ interface AuthViewProps {
   onAuthSuccess: (session: UserSession, isNewUser?: boolean, interests?: string[]) => void;
 }
 
+/** Shown after sign-up when Supabase requires email confirmation. */
+const ConfirmEmailScreen: React.FC<{ email: string; onBackToSignIn: () => void }> = ({
+  email,
+  onBackToSignIn,
+}) => (
+  <div
+    id="auth-screen"
+    className="relative flex flex-col justify-between h-full px-6 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] text-slate-900 dark:text-white bg-[#F8FAF9] dark:bg-slate-950 select-none overflow-y-auto overscroll-y-contain"
+  >
+    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-80 h-72 bg-emerald-100/50 dark:bg-blue-900/20 rounded-full blur-3xl pointer-events-none" />
+
+    <div className="relative z-10 my-auto flex flex-col items-center text-center space-y-5 py-8">
+      {/* Mail envelope icon */}
+      <div className="flex items-center justify-center w-20 h-20 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm">
+        <svg className="w-10 h-10 text-emerald-600 dark:text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <rect x="2" y="4" width="20" height="16" rx="2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M2 7l10 7 10-7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+
+      <div className="space-y-2 max-w-xs">
+        <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Check your inbox</h1>
+        <p className="text-[13px] text-slate-500 dark:text-slate-400 leading-relaxed">
+          We've sent a confirmation link to
+        </p>
+        <p className="text-[13px] font-bold text-emerald-700 dark:text-blue-400 break-all">{email}</p>
+        <p className="text-[12px] text-slate-400 dark:text-slate-500 leading-relaxed mt-1">
+          Open the link in that email to activate your account. You won't be able to sign in until you confirm.
+        </p>
+      </div>
+
+      <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl p-4 border border-slate-200/90 dark:border-slate-800 shadow-sm max-w-xs w-full">
+        <p className="text-[11.5px] text-slate-500 dark:text-slate-400 mb-3">
+          Didn't get the email? Check your spam folder. The link expires in 24 hours.
+        </p>
+        <motion.button
+          type="button"
+          whileTap={tapPress}
+          onClick={onBackToSignIn}
+          className="w-full py-2.5 px-4 bg-[#23C15D] dark:bg-blue-600 text-white rounded-xl font-bold text-[13px] hover:bg-emerald-600 dark:hover:bg-blue-500 cursor-pointer transition"
+        >
+          Back to Sign In
+        </motion.button>
+      </div>
+    </div>
+
+    <div className="relative z-10 text-center pb-2 text-[11px] text-slate-400">
+      Strict privacy by design • Pure momentum engine • Offline resilient
+    </div>
+  </div>
+);
+
 export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
@@ -21,11 +73,29 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Email confirmation pending screen
+  const [confirmEmailAddress, setConfirmEmailAddress] = useState<string | null>(null);
+
   // Forgot password modal
   const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotStatus, setForgotStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [isForgotLoading, setIsForgotLoading] = useState(false);
+
+  // Show confirmation pending screen if sign-up returned 'confirm-email'
+  if (confirmEmailAddress) {
+    return (
+      <ConfirmEmailScreen
+        email={confirmEmailAddress}
+        onBackToSignIn={() => {
+          setConfirmEmailAddress(null);
+          setMode('login');
+          setPassword('');
+          setErrorMsg(null);
+        }}
+      />
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,13 +117,17 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
         const session = await authService.signInWithEmail(email.trim(), password);
         onAuthSuccess(session, false);
       } else {
-        const session = await authService.signUpWithEmail(
+        const result = await authService.signUpWithEmail(
           email.trim(),
           password,
           name.trim(),
           signupInterests
         );
-        onAuthSuccess(session, true, signupInterests);
+        if (result === 'confirm-email') {
+          setConfirmEmailAddress(email.trim());
+        } else {
+          onAuthSuccess(result, true, signupInterests);
+        }
       }
     } catch (err: any) {
       setErrorMsg(err?.message || 'Authentication failed. Please check your credentials.');

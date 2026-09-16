@@ -2,6 +2,7 @@ package com.ascend.habittracker
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Paint
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import org.json.JSONArray
@@ -39,6 +40,19 @@ class HabitsRemoteViewsFactory(
             R.id.habit_check,
             if (completed) R.drawable.widget_check_on else R.drawable.widget_check_off
         )
+        views.setInt(
+            R.id.habit_title,
+            "setPaintFlags",
+            if (completed) {
+                Paint.STRIKE_THRU_TEXT_FLAG or Paint.ANTI_ALIAS_FLAG
+            } else {
+                Paint.ANTI_ALIAS_FLAG
+            }
+        )
+        views.setTextColor(
+            R.id.habit_title,
+            context.getColor(if (completed) R.color.widget_muted else R.color.widget_text)
+        )
 
         // Checkbox (and row) toggles completion in-widget — never launches the app.
         val toggleFill = Intent().apply {
@@ -63,6 +77,18 @@ class HabitsRemoteViewsFactory(
     override fun hasStableIds(): Boolean = true
 
     private fun loadRows() {
-        rows = WidgetStore.readSnapshot(context).optJSONArray("habits") ?: JSONArray()
+        val source = WidgetStore.readSnapshot(context).optJSONArray("habits") ?: JSONArray()
+        val visible = JSONArray()
+        for (i in 0 until source.length()) {
+            val row = source.optJSONObject(i) ?: continue
+            val id = row.optString("id")
+            val completed = row.optBoolean("completed", false)
+            // Hide committed completes; keep grace-window rows visible (checked).
+            if (completed && !WidgetCompletionGrace.isPending(WidgetCompletionGrace.KIND_HABIT, id)) {
+                continue
+            }
+            visible.put(row)
+        }
+        rows = visible
     }
 }

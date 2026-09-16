@@ -11,8 +11,7 @@ class WidgetActionReceiver : BroadcastReceiver() {
         when (action) {
             WidgetContract.ACTION_TOGGLE_REMINDER -> {
                 val id = intent.getStringExtra(WidgetContract.EXTRA_ITEM_ID) ?: return
-                if (WidgetStore.toggleReminder(context, id)) {
-                    WidgetBridgePlugin.emitLatestAction(context)
+                if (WidgetCompletionGrace.onToggle(context, WidgetCompletionGrace.KIND_REMINDER, id)) {
                     WidgetViews.updateAll(context)
                 }
             }
@@ -23,8 +22,7 @@ class WidgetActionReceiver : BroadcastReceiver() {
                     return
                 }
                 val id = intent.getStringExtra(WidgetContract.EXTRA_ITEM_ID) ?: return
-                if (WidgetStore.toggleHabit(context, id)) {
-                    WidgetBridgePlugin.emitLatestAction(context)
+                if (WidgetCompletionGrace.onToggle(context, WidgetCompletionGrace.KIND_HABIT, id)) {
                     WidgetViews.updateAll(context)
                 }
             }

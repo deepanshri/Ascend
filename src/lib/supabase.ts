@@ -322,7 +322,7 @@ export const authService = {
     password: string,
     name: string,
     interests: string[] = []
-  ): Promise<UserSession> {
+  ): Promise<UserSession | 'confirm-email'> {
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -336,22 +336,23 @@ export const authService = {
         },
       });
 
+      // User signed up and was immediately auto-confirmed (e.g. dev/local Supabase).
       if (data.session?.user) {
         const session = sessionFromAuthUser(data.session.user, email, name);
         setStoredSession(session);
         return session;
       }
 
-      // Skip inbox confirmation: if the user row exists, open the session with the password.
-      try {
-        return await signInRemote(email, password);
-      } catch (signInErr) {
-        if (error) throw new Error(mapAuthError(error.message));
-        throw signInErr;
+      // Email confirmation required — Supabase returns a user row but NO session.
+      // The user must click the confirmation link before they can sign in.
+      if (data.user && !data.session) {
+        return 'confirm-email';
       }
+
+      throw new Error(error ? mapAuthError(error.message) : 'Sign up failed. Please try again.');
     }
 
-    // Local simulated signup
+    // Local / offline simulated signup (no Supabase configured)
     await new Promise((r) => setTimeout(r, 500));
     const session: UserSession = {
       id: 'usr_' + Math.random().toString(36).substring(2, 9),
@@ -446,6 +447,60 @@ export const authService = {
       } catch {}
     }
     setStoredSession(null);
+  },
+
+  /**
+   * Change the signed-in user's password via Supabase Auth.
+   * The user must have an active session (they are already signed in).
+   * Returns null on success, or an error message string on failure.
+   */
+  async changePassword(newPassword: string): Promise<string | null> {
+    if (!isSupabaseConfigured || !supabase) {
+      return 'Cloud is not configured — password change unavailable.';
+    }
+    if (!newPassword || newPassword.length < 6) {
+      return 'Password must be at least 6 characters.';
+    }
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) return mapAuthError(error.message);
+      return null; // success
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Password change failed.';
+    }
+  },
+
+  /**
+   * Permanently delete the signed-in user's account.
+   *
+   * Step 1: Call the `delete-account` Edge Function, which uses the service role
+   *   key to delete the auth.users row (cascading to all owned public.* data).
+   * Step 2: Sign out locally and clear stored session.
+   *
+   * Returns null on success, or an error message string on failure.
+   */
+  async deleteAccount(userId: string): Promise<string | null> {
+    if (!isSupabaseConfigured || !supabase) {
+      // No Supabase — just sign out locally.
+      setStoredSession(null);
+      return null;
+    }
+    try {
+      const { error } = await supabase.functions.invoke('delete-account', {
+        body: { userId },
+      });
+      if (error) {
+        console.warn('delete-account edge function error:', error.message);
+        return error.message || 'Account deletion failed. Please contact support.';
+      }
+      // Sign out after successful deletion.
+      try { await supabase.auth.signOut(); } catch {}
+      setStoredSession(null);
+      return null; // success
+    } catch (err) {
+      console.warn('delete-account error:', err);
+      return err instanceof Error ? err.message : 'Account deletion failed.';
+    }
   },
 };
 

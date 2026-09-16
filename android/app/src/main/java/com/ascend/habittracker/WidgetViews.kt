@@ -75,7 +75,7 @@ object WidgetViews {
         val rows = sortTasksForWidget(raw)
         val doneCount = countCompletedTasks(rows)
         val yetToCount = countOpenTasks(rows)
-        val count = rows.length()
+        val visibleCount = countVisibleRows(rows, WidgetCompletionGrace.KIND_REMINDER)
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_tasks)
             // Only the corner + opens the app.
@@ -86,8 +86,8 @@ object WidgetViews {
             views.setTextViewText(R.id.widget_tasks_done, doneCount.toString())
             views.setTextViewText(R.id.widget_tasks_yet, yetToCount.toString())
             views.setTextViewText(R.id.widget_reminders_header, context.getString(R.string.widget_tasks_title))
-            views.setViewVisibility(R.id.widget_reminders_empty, if (count == 0) View.VISIBLE else View.GONE)
-            views.setViewVisibility(R.id.widget_tasks_list, if (count == 0) View.GONE else View.VISIBLE)
+            views.setViewVisibility(R.id.widget_reminders_empty, if (visibleCount == 0) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.widget_tasks_list, if (visibleCount == 0) View.GONE else View.VISIBLE)
 
             val serviceIntent = Intent(context, TasksWidgetService::class.java).apply {
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
@@ -117,6 +117,7 @@ object WidgetViews {
         val count = rows.length()
         val doneCount = snapshot.optInt("habitsCompleted", countCompletedHabits(rows)).coerceIn(0, count)
         val yetToCount = (count - doneCount).coerceAtLeast(0)
+        val visibleCount = countVisibleRows(rows, WidgetCompletionGrace.KIND_HABIT)
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_habits)
             // Only the corner + opens the app; list toggles stay in-widget.
@@ -126,8 +127,8 @@ object WidgetViews {
             )
             views.setTextViewText(R.id.widget_habits_done, doneCount.toString())
             views.setTextViewText(R.id.widget_habits_yet, yetToCount.toString())
-            views.setViewVisibility(R.id.widget_habits_empty, if (count == 0) View.VISIBLE else View.GONE)
-            views.setViewVisibility(R.id.widget_habits_list, if (count == 0) View.GONE else View.VISIBLE)
+            views.setViewVisibility(R.id.widget_habits_empty, if (visibleCount == 0) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.widget_habits_list, if (visibleCount == 0) View.GONE else View.VISIBLE)
 
             val serviceIntent = Intent(context, HabitsWidgetService::class.java).apply {
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
@@ -242,6 +243,18 @@ object WidgetViews {
             if (row.optBoolean("completed", false)) done += 1
         }
         return done
+    }
+
+    /** Rows still shown in the ListView (open + in-grace completes). */
+    private fun countVisibleRows(rows: JSONArray, kind: String): Int {
+        var visible = 0
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONObject(i) ?: continue
+            val id = row.optString("id")
+            val completed = row.optBoolean("completed", false)
+            if (!completed || WidgetCompletionGrace.isPending(kind, id)) visible += 1
+        }
+        return visible
     }
 
     private fun isDark(context: Context): Boolean {

@@ -15,11 +15,13 @@ object WidgetStore {
     }
 
     fun writeRaw(context: Context, payload: String) {
+        // App sync is authoritative — drop any in-flight widget grace timers.
+        WidgetCompletionGrace.cancelAll()
         prefs(context).edit().putString(WidgetContract.KEY_SNAPSHOT, payload).apply()
     }
 
     fun writeSnapshot(context: Context, snapshot: JSONObject) {
-        writeRaw(context, snapshot.toString())
+        prefs(context).edit().putString(WidgetContract.KEY_SNAPSHOT, snapshot.toString()).apply()
     }
 
     fun emptySnapshot(): JSONObject {
@@ -70,42 +72,45 @@ object WidgetStore {
         return url
     }
 
-    fun toggleReminder(context: Context, id: String): Boolean {
-        val snapshot = readSnapshot(context)
-        val rows = snapshot.optJSONArray("reminders") ?: JSONArray()
-        for (i in 0 until rows.length()) {
-            val row = rows.optJSONObject(i) ?: continue
-            if (row.optString("id") != id) continue
-            val next = !row.optBoolean("completed", false)
-            row.put("completed", next)
-            writeSnapshot(context, snapshot)
-            enqueueAction(
-                context,
-                JSONObject().put("type", "reminder").put("id", id).put("completed", next)
-            )
-            return true
-        }
-        return false
+    fun isItemCompleted(context: Context, kind: String, id: String): Boolean {
+        val row = findRow(readSnapshot(context), kind, id) ?: return false
+        return row.optBoolean("completed", false)
     }
 
-    fun toggleHabit(context: Context, id: String): Boolean {
+    /** Optimistic / local completion only — does not enqueue a backend action. */
+    fun setItemCompleted(context: Context, kind: String, id: String, completed: Boolean): Boolean {
         val snapshot = readSnapshot(context)
-        val rows = snapshot.optJSONArray("habits") ?: JSONArray()
+        val row = findRow(snapshot, kind, id) ?: return false
+        val prev = row.optBoolean("completed", false)
+        if (prev == completed) return false
+        row.put("completed", completed)
+        if (kind == WidgetCompletionGrace.KIND_HABIT) {
+            val completedCount = snapshot.optInt("habitsCompleted", 0)
+            snapshot.put(
+                "habitsCompleted",
+                (completedCount + if (completed) 1 else -1).coerceAtLeast(0)
+            )
+        }
+        writeSnapshot(context, snapshot)
+        return true
+    }
+
+    fun enqueueCompletion(context: Context, kind: String, id: String, completed: Boolean) {
+        val type = if (kind == WidgetCompletionGrace.KIND_HABIT) "habit" else "reminder"
+        enqueueAction(
+            context,
+            JSONObject().put("type", type).put("id", id).put("completed", completed)
+        )
+    }
+
+    private fun findRow(snapshot: JSONObject, kind: String, id: String): JSONObject? {
+        val key = if (kind == WidgetCompletionGrace.KIND_HABIT) "habits" else "reminders"
+        val rows = snapshot.optJSONArray(key) ?: return null
         for (i in 0 until rows.length()) {
             val row = rows.optJSONObject(i) ?: continue
-            if (row.optString("id") != id) continue
-            val next = !row.optBoolean("completed", false)
-            row.put("completed", next)
-            val completedCount = snapshot.optInt("habitsCompleted", 0)
-            snapshot.put("habitsCompleted", (completedCount + if (next) 1 else -1).coerceAtLeast(0))
-            writeSnapshot(context, snapshot)
-            enqueueAction(
-                context,
-                JSONObject().put("type", "habit").put("id", id).put("completed", next)
-            )
-            return true
+            if (row.optString("id") == id) return row
         }
-        return false
+        return null
     }
 
     private fun prefs(context: Context) =

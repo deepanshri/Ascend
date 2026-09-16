@@ -2,6 +2,7 @@ package com.ascend.habittracker
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Paint
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import org.json.JSONArray
@@ -46,6 +47,19 @@ class TasksRemoteViewsFactory(
             R.id.task_check,
             if (completed) R.drawable.widget_check_on else R.drawable.widget_check_off
         )
+        views.setInt(
+            R.id.task_title,
+            "setPaintFlags",
+            if (completed) {
+                Paint.STRIKE_THRU_TEXT_FLAG or Paint.ANTI_ALIAS_FLAG
+            } else {
+                Paint.ANTI_ALIAS_FLAG
+            }
+        )
+        views.setTextColor(
+            R.id.task_title,
+            context.getColor(if (completed) R.color.widget_muted else R.color.widget_text)
+        )
 
         val toggleFill = Intent().apply {
             putExtra(WidgetContract.EXTRA_ITEM_ID, id)
@@ -70,7 +84,21 @@ class TasksRemoteViewsFactory(
 
     private fun loadRows() {
         val raw = WidgetStore.readSnapshot(context).optJSONArray("reminders") ?: JSONArray()
-        rows = sortTasks(raw)
+        rows = sortTasks(filterVisible(raw))
+    }
+
+    private fun filterVisible(source: JSONArray): JSONArray {
+        val out = JSONArray()
+        for (i in 0 until source.length()) {
+            val row = source.optJSONObject(i) ?: continue
+            val id = row.optString("id")
+            val completed = row.optBoolean("completed", false)
+            if (completed && !WidgetCompletionGrace.isPending(WidgetCompletionGrace.KIND_REMINDER, id)) {
+                continue
+            }
+            out.put(row)
+        }
+        return out
     }
 
     private fun sortTasks(source: JSONArray): JSONArray {
