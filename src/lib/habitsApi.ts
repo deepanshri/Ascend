@@ -384,6 +384,47 @@ export async function fetchHabitLogsForDate(
   }
 }
 
+/** Inclusive habit_logs fetch for Bowl / Reports cycle window (startIso → endIso). */
+export async function fetchHabitLogsForDateRange(
+  userId: string | null | undefined,
+  startIso: string,
+  endIso: string
+): Promise<HabitCompletionEvent[]> {
+  if (!canSync(userId) || !supabase) return [];
+  if (!startIso || !endIso || startIso > endIso) return [];
+  try {
+    let { data, error } = await supabase
+      .from('habit_logs')
+      .select('*')
+      .eq('user_id', userId as string)
+      .gte('logged_date', startIso)
+      .lte('logged_date', endIso);
+
+    if (error) {
+      const fallback = await supabase
+        .from('habit_logs')
+        .select('*')
+        .eq('user_id', userId as string)
+        .gte('date', startIso)
+        .lte('date', endIso);
+      data = fallback.data;
+      error = fallback.error;
+    }
+
+    if (error) {
+      console.warn('habit_logs range fetch failed:', error.message);
+      return [];
+    }
+
+    return (data as HabitLogRow[] | null || [])
+      .map((row) => mapHabitLogRowToEvent(row))
+      .filter((event): event is HabitCompletionEvent => event !== null && !isSeedHabitId(event.habitId));
+  } catch (err) {
+    console.warn('habit_logs range fetch offline:', err);
+    return [];
+  }
+}
+
 export async function fetchTodayHabitLogs(
   userId?: string | null,
   dayIndex: number = getTodayDayIndex(),

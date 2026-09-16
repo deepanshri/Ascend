@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, animate, motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { AccumulationBowl } from './AccumulationBowl';
 import type { AccumulationPiece, BowlFill, CycleDays } from '../services/reportService';
 
 const ISLAND_SPRING = { type: 'spring' as const, stiffness: 300, damping: 25 };
 const ISLAND_HOLD_MS = 1200;
+const COUNT_MS = 550;
 
 interface HomeViewProps {
   pieces: AccumulationPiece[];
@@ -15,6 +16,10 @@ interface HomeViewProps {
   celebrating?: boolean;
   onCelebrationDone?: () => void;
   children: React.ReactNode;
+}
+
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -29,9 +34,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
 }) => {
   const targetMomentum = Math.round(Number.isFinite(momentumScore) ? momentumScore : 0);
   const [displayMomentum, setDisplayMomentum] = useState(targetMomentum);
-  const [expanded, setExpanded] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
   const [delta, setDelta] = useState<number | null>(null);
   const displayRef = useRef(displayMomentum);
+  const animGenRef = useRef(0);
   displayRef.current = displayMomentum;
 
   // Stable theme flag — never remount the bowl on light/dark toggle.
@@ -47,23 +53,37 @@ export const HomeView: React.FC<HomeViewProps> = ({
     const to = targetMomentum;
     if (from === to) return;
 
+    const gen = ++animGenRef.current;
     const nextDelta = to - from;
     setDelta(nextDelta);
-    setExpanded(true);
+    setIsAnimating(true);
 
-    const controls = animate(from, to, {
-      duration: 0.55,
-      ease: [0.22, 1, 0.36, 1],
-      onUpdate: (value) => setDisplayMomentum(Math.round(value)),
-    });
+    const startedAt = performance.now();
+    let rafId = 0;
+
+    const tick = (now: number) => {
+      if (animGenRef.current !== gen) return;
+      const t = Math.min(1, (now - startedAt) / COUNT_MS);
+      const value = Math.round(from + (to - from) * easeOutCubic(t));
+      displayRef.current = value;
+      setDisplayMomentum(value);
+      if (t < 1) {
+        rafId = window.requestAnimationFrame(tick);
+      } else {
+        displayRef.current = to;
+        setDisplayMomentum(to);
+      }
+    };
+    rafId = window.requestAnimationFrame(tick);
 
     const collapseTimer = window.setTimeout(() => {
-      setExpanded(false);
+      if (animGenRef.current !== gen) return;
+      setIsAnimating(false);
       setDelta(null);
     }, ISLAND_HOLD_MS);
 
     return () => {
-      controls.stop();
+      window.cancelAnimationFrame(rafId);
       window.clearTimeout(collapseTimer);
     };
   }, [targetMomentum]);
@@ -73,15 +93,21 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
   return (
     <div className="mt-2 flex w-full flex-col items-center gap-3 pt-4">
-      <div className="flex w-full justify-center">
+      <div className="flex w-full justify-center min-h-[36px]">
         <motion.div
           id="home-momentum-badge"
           data-tour="home-momentum-badge"
           layout
+          initial={false}
+          animate={{
+            paddingLeft: isAnimating ? 28 : 16,
+            paddingRight: isAnimating ? 28 : 16,
+            paddingTop: isAnimating ? 8 : 6,
+            paddingBottom: isAnimating ? 8 : 6,
+            gap: isAnimating ? 10 : 6,
+          }}
           transition={ISLAND_SPRING}
-          className={`inline-flex items-center rounded-full border font-bold tabular-nums shadow-xs ${
-            expanded ? 'gap-2.5 px-7 py-2' : 'gap-1.5 px-4 py-1.5'
-          } ${
+          className={`inline-flex items-center rounded-full border text-[11px] font-bold tabular-nums shadow-xs will-change-transform ${
             darkMode
               ? 'bg-slate-900/90 border-blue-500/40 text-blue-200'
               : 'bg-white/95 border-emerald-200 text-emerald-800'
@@ -89,24 +115,24 @@ export const HomeView: React.FC<HomeViewProps> = ({
           title="Live momentum score"
         >
           <motion.span
-            layout
+            layout="position"
             transition={ISLAND_SPRING}
-            className={`text-[11px] ${
-              expanded ? '-translate-x-0.5' : ''
-            } ${darkMode ? 'text-blue-400' : 'text-emerald-600'}`}
+            className={`${isAnimating ? '-translate-x-0.5' : ''} ${
+              darkMode ? 'text-blue-400' : 'text-emerald-600'
+            }`}
           >
             Momentum
           </motion.span>
-          <motion.span layout transition={ISLAND_SPRING} className="text-[12px] font-black">
+          <motion.span layout="position" transition={ISLAND_SPRING} className="text-[12px] font-black">
             {displayMomentum}
           </motion.span>
-          <AnimatePresence>
-            {deltaLabel && (
+          <AnimatePresence mode="popLayout">
+            {isAnimating && deltaLabel ? (
               <motion.span
-                key={deltaLabel}
-                initial={{ opacity: 0, scale: 0.7, x: 4 }}
+                key={`delta-${deltaLabel}`}
+                initial={{ opacity: 0, scale: 0.65, x: 6 }}
                 animate={{ opacity: 1, scale: 1, x: 0 }}
-                exit={{ opacity: 0, scale: 0.85, x: -2 }}
+                exit={{ opacity: 0, scale: 0.8, x: -4 }}
                 transition={{ type: 'spring', stiffness: 380, damping: 22 }}
                 className={`text-[11px] font-black ${
                   darkMode
@@ -116,7 +142,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               >
                 {deltaLabel}
               </motion.span>
-            )}
+            ) : null}
           </AnimatePresence>
         </motion.div>
       </div>

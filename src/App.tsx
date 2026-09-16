@@ -52,7 +52,7 @@ import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLoc
 import { persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from './data/avatars';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
 import { mergeHabitsByUpdatedAt, mergeRemindersByUpdatedAt, touchHabit } from './lib/syncMerge';
-import { fetchActiveHabits, fetchHabitLogsForDate, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable, omitDeletedHabitRefs, omitDeletedHabits, rememberDeletedHabit } from './lib/habitsApi';
+import { fetchActiveHabits, fetchHabitLogsForDateRange, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable, omitDeletedHabitRefs, omitDeletedHabits, rememberDeletedHabit } from './lib/habitsApi';
 import {
   destroyAscendSpotlightTutorial,
   hasScreenTutorialCompleted,
@@ -78,6 +78,7 @@ import { ledgerEvidenceForHabits, displayedIdentityVoteCount, hasMomentumVoteOnI
 import { deleteHabit, stableHabitLogId } from './services/habitService';
 import { completionConfirmCopy, shouldNotifyHabitSwipe } from './services/notificationService';
 import {
+  accumulationPiecesFromLogs,
   activeCycleWindow,
   archiveCompletedCycle,
   clampCycleDays,
@@ -93,7 +94,7 @@ import {
   type AccumulationPiece,
 } from './services/reportService';
 import { HomeView } from './components/HomeView';
-import { buildCycleAccumulationPieces, useHabits, withHabitTimeOfDay } from './hooks/useHabits';
+import { useHabits, withHabitTimeOfDay } from './hooks/useHabits';
 import { hydrateHabitTimeOfDay, resolveHabitTimeOfDay } from './utils/timeOfDay';
 import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
 import { WidgetBridge } from './lib/widgetBridge';
@@ -735,23 +736,22 @@ export default function App() {
 
   /**
    * Theme only skins the bowl (morning glass + green vs night glass + blue).
-   * Pieces accumulate across the active cycle window (epoch start → today) from
-   * habit_logs ∪ momentum_events — cleared only when a cycle completes and the epoch resets.
+   * Pieces are derived ONLY from habit_logs / local completionEvents in the active
+   * cycle window. Un-swipe deletes the log row → this list recalculates and the
+   * marble exits. momentum_events is never read or mutated here (append-only ledger).
    */
   const bowlPieces = useMemo(
     () =>
-      buildCycleAccumulationPieces({
+      accumulationPiecesFromLogs(
         completionEvents,
-        momentumEvents,
-        activeHabitIds: activeHabits.map((habit) => habit.id),
-        startIso: bowlWindow.startIso,
-        endIso: bowlWindow.endIso,
-        origin: calendarOrigin,
-        minTimestamp: bowlEpoch.resetAt,
-      }),
+        activeHabits.map((habit) => habit.id),
+        bowlWindow.startIso,
+        bowlWindow.endIso,
+        calendarOrigin,
+        bowlEpoch.resetAt
+      ),
     [
       completionEvents,
-      momentumEvents,
       activeHabits,
       bowlWindow.startIso,
       bowlWindow.endIso,
@@ -995,26 +995,27 @@ export default function App() {
     });
   }, [notificationWindows, activeHabits, todayDayIndex, todayMomentumScore, completionEvents]);
 
-  // Home mount: fetch active habits + today's logs (optimistic local UI stays in place)
+  // Home mount: fetch active habits + cycle-window habit_logs (optimistic local UI stays in place).
+  // Range query never resets bowlEpoch — only celebration/rollover does.
   useEffect(() => {
     if (activeTab !== 'home') return;
     if (!session || session.isGuest) return;
     let cancelled = false;
     void (async () => {
-      const [remoteHabits, dateLogs, remoteMomentum] = await Promise.all([
+      const [remoteHabits, cycleLogs, remoteMomentum] = await Promise.all([
         fetchActiveHabits(session.id),
-        fetchHabitLogsForDate(session.id, currentSelectedDate),
+        fetchHabitLogsForDateRange(session.id, bowlWindow.startIso, bowlWindow.endIso),
         fetchMomentumEventsFromTable(session.id),
       ]);
       if (cancelled) return;
       setHabits((prev) => omitDeletedHabits(mergeHabitsByUpdatedAt(prev, remoteHabits)));
-      const userDateLogs = omitDeletedHabitRefs(dateLogs.filter((event) => !isSeedHabitId(event.habitId)));
-      if (userDateLogs.length > 0) {
+      const userCycleLogs = omitDeletedHabitRefs(cycleLogs.filter((event) => !isSeedHabitId(event.habitId)));
+      if (userCycleLogs.length > 0) {
         setCompletionEvents((prev) =>
           omitDeletedHabitRefs(
             mergeCompletionEvents(
               prev.filter((event) => !isSeedHabitId(event.habitId)),
-              userDateLogs,
+              userCycleLogs,
               calendarOrigin
             )
           )
@@ -1035,7 +1036,14 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, session?.id, session?.isGuest, currentSelectedDate, calendarOrigin]);
+  }, [
+    activeTab,
+    session?.id,
+    session?.isGuest,
+    bowlWindow.startIso,
+    bowlWindow.endIso,
+    calendarOrigin,
+  ]);
 
   useEffect(() => {
     if (!session || session.isGuest) return;
@@ -2117,7 +2125,7 @@ export default function App() {
               animate={toastMotion.animate}
               exit={toastMotion.exit}
               transition={toastMotion.transition}
-              className="fixed top-14 left-1/2 -translate-x-1/2 z-50 mt-[env(safe-area-inset-top)] bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[12px] font-bold px-4 py-2 rounded-2xl shadow-2xl flex items-center space-x-2 border-2 border-[#23C15D] dark:border-blue-500 pointer-events-none transform-gpu"
+              className="fixed top-20 left-1/2 -translate-x-1/2 z-50 mt-[env(safe-area-inset-top)] bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[12px] font-bold px-4 py-2 rounded-2xl shadow-2xl flex items-center space-x-2 border-2 border-[#23C15D] dark:border-blue-500 pointer-events-none transform-gpu"
             >
               <div className="w-4 h-4 rounded-full bg-emerald-50 dark:bg-blue-950 flex items-center justify-center text-[#23C15D] dark:text-blue-400 shrink-0">
                 <svg className="w-2.5 h-2.5 stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

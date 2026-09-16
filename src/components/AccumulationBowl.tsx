@@ -196,17 +196,15 @@ const MarblePiece: React.FC<{
       scale: 1,
     },
     exit: {
-      y: SPAWN_Y * 0.2,
+      scale: 0,
       opacity: 0,
-      scale: 0.55,
-      rotate: coords.rotation * 1.4,
     },
     transition: {
       x: SPRING,
       y: SPRING,
       rotate: SPRING,
-      opacity: { duration: 0.35, ease: 'easeOut' as const },
-      scale: SPRING,
+      opacity: { duration: 0.28, ease: 'easeOut' as const },
+      scale: { duration: 0.28, ease: 'easeOut' as const },
     },
   };
 
