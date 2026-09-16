@@ -93,7 +93,6 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
     >
       <ScreenHeader
         title="Tasks"
-        subtitle="Reminders (R) float above to-dos (TD)"
         onOpenSettings={onOpenSettings}
         actions={
           <>
@@ -121,13 +120,6 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
           </>
         }
       />
-
-      <p
-        data-tour="reminders-standalone"
-        className="px-1 text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed"
-      >
-        Add a time for a Reminder (R). Skip time for a To-Do (TD). One continuous list — no split boxes.
-      </p>
 
       <section className="space-y-2.5">
         <AnimatePresence initial={false} mode="popLayout">

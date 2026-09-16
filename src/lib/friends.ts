@@ -692,13 +692,15 @@ export interface FriendIdentityLedger {
   displayName: string;
   avatarUrl?: string | null;
   identityStatement: string;
-  cycleCompletions: number;
+  /** 0–100 aggregate completion ratio for the cycle window (no habit titles). */
+  completionRatio: number;
   cycleDays: number;
 }
 
 /**
  * Privacy-safe friend snapshot for Reports:
- * display name + identity statement (no habit titles) + cycle completion count.
+ * display name + identity statement + total completion ratio only.
+ * Never returns habit names, schedules, or itemized activity.
  */
 export async function fetchFriendIdentityLedger(
   viewerId: string,
@@ -720,7 +722,17 @@ export async function fetchFriendIdentityLedger(
   const d = String(start.getDate()).padStart(2, '0');
   const startIso = `${y}-${m}-${d}`;
 
+  const emptyLedger = (): FriendIdentityLedger => ({
+    friendId,
+    displayName: edge.peerName || 'Friend',
+    avatarUrl: edge.peerAvatar ?? null,
+    identityStatement: 'Building consistency, one vote at a time.',
+    completionRatio: 0,
+    cycleDays: days,
+  });
+
   try {
+    // Select identity fields only — never `name` / titles / schedules.
     const [{ data: habitRows }, { data: events }] = await Promise.all([
       supabase
         .from('habits')
@@ -750,28 +762,27 @@ export async function fetchFriendIdentityLedger(
       String(purpose?.purpose_anchor || '').trim() ||
       'Building consistency, one vote at a time.';
 
-    const uniqueHabits = new Set<string>();
+    const completedPairs = new Set<string>();
     (events || []).forEach((row) => {
       const habitId = String(row.habit_id || '');
-      if (habitId) uniqueHabits.add(habitId);
+      const iso = String(row.timestamp || '').slice(0, 10);
+      if (habitId && iso) completedPairs.add(`${habitId}|${iso}`);
     });
+    const possible = Math.max(1, activeHabits.length * days);
+    const completionRatio = Math.min(
+      100,
+      Math.round((completedPairs.size / possible) * 100)
+    );
 
     return {
       friendId,
       displayName: edge.peerName || 'Friend',
       avatarUrl: edge.peerAvatar ?? null,
       identityStatement,
-      cycleCompletions: uniqueHabits.size,
+      completionRatio,
       cycleDays: days,
     };
   } catch {
-    return {
-      friendId,
-      displayName: edge.peerName || 'Friend',
-      avatarUrl: edge.peerAvatar ?? null,
-      identityStatement: 'Building consistency, one vote at a time.',
-      cycleCompletions: 0,
-      cycleDays: days,
-    };
+    return emptyLedger();
   }
 }

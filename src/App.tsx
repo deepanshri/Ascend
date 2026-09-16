@@ -1071,41 +1071,6 @@ export default function App() {
     void appendMomentumEventRemote(sessionRef.current?.id, event);
   };
 
-  const enqueueMissedFrictionAudit = (habitId: string, habitName: string, loggedDate: string) => {
-    setPendingFriction((prev) =>
-      enqueueFrictionPrompts(prev, [{ habitId, habitName, loggedDate }])
-    );
-  };
-
-  const handleMarkMissed = (habitId: string, loggedDate: string = toISODate(calendarOrigin)) => {
-    if (!isViewingToday) return;
-    const targetHabit = habits.find((habit) => habit.id === habitId);
-    if (!targetHabit) return;
-    if (!isHabitScheduledOnIso(targetHabit, loggedDate)) {
-      return;
-    }
-
-    const alreadyCredited = completionEvents.some(
-      (event) => event.habitId === habitId && resolveEventIsoDate(event, calendarOrigin) === loggedDate
-    );
-    if (alreadyCredited) return;
-
-    const alreadyMissed = momentumEvents.some(
-      (event) =>
-        event.habitId === habitId &&
-        event.eventType === 'missed' &&
-        resolveMomentumEventDate(event) === loggedDate
-    );
-    if (!alreadyMissed) {
-      appendMomentumLog(createMomentumEvent(targetHabit, 'missed', loggedDate));
-    }
-    setMomentumPulse((n) => n + 1);
-
-    setLongPressedHabitId(null);
-    setLongPressedRect(null);
-    enqueueMissedFrictionAudit(habitId, targetHabit.name, loggedDate);
-  };
-
   const activeFrictionPrompt = pendingFriction[0] ?? null;
 
   const handleFrictionSubmit = (reason: string) => {
@@ -2118,7 +2083,6 @@ export default function App() {
               rect={longPressedRect}
               todayIndex={todayDayIndex}
               isFallbackActive={isViewingToday && activeFallbackIds.includes(longPressedHabit.id)}
-              onMarkMissed={handleMarkMissed}
               onClose={() => {
                 setLongPressedHabitId(null);
                 setLongPressedRect(null);

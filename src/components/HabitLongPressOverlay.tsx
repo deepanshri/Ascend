@@ -4,14 +4,12 @@ import { Habit } from '../types';
 import { overlayFade, sheetMotion } from '../lib/motionPresets';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
-import { isHabitScheduledOnDayIndex } from '../utils/schedule';
 
 interface HabitLongPressOverlayProps {
   habit: Habit;
   rect: DOMRect | null;
   todayIndex?: number;
   isFallbackActive?: boolean;
-  onMarkMissed?: (habitId: string) => void;
   onClose: () => void;
   onOpenEdit: (habit: Habit) => void;
   onDelete: (habit: Habit) => void;
@@ -22,7 +20,6 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
   rect,
   todayIndex = getTodayDayIndex(),
   isFallbackActive = false,
-  onMarkMissed,
   onClose,
   onOpenEdit,
   onDelete,
@@ -95,7 +92,7 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
         }}
         className="relative"
       >
-        {/* Action context menu: Mark Missed, Edit Habit, Delete */}
+        {/* Action context menu: Edit Habit, Delete */}
         <motion.div
           id={`habit-${habit.id}-action-options`}
           initial={sheetMotion.initial}
@@ -107,22 +104,6 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
           }`}
           onClick={(e) => e.stopPropagation()}
         >
-          {onMarkMissed && !isTodayDone && isHabitScheduledOnDayIndex(habit, todayIndex) && (
-            <button
-              type="button"
-              id={`habit-${habit.id}-missed-button`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose();
-                onMarkMissed(habit.id);
-              }}
-              aria-label="Mark Missed"
-              className="h-10 px-3.5 rounded-full bg-white dark:bg-slate-900 text-rose-700 dark:text-rose-300 shadow-2xl border border-rose-200 dark:border-rose-900/70 hover:bg-rose-50 dark:hover:bg-rose-950/60 active:scale-95 flex items-center space-x-1.5 transition cursor-pointer font-bold text-[12px]"
-            >
-              <span>Mark Missed</span>
-            </button>
-          )}
-
           <button
             type="button"
             id={`habit-${habit.id}-edit-button`}

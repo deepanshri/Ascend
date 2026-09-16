@@ -71,6 +71,30 @@ export const FEATURE_TIPS: Quote[] = [
     icon: '💡',
     kind: 'tip',
   },
+  {
+    text: 'Add a time for a Reminder (R). Skip time for a To-Do (TD). One continuous Tasks list — no split boxes.',
+    author: 'Ascend',
+    source: 'Feature Tip',
+    category: 'Tip',
+    icon: '💡',
+    kind: 'tip',
+  },
+  {
+    text: 'Reminders (R) float above to-dos (TD) in Tasks. Timed items sort first so you can scan what is due.',
+    author: 'Ascend',
+    source: 'Feature Tip',
+    category: 'Tip',
+    icon: '💡',
+    kind: 'tip',
+  },
+  {
+    text: 'Alert windows (10m prior and exact time) are set when you create or edit a timed Reminder — they stay off the card face.',
+    author: 'Ascend',
+    source: 'Feature Tip',
+    category: 'Tip',
+    icon: '💡',
+    kind: 'tip',
+  },
 ];
 
 export function mergeQuoteBank(quotes: Quote[]): Quote[] {

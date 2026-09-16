@@ -178,7 +178,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
       displayName: edge.peerName,
       avatarUrl: edge.peerAvatar,
       identityStatement: 'Loading…',
-      cycleCompletions: 0,
+      completionRatio: 0,
       cycleDays,
     });
     const snapshot = await fetchFriendIdentityLedger(userId, edge.peerId, cycleDays);
@@ -416,7 +416,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
             <p className="inline-flex items-center rounded-full border border-emerald-200/80 dark:border-blue-800/70 bg-emerald-50/80 dark:bg-blue-950/40 px-3 py-1.5 text-[12px] font-bold text-emerald-800 dark:text-blue-200 tabular-nums">
               {ledgerLoading
                 ? '…'
-                : `${ledger.cycleCompletions} Habit${ledger.cycleCompletions === 1 ? '' : 's'} Completed · ${ledger.cycleDays}d cycle`}
+                : `${ledger.completionRatio}% completion · ${ledger.cycleDays}d`}
             </p>
             <button
               type="button"

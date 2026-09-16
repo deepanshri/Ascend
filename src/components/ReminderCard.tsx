@@ -88,10 +88,12 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
     else onToggleComplete(reminder.id);
   };
 
-  // Format date and time for reminder card
+  // Format date and time for reminder card — omit bare "Today" on timeless to-dos.
   const formatReminderDate = (dateStr: string, timeStr?: string) => {
     const today = new Date().toISOString().slice(0, 10);
     const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+    if (!timeStr && dateStr === today) return '';
 
     let prefix = '';
     if (dateStr === today) {
@@ -107,7 +109,7 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
     return timeStr ? `${prefix} at ${timeStr}` : prefix;
   };
 
-  // Status Badge calculation
+  // Status Badge calculation — no duplicate "Today" on timeless to-dos.
   const getStatusBadge = (dateStr: string, timeStr?: string, completed?: boolean) => {
     if (completed) {
       return {
@@ -124,10 +126,7 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
         };
       }
       if (dateStr === today) {
-        return {
-          text: 'Today',
-          color: 'bg-emerald-100 text-emerald-900 border-emerald-300 font-bold dark:bg-blue-900/60 dark:text-blue-200 dark:border-blue-700',
-        };
+        return null;
       }
       return {
         text: 'Upcoming',
@@ -432,39 +431,29 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
               >
                 {reminder.time?.trim() ? 'R' : 'TD'}
               </span>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-xl border ${statusBadge.color}`}>
-                {statusBadge.text}
-              </span>
+              {statusBadge ? (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-xl border ${statusBadge.color}`}>
+                  {statusBadge.text}
+                </span>
+              ) : null}
             </div>
           </div>
 
-          {/* Scheduled Date & Time */}
-          <div className="flex items-center space-x-2 mt-1 text-[12px] font-medium text-slate-600 dark:text-slate-300">
-            <div className="flex items-center space-x-1 text-emerald-800 dark:text-blue-400">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span className="font-semibold">
-                {formatReminderDate(reminder.date, reminder.time)}
-              </span>
-            </div>
-          </div>
-
-          {/* Alert indicators: 10m before + exact time (only when time is set) */}
-          {reminder.time && (reminder.alert10Min !== false || reminder.alertExact !== false) && (
-            <div className="flex items-center space-x-1.5 mt-2 flex-wrap gap-y-1">
-              {reminder.alert10Min !== false && (
-                <span className="inline-flex items-center space-x-1 px-2 py-0.5 bg-emerald-50 dark:bg-blue-950/60 text-emerald-800 dark:text-blue-300 rounded-md text-[10px] font-bold border border-emerald-100 dark:border-blue-800">
-                  <span>🔔 10m prior</span>
-                </span>
-              )}
-              {reminder.alertExact !== false && (
-                <span className="inline-flex items-center space-x-1 px-2 py-0.5 bg-emerald-50 dark:bg-blue-950/60 text-emerald-800 dark:text-blue-300 rounded-md text-[10px] font-bold border border-emerald-100 dark:border-blue-800">
-                  <span>⚡ Exact time</span>
-                </span>
-              )}
-            </div>
-          )}
+          {/* Scheduled Date & Time — hidden for timeless to-dos due today */}
+          {(() => {
+            const when = formatReminderDate(reminder.date, reminder.time);
+            if (!when) return null;
+            return (
+              <div className="flex items-center space-x-2 mt-1 text-[12px] font-medium text-slate-600 dark:text-slate-300">
+                <div className="flex items-center space-x-1 text-emerald-800 dark:text-blue-400">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="font-semibold">{when}</span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Notes if present */}
           {reminder.notes && (

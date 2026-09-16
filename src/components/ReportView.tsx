@@ -23,7 +23,6 @@ import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import { tapPress } from '../lib/motionPresets';
 import { calculateMomentumScore, eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
 import { isHabitScheduledOnIso } from '../utils/schedule';
-import { habitCategoryBadge, habitCategoryLabel } from '../utils/categories';
 import { activeCycleWindow } from '../services/reportService';
 import { DaySelector } from './DaySelector';
 
@@ -155,7 +154,6 @@ interface HabitCycleStat {
   fullDays: number;
   fallbackDays: number;
   percent: number;
-  identityPill: string;
 }
 
 function computeHabitCycleStats(
@@ -186,9 +184,6 @@ function computeHabitCycleStats(
         }
       });
       const percent = targetDays === 0 ? 0 : Math.round((completedDays / targetDays) * 100);
-      const identityPill =
-        (habit.identityStatement || habit.purposeAnchor || habitCategoryLabel(habit.category) || '').trim() ||
-        habitCategoryBadge(habit.category);
       return {
         habit,
         targetDays,
@@ -196,7 +191,6 @@ function computeHabitCycleStats(
         fullDays,
         fallbackDays,
         percent,
-        identityPill,
       };
     })
     .sort((a, b) => b.percent - a.percent || a.habit.name.localeCompare(b.habit.name));
@@ -1157,9 +1151,6 @@ export const ReportView: React.FC<ReportViewProps> = ({
           <h2 className="text-[15px] font-extrabold text-slate-900 dark:text-white tracking-tight">
             Habit Performance
           </h2>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-            {performanceWindow.title} · per-habit completion
-          </p>
         </div>
         {habitPerformance.length === 0 ? (
           <p className="text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
@@ -1173,14 +1164,9 @@ export const ReportView: React.FC<ReportViewProps> = ({
                 className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 px-3 py-2.5 space-y-1.5"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate">
-                      {row.habit.name}
-                    </p>
-                    <span className="mt-1 inline-flex max-w-full truncate rounded-md border border-slate-200/80 dark:border-slate-700 bg-white/80 dark:bg-slate-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                      {row.identityPill}
-                    </span>
-                  </div>
+                  <p className="min-w-0 text-[13px] font-bold text-slate-900 dark:text-white truncate">
+                    {row.habit.name}
+                  </p>
                   <span className="shrink-0 text-[11px] font-bold tabular-nums text-slate-700 dark:text-slate-200">
                     {row.completedDays}/{row.targetDays} · {row.percent}%
                   </span>

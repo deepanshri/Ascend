@@ -205,22 +205,6 @@ export const ReminderLongPressOverlay: React.FC<ReminderLongPressOverlayProps> =
                 <span>{formatReminderDate(reminder.date, reminder.time)}</span>
               </div>
 
-              {/* Alert indicators */}
-              {reminder.time && (reminder.alert10Min !== false || reminder.alertExact !== false) && (
-                <div className="flex items-center space-x-1.5 mt-2">
-                  {reminder.alert10Min !== false && (
-                    <span className="px-2 py-0.5 bg-emerald-50 dark:bg-blue-950/60 text-emerald-800 dark:text-blue-300 rounded-md text-[10px] font-bold border border-emerald-100 dark:border-blue-800">
-                      🔔 10m prior
-                    </span>
-                  )}
-                  {reminder.alertExact !== false && (
-                    <span className="px-2 py-0.5 bg-emerald-50 dark:bg-blue-950/60 text-emerald-800 dark:text-blue-300 rounded-md text-[10px] font-bold border border-emerald-100 dark:border-blue-800">
-                      ⚡ Exact time
-                    </span>
-                  )}
-                </div>
-              )}
-
               {/* Notes */}
               {reminder.notes && (
                 <p className="text-[12px] text-slate-600 dark:text-slate-300 mt-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-800">
