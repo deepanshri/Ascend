@@ -7,7 +7,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 2s confirmation window for widget checkboxes:
- * check instantly → wait → commit + hide; retap cancels with zero penalty.
+ * check instantly in place → wait → commit + re-sort (habits stay visible).
+ * Retap cancels with zero penalty.
  */
 object WidgetCompletionGrace {
     const val DELAY_MS = 2000L
@@ -48,14 +49,14 @@ object WidgetCompletionGrace {
             return true
         }
 
-        // Optimistic check; commit + hide after DELAY_MS.
+        // Optimistic check in place; after DELAY_MS commit + refresh so list re-sorts.
         if (!WidgetStore.setItemCompleted(appCtx, kind, id, true)) return false
         val commit = Runnable {
             jobs.remove(jobKey)
-            // Still marked complete (not undone) → commit backend + refresh to hide row.
             if (WidgetStore.isItemCompleted(appCtx, kind, id)) {
                 WidgetStore.enqueueCompletion(appCtx, kind, id, true)
                 WidgetBridgePlugin.emitLatestAction(appCtx)
+                // Refresh dataset so completed habits sink to the bottom (never hidden).
                 WidgetViews.updateAll(appCtx)
             }
         }

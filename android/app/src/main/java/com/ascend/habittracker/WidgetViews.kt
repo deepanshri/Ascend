@@ -117,7 +117,6 @@ object WidgetViews {
         val count = rows.length()
         val doneCount = snapshot.optInt("habitsCompleted", countCompletedHabits(rows)).coerceIn(0, count)
         val yetToCount = (count - doneCount).coerceAtLeast(0)
-        val visibleCount = countVisibleRows(rows, WidgetCompletionGrace.KIND_HABIT)
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_habits)
             // Only the corner + opens the app; list toggles stay in-widget.
@@ -127,8 +126,9 @@ object WidgetViews {
             )
             views.setTextViewText(R.id.widget_habits_done, doneCount.toString())
             views.setTextViewText(R.id.widget_habits_yet, yetToCount.toString())
-            views.setViewVisibility(R.id.widget_habits_empty, if (visibleCount == 0) View.VISIBLE else View.GONE)
-            views.setViewVisibility(R.id.widget_habits_list, if (visibleCount == 0) View.GONE else View.VISIBLE)
+            // Completed habits remain in the list — empty only when there are no habits at all.
+            views.setViewVisibility(R.id.widget_habits_empty, if (count == 0) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.widget_habits_list, if (count == 0) View.GONE else View.VISIBLE)
 
             val serviceIntent = Intent(context, HabitsWidgetService::class.java).apply {
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)

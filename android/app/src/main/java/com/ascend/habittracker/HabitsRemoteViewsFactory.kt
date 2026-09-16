@@ -53,6 +53,8 @@ class HabitsRemoteViewsFactory(
             R.id.habit_title,
             context.getColor(if (completed) R.color.widget_muted else R.color.widget_text)
         )
+        // Completed rows stay visible but visually secondary.
+        views.setFloat(R.id.habit_row, "setAlpha", if (completed) 0.6f else 1f)
 
         // Checkbox (and row) toggles completion in-widget — never launches the app.
         val toggleFill = Intent().apply {
@@ -78,17 +80,31 @@ class HabitsRemoteViewsFactory(
 
     private fun loadRows() {
         val source = WidgetStore.readSnapshot(context).optJSONArray("habits") ?: JSONArray()
-        val visible = JSONArray()
+        // Keep every habit visible — incomplete (and in-grace) first, committed completes last.
+        rows = sortHabits(source)
+    }
+
+    /**
+     * Primary: open / grace-checked rows above committed completes.
+     * Secondary: original snapshot order (creation / sync index).
+     */
+    private fun sortHabits(source: JSONArray): JSONArray {
+        val items = mutableListOf<Pair<Int, JSONObject>>()
         for (i in 0 until source.length()) {
             val row = source.optJSONObject(i) ?: continue
-            val id = row.optString("id")
-            val completed = row.optBoolean("completed", false)
-            // Hide committed completes; keep grace-window rows visible (checked).
-            if (completed && !WidgetCompletionGrace.isPending(WidgetCompletionGrace.KIND_HABIT, id)) {
-                continue
-            }
-            visible.put(row)
+            items.add(i to row)
         }
-        rows = visible
+        items.sortWith(
+            compareBy<Pair<Int, JSONObject>> { (_, row) ->
+                val id = row.optString("id")
+                val completed = row.optBoolean("completed", false)
+                val inGrace = WidgetCompletionGrace.isPending(WidgetCompletionGrace.KIND_HABIT, id)
+                // Grace keeps the row in the "open" band so it does not jump until the timer fires.
+                if (completed && !inGrace) 1 else 0
+            }.thenBy { (index, _) -> index }
+        )
+        val out = JSONArray()
+        items.forEach { (_, row) -> out.put(row) }
+        return out
     }
 }

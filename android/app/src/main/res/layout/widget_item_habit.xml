@@ -3,6 +3,7 @@
     android:id="@+id/habit_row"
     android:layout_width="match_parent"
     android:layout_height="32dp"
+    android:alpha="1"
     android:background="@drawable/shape_rounded_pill"
     android:clipChildren="false"
     android:clipToPadding="false"
