@@ -193,7 +193,7 @@ export const CreateReminderModal: React.FC<CreateReminderModalProps> = ({
                   whileTap={tapPress}
                   className="flex-1 py-2.5 font-semibold rounded-2xl shadow-md transition bg-[#22C55E] hover:bg-emerald-600 dark:bg-[#3B82F6] dark:hover:bg-blue-500 text-white cursor-pointer"
                 >
-                  Create Reminder
+                  {time.trim() ? 'Create Reminder' : 'Create To-Do'}
                 </motion.button>
               </div>
             </form>
