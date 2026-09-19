@@ -131,7 +131,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
               {atCap && (
                 <div
                   role="alert"
-                  className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900 text-[12px] font-semibold text-amber-900 dark:text-amber-200"
+                  className="p-2.5 rounded-xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200/80 dark:border-orange-900 text-[12px] font-semibold text-orange-900 dark:text-orange-200"
                 >
                   Maximum limit of 20 active habits reached.
                 </div>
@@ -285,7 +285,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   </button>
                 </div>
                 {keystoneWarning && (
-                  <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-amber-700 dark:text-amber-300">
+                  <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-orange-700 dark:text-orange-300">
                     You already have {MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.
                   </p>
                 )}

@@ -64,7 +64,7 @@ function HabitCardInner({
   onOpenDeleteConfirm: _onOpenDeleteConfirm,
   onToggleKeystone: _onToggleKeystone,
   keystoneAtCap: _keystoneAtCap = false,
-  keystoneBoosted: _keystoneBoosted = false,
+  keystoneBoosted = false,
   weekOrigin,
 }: HabitCardProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -620,11 +620,11 @@ function HabitCardInner({
                   isLongPressed
                     ? 'scale-[1.025] shadow-2xl ring-2 ring-accent border-accent'
                     : celebration === 'fallback'
-                    ? 'shadow-sm border-amber-500 ring-1 ring-amber-500 bg-amber-100 dark:bg-amber-950'
+                    ? 'shadow-sm border-orange-500 ring-1 ring-orange-500 bg-orange-100 dark:bg-orange-950'
                     : isFallbackActive && !isTodayDone
                     ? 'shadow-sm border-accent ring-1 ring-accent bg-accent-soft active:scale-[0.995]'
-                    : habit.isKeystone
-                    ? 'overflow-visible bg-emerald-50/90 dark:bg-blue-950/40 border-emerald-500/60 shadow-[0_0_12px_rgba(16,185,129,0.35)] dark:border-blue-500/60 dark:shadow-[0_0_12px_rgba(59,130,246,0.35)] active:scale-[0.995]'
+                    : habit.isKeystone || keystoneBoosted
+                    ? 'overflow-visible bg-emerald-50/90 dark:bg-blue-950/40 border-emerald-500/60 dark:border-blue-500/60 keystone-boost-glow active:scale-[0.995]'
                     : 'shadow-sm border-line active:scale-[0.995]'
                 }`}
               >
@@ -675,7 +675,7 @@ function HabitCardInner({
                         const isViewed = dayIdx === activeIndex;
                         const isMicro = habit.microDays?.[dayIdx];
                         const viewedRing =
-                          isViewed && !isToday ? 'ring-2 ring-amber-400/70 dark:ring-amber-400/50' : '';
+                          isViewed && !isToday ? 'ring-2 ring-orange-400/70 dark:ring-orange-400/50' : '';
                         const isScheduled = isHabitScheduledOnDayIndex(habit, dayIdx, origin);
 
                         if (!isScheduled) {

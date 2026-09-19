@@ -953,7 +953,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
           onClick={() => setKeystoneExpanded((prev) => !prev)}
           className={`w-full rounded-2xl p-3.5 px-4 border shadow-xs text-left transition ${
             keystones.length > 0
-              ? 'bg-white dark:bg-slate-900 border-emerald-200/90 dark:border-blue-500/40 shadow-[0_0_18px_rgba(16,185,129,0.18)] dark:shadow-[0_0_18px_rgba(59,130,246,0.22)] ring-1 ring-emerald-400/25 dark:ring-blue-400/30'
+              ? 'bg-white dark:bg-slate-900 border-emerald-200/90 dark:border-blue-500/40 shadow-emerald-500/20 dark:shadow-blue-500/25 shadow-lg ring-1 ring-emerald-400/25 dark:ring-blue-400/30'
               : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'
           }`}
         >
@@ -962,7 +962,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
               <div className="flex items-center gap-2">
                 <span className="text-[14.5px] font-bold text-slate-800 dark:text-white tracking-tight">Keystone</span>
                 {keystones.length > 0 && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 dark:bg-blue-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] dark:shadow-[0_0_8px_rgba(96,165,250,0.9)]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 dark:bg-blue-400 shadow-md shadow-emerald-500/70 dark:shadow-blue-500/70" />
                 )}
               </div>
               <p className="text-[11.5px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">

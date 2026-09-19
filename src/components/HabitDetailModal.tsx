@@ -260,7 +260,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
               </button>
             </div>
             {keystoneWarning && (
-              <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-amber-700 dark:text-amber-300">
+              <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-orange-700 dark:text-orange-300">
                 You already have {MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.
               </p>
             )}
