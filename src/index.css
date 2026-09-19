@@ -104,6 +104,16 @@ html, body, #root {
   touch-action: pan-y;
 }
 
+/**
+ * Swipeable habit / reminder cards: allow vertical list scroll by default.
+ * Horizontal lock is applied in JS (touch-action: none) once axis resolves,
+ * and Framer Motion drag="x" isolates the horizontal pan.
+ * Overrides [role="button"] { touch-action: manipulation } when present.
+ */
+.swipe-card-surface {
+  touch-action: pan-y !important;
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }

@@ -2,11 +2,11 @@ import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { motion, useMotionValue, useTransform, animate as motionAnimate } from 'motion/react';
 import { StandaloneReminder } from '../types';
 import { ASCEND_STATUS_CHIP_CLASS } from '../utils/categories';
+import { SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD } from '../hooks/useHorizontalSwipeDrag';
 
-const COMPLETE_GRACE_MS = 3000;
-const SWIPE_AXIS_LOCK_PX = 10;
-const SWIPE_MAX_PX = 120;
-const SWIPE_COMMIT_PX = 40;
+const SWIPE_AXIS_LOCK_PX = 6;
+const SWIPE_MAX_PX = 100;
+const SWIPE_COMMIT_PX = SWIPE_COMMIT_THRESHOLD;
 const LONG_PRESS_MS = 400;
 const GHOST_MOUSE_MS = 700;
 const DRAG_TRANSITION = { duration: 0 } as const;
@@ -14,8 +14,13 @@ const SPRING_TRANSITION = { type: 'spring' as const, stiffness: 420, damping: 26
 
 interface ReminderCardProps {
   reminder: StandaloneReminder;
+  /** Active list vs dimmed completed drawer. */
+  variant?: 'active' | 'archived';
+  /** True while the task stays in the active list after complete (Undo window). */
+  inGrace?: boolean;
   onToggleComplete: (id: string) => void;
   onSetCompleted?: (id: string, completed: boolean) => void;
+  onUndoGrace?: () => void;
   onDeleteReminder?: (id: string) => void;
   onSnoozeReminder?: (id: string, minutes: number) => void;
   onLongPress?: (reminder: StandaloneReminder, rect: DOMRect | null) => void;
@@ -23,15 +28,17 @@ interface ReminderCardProps {
 
 function ReminderCardInner({
   reminder,
+  variant = 'active',
+  inGrace = false,
   onToggleComplete,
   onSetCompleted,
+  onUndoGrace,
   onSnoozeReminder,
   onLongPress,
 }: ReminderCardProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [localCompleted, setLocalCompleted] = useState(Boolean(reminder.completed));
-  const graceTimerRef = useRef<number | null>(null);
-  const pendingCommitRef = useRef(false);
+  const isArchived = variant === 'archived';
 
   const x = useMotionValue(0);
   const revealRightOpacity = useTransform(x, [8, 36], [0, 1]);
@@ -59,6 +66,8 @@ function ReminderCardInner({
   onToggleCompleteRef.current = onToggleComplete;
   const onSetCompletedRef = useRef(onSetCompleted);
   onSetCompletedRef.current = onSetCompleted;
+  const onUndoGraceRef = useRef(onUndoGrace);
+  onUndoGraceRef.current = onUndoGrace;
 
   const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current !== null) {
@@ -68,56 +77,23 @@ function ReminderCardInner({
   }, []);
 
   useEffect(() => {
-    if (!pendingCommitRef.current) {
-      setLocalCompleted(Boolean(reminder.completed));
-    }
+    setLocalCompleted(Boolean(reminder.completed));
   }, [reminder.completed]);
 
   useEffect(
     () => () => {
-      if (graceTimerRef.current != null) window.clearTimeout(graceTimerRef.current);
       clearLongPressTimer();
     },
     [clearLongPressTimer]
   );
 
-  const clearGraceTimer = useCallback(() => {
-    if (graceTimerRef.current != null) {
-      window.clearTimeout(graceTimerRef.current);
-      graceTimerRef.current = null;
-    }
+  /** Persist completed immediately so metrics stay accurate; parent owns grace/archive UI. */
+  const requestCompleted = useCallback((next: boolean) => {
+    const id = reminderRef.current.id;
+    setLocalCompleted(next);
+    if (onSetCompletedRef.current) onSetCompletedRef.current(id, next);
+    else onToggleCompleteRef.current(id);
   }, []);
-
-  /** 3s undo window: optimistic UI first; cancel = zero-penalty revert. */
-  const requestCompleted = useCallback(
-    (next: boolean) => {
-      const id = reminderRef.current.id;
-      if (next) {
-        clearGraceTimer();
-        pendingCommitRef.current = true;
-        setLocalCompleted(true);
-        graceTimerRef.current = window.setTimeout(() => {
-          graceTimerRef.current = null;
-          pendingCommitRef.current = false;
-          if (onSetCompletedRef.current) onSetCompletedRef.current(id, true);
-          else onToggleCompleteRef.current(id);
-        }, COMPLETE_GRACE_MS);
-        return;
-      }
-
-      if (pendingCommitRef.current) {
-        clearGraceTimer();
-        pendingCommitRef.current = false;
-        setLocalCompleted(false);
-        return;
-      }
-
-      setLocalCompleted(false);
-      if (onSetCompletedRef.current) onSetCompletedRef.current(id, false);
-      else onToggleCompleteRef.current(id);
-    },
-    [clearGraceTimer]
-  );
 
   const setTouchAction = useCallback((mode: 'pan-y' | 'none') => {
     const el = swipeSurfaceRef.current;
@@ -162,7 +138,7 @@ function ReminderCardInner({
     const axis = gestureAxisRef.current;
     const offset = x.get();
 
-    if (axis !== 'vertical' && offset > SWIPE_COMMIT_PX) {
+    if (!isArchived && axis !== 'vertical' && offset > SWIPE_COMMIT_PX) {
       if (!localCompletedRef.current) {
         requestCompleted(true);
         try {
@@ -171,9 +147,10 @@ function ReminderCardInner({
           /* ignore */
         }
       }
-    } else if (axis !== 'vertical' && offset < -SWIPE_COMMIT_PX) {
+    } else if (!isArchived && axis !== 'vertical' && offset < -SWIPE_COMMIT_PX) {
       if (localCompletedRef.current) {
-        requestCompleted(false);
+        if (onUndoGraceRef.current) onUndoGraceRef.current();
+        else requestCompleted(false);
         try {
           if (navigator.vibrate) navigator.vibrate(30);
         } catch {
@@ -188,7 +165,7 @@ function ReminderCardInner({
     isDraggingRef.current = false;
     setIsDragging(false);
     setTouchAction('pan-y');
-  }, [requestCompleted, setTouchAction, x]);
+  }, [isArchived, requestCompleted, setTouchAction, x]);
 
   const endPointerGesture = useCallback(() => {
     if (!isDraggingRef.current) return;
@@ -232,73 +209,7 @@ function ReminderCardInner({
     }, LONG_PRESS_MS);
   }, [clearLongPressTimer, setTouchAction, x]);
 
-  useEffect(() => {
-    const el = swipeSurfaceRef.current;
-    if (!el) return;
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (wasLongPressRef.current) return;
-      const touch = e.touches[0];
-      if (!touch) return;
-
-      const deltaX = touch.clientX - startXRef.current;
-      const deltaY = touch.clientY - startYRef.current;
-
-      if (startPosRef.current) {
-        const dist = Math.hypot(deltaX, deltaY);
-        if (dist > 8) {
-          clearLongPressTimer();
-          hasMovedRef.current = true;
-        }
-      }
-
-      const axis = resolveGestureAxis(deltaX, deltaY);
-      if (axis === 'horizontal') {
-        e.preventDefault();
-        const originX = dragStartXRef.current ?? startXRef.current;
-        applySwipeOffset(touch.clientX - originX);
-      }
-    };
-
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-    return () => el.removeEventListener('touchmove', onTouchMove);
-  }, [applySwipeOffset, clearLongPressTimer, resolveGestureAxis]);
-
-  useEffect(() => {
-    if (!isDragging) return;
-
-    const onEnd = () => endPointerGestureRef.current();
-    const onMouseMove = (e: MouseEvent) => {
-      if (!isDraggingRef.current || wasLongPressRef.current) return;
-      const deltaX = e.clientX - startXRef.current;
-      const deltaY = e.clientY - startYRef.current;
-      if (startPosRef.current) {
-        const dist = Math.hypot(deltaX, deltaY);
-        if (dist > 8) {
-          clearLongPressTimer();
-          hasMovedRef.current = true;
-        }
-      }
-      const axis = resolveGestureAxis(deltaX, deltaY);
-      if (axis === 'horizontal') {
-        const originX = dragStartXRef.current ?? startXRef.current;
-        applySwipeOffset(e.clientX - originX);
-      }
-    };
-
-    window.addEventListener('touchend', onEnd);
-    window.addEventListener('touchcancel', onEnd);
-    window.addEventListener('mouseup', onEnd);
-    window.addEventListener('blur', onEnd);
-    window.addEventListener('mousemove', onMouseMove);
-    return () => {
-      window.removeEventListener('touchend', onEnd);
-      window.removeEventListener('touchcancel', onEnd);
-      window.removeEventListener('mouseup', onEnd);
-      window.removeEventListener('blur', onEnd);
-      window.removeEventListener('mousemove', onMouseMove);
-    };
-  }, [isDragging, applySwipeOffset, clearLongPressTimer, resolveGestureAxis]);
+  // Motion drag="x" owns horizontal pan — native move/end listeners removed to avoid double commits.
 
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
@@ -312,8 +223,6 @@ function ReminderCardInner({
       wasLongPressRef.current = false;
       hasMovedRef.current = false;
       lastTouchAtRef.current = Date.now();
-      isDraggingRef.current = true;
-      setIsDragging(true);
       armLongPress();
     },
     [armLongPress]
@@ -330,8 +239,6 @@ function ReminderCardInner({
       startPosRef.current = { x: e.clientX, y: e.clientY };
       wasLongPressRef.current = false;
       hasMovedRef.current = false;
-      isDraggingRef.current = true;
-      setIsDragging(true);
       armLongPress();
     },
     [armLongPress]
@@ -418,68 +325,107 @@ function ReminderCardInner({
     }
   };
 
-  const statusBadge = getStatusBadge(reminder.date, reminder.time, localCompleted);
+  const statusBadge = getStatusBadge(reminder.date, reminder.time, localCompleted && !inGrace);
   const whenLabel = formatReminderDate(reminder.date, reminder.time);
+  const showUndo = Boolean(inGrace && localCompleted && onUndoGrace);
 
   return (
     <div
       ref={cardRef}
       className={`relative overflow-hidden rounded-2xl select-none touch-pan-y shadow-xs ${
-        isDragging || Math.abs(x.get()) > 2 ? 'overflow-hidden' : 'overflow-hidden'
+        isArchived ? 'opacity-75' : ''
       }`}
     >
-      <motion.div
-        className="absolute inset-0 text-white flex items-center justify-start px-5 font-bold rounded-2xl bg-[#23C15D] dark:bg-blue-600"
-        style={{ opacity: revealRightOpacity }}
-      >
-        <div className="flex items-center space-x-2 text-xs">
-          <svg className="w-5 h-5 text-white stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-          </svg>
-          <span>Complete</span>
-        </div>
-      </motion.div>
+      {!isArchived ? (
+        <>
+          <motion.div
+            className="absolute inset-0 text-white flex items-center justify-start px-5 font-bold rounded-2xl bg-[#23C15D] dark:bg-blue-600"
+            style={{ opacity: revealRightOpacity }}
+          >
+            <div className="flex items-center space-x-2 text-xs">
+              <svg className="w-5 h-5 text-white stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+              <span>Complete</span>
+            </div>
+          </motion.div>
 
-      <motion.div
-        className="absolute inset-0 text-white flex items-center justify-end px-5 font-bold rounded-2xl bg-slate-700 dark:bg-slate-700"
-        style={{ opacity: revealLeftOpacity }}
-      >
-        <div className="flex items-center space-x-2 text-xs">
-          <span>Remove completion</span>
-          <svg className="w-4.5 h-4.5 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
-          </svg>
-        </div>
-      </motion.div>
+          <motion.div
+            className="absolute inset-0 text-white flex items-center justify-end px-5 font-bold rounded-2xl bg-slate-700 dark:bg-slate-700"
+            style={{ opacity: revealLeftOpacity }}
+          >
+            <div className="flex items-center space-x-2 text-xs">
+              <span>Undo</span>
+              <svg className="w-4.5 h-4.5 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+              </svg>
+            </div>
+          </motion.div>
+        </>
+      ) : null}
 
       <motion.div
         ref={swipeSurfaceRef}
         id={`reminder-card-${reminder.id}`}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={endPointerGesture}
-        onTouchCancel={endPointerGesture}
-        onMouseDown={handleMouseDown}
-        onMouseUp={endPointerGesture}
+        onTouchStart={isArchived ? undefined : handleTouchStart}
+        onTouchEnd={isArchived ? undefined : () => clearLongPressTimer()}
+        onTouchCancel={isArchived ? undefined : () => clearLongPressTimer()}
+        onMouseDown={isArchived ? undefined : handleMouseDown}
+        onMouseUp={isArchived ? undefined : () => clearLongPressTimer()}
         onContextMenu={handleContextMenu}
+        drag={isArchived ? false : 'x'}
+        dragConstraints={{ left: -SWIPE_MAX_PX, right: SWIPE_MAX_PX }}
+        dragElastic={0.2}
+        dragMomentum={false}
+        dragPropagation={false}
+        onDragStart={() => {
+          clearLongPressTimer();
+          hasMovedRef.current = true;
+          gestureAxisRef.current = 'horizontal';
+          isDraggingRef.current = true;
+          setIsDragging(true);
+          setTouchAction('none');
+        }}
+        onDrag={(_e, info) => {
+          if (Math.hypot(info.offset.x, info.offset.y) > 8) {
+            clearLongPressTimer();
+            hasMovedRef.current = true;
+          }
+          gestureAxisRef.current = 'horizontal';
+        }}
+        onDragEnd={(_e, info) => {
+          isDraggingRef.current = true;
+          x.set(info.offset.x);
+          gestureAxisRef.current = 'horizontal';
+          finishSwipe();
+        }}
         style={{ x, touchAction: 'pan-y' }}
         transition={isDragging ? DRAG_TRANSITION : SPRING_TRANSITION}
-        className={`relative z-10 bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-100 dark:border-slate-800 flex items-start space-x-3.5 cursor-grab active:cursor-grabbing ${
-          localCompleted ? 'opacity-85' : ''
-        }`}
+        className={`swipe-card-surface relative z-10 rounded-2xl p-3.5 border flex items-start space-x-3.5 cursor-grab active:cursor-grabbing ${
+          isArchived
+            ? 'bg-slate-50 dark:bg-slate-900/70 border-slate-200/80 dark:border-slate-800'
+            : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'
+        } ${localCompleted ? 'opacity-90' : ''}`}
       >
         <button
           id={`toggle-reminder-${reminder.id}`}
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            requestCompleted(!localCompleted);
+            if (localCompleted) {
+              if (onUndoGrace) onUndoGrace();
+              else requestCompleted(false);
+            } else {
+              requestCompleted(true);
+            }
           }}
+          onPointerDown={(e) => e.stopPropagation()}
           className={`mt-0.5 w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 cursor-pointer transition-all duration-150 ${
             localCompleted
               ? 'bg-[#23C15D] border-[#23C15D] dark:bg-blue-600 dark:border-blue-500 text-white shadow-xs'
               : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-blue-500'
           }`}
-          title={localCompleted ? 'Mark pending' : 'Mark completed'}
+          title={localCompleted ? 'Restore to active' : 'Mark completed'}
         >
           {localCompleted && (
             <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
@@ -491,13 +437,28 @@ function ReminderCardInner({
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between space-x-2">
             <h4
-              className={`text-[14px] font-bold text-slate-900 dark:text-white truncate ${
-                localCompleted ? 'line-through text-slate-500 dark:text-slate-400' : ''
+              className={`text-[14px] font-bold truncate ${
+                localCompleted
+                  ? 'line-through text-slate-500 dark:text-slate-400'
+                  : 'text-slate-900 dark:text-white'
               }`}
             >
               {reminder.title}
             </h4>
             <div className="flex items-center gap-1.5 shrink-0">
+              {showUndo ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUndoGrace?.();
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="text-[10.5px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-lg border border-orange-300 text-orange-800 bg-orange-50 dark:border-orange-600 dark:text-orange-200 dark:bg-orange-950/40 cursor-pointer"
+                >
+                  Undo
+                </button>
+              ) : null}
               <span
                 className={`text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md border ${
                   reminder.time?.trim()
@@ -508,7 +469,7 @@ function ReminderCardInner({
               >
                 {reminder.time?.trim() ? 'R' : 'TD'}
               </span>
-              {statusBadge ? (
+              {statusBadge && !showUndo ? (
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-xl border ${statusBadge.color}`}>
                   {statusBadge.text}
                 </span>
@@ -557,8 +518,11 @@ function ReminderCardInner({
 function reminderCardPropsEqual(prev: ReminderCardProps, next: ReminderCardProps): boolean {
   return (
     prev.reminder === next.reminder &&
+    prev.variant === next.variant &&
+    prev.inGrace === next.inGrace &&
     prev.onToggleComplete === next.onToggleComplete &&
     prev.onSetCompleted === next.onSetCompleted &&
+    prev.onUndoGrace === next.onUndoGrace &&
     prev.onDeleteReminder === next.onDeleteReminder &&
     prev.onSnoozeReminder === next.onSnoozeReminder &&
     prev.onLongPress === next.onLongPress

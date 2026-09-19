@@ -4,13 +4,16 @@ import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
+import { SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD } from '../hooks/useHorizontalSwipeDrag';
 
-const SWIPE_AXIS_LOCK_PX = 10;
+const SWIPE_AXIS_LOCK_PX = 6;
 const LONG_PRESS_MS = 550;
 const GHOST_MOUSE_MS = 700;
 const FLIP_DEBOUNCE_MS = 400;
-const SWIPE_MAX_PX = 120;
-const SWIPE_COMMIT_PX = 40;
+/** Horizontal drag clamp — matches Framer dragConstraints. */
+const SWIPE_MAX_PX = 100;
+/** Commit complete / fallback once past this offset. */
+const SWIPE_COMMIT_PX = SWIPE_COMMIT_THRESHOLD;
 /** Undo window after optimistic complete — marble/score already updated. */
 const COMPLETE_GRACE_MS = 3000;
 
@@ -349,116 +352,27 @@ function HabitCardInner({
   const endPointerGestureRef = useRef(endPointerGesture);
   endPointerGestureRef.current = endPointerGesture;
 
-  // Native non-passive touchmove so horizontal swipes can call preventDefault.
-  useEffect(() => {
-    const el = swipeSurfaceRef.current;
-    if (!el) return;
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (isOtherLongPressedRef.current || wasLongPressRef.current) return;
-      const touch = e.touches[0];
-      if (!touch) return;
-
-      const deltaX = touch.clientX - startXRef.current;
-      const deltaY = touch.clientY - startYRef.current;
-
-      if (startPosRef.current) {
-        const dist = Math.hypot(deltaX, deltaY);
-        if (dist > 8) {
-          clearLongPressTimer();
-          hasMovedRef.current = true;
-        }
-      }
-
-      const axis = resolveGestureAxis(deltaX, deltaY);
-      if (axis === 'horizontal') {
-        if (gesturesLockedRef.current) return;
-        e.preventDefault();
-        const originX = dragStartXRef.current ?? startXRef.current;
-        applySwipeOffset(touch.clientX - originX);
-      }
-    };
-
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-    return () => el.removeEventListener('touchmove', onTouchMove);
-  }, [applySwipeOffset, clearLongPressTimer, resolveGestureAxis]);
-
-  // Global end listeners prevent stuck drag / frozen gestures when the finger leaves the card.
-  useEffect(() => {
-    if (!isDragging) return;
-
-    const onEnd = () => endPointerGestureRef.current();
-    const onMouseMove = (e: MouseEvent) => {
-      if (!isDraggingRef.current || wasLongPressRef.current) return;
-      const deltaX = e.clientX - startXRef.current;
-      const deltaY = e.clientY - startYRef.current;
-      if (startPosRef.current) {
-        const dist = Math.hypot(deltaX, deltaY);
-        if (dist > 8) {
-          clearLongPressTimer();
-          hasMovedRef.current = true;
-        }
-      }
-      const axis = resolveGestureAxis(deltaX, deltaY);
-      if (axis === 'horizontal') {
-        const originX = dragStartXRef.current ?? startXRef.current;
-        applySwipeOffset(e.clientX - originX);
-      }
-    };
-
-    window.addEventListener('touchend', onEnd);
-    window.addEventListener('touchcancel', onEnd);
-    window.addEventListener('mouseup', onEnd);
-    window.addEventListener('blur', onEnd);
-    window.addEventListener('mousemove', onMouseMove);
-    return () => {
-      window.removeEventListener('touchend', onEnd);
-      window.removeEventListener('touchcancel', onEnd);
-      window.removeEventListener('mouseup', onEnd);
-      window.removeEventListener('blur', onEnd);
-      window.removeEventListener('mousemove', onMouseMove);
-    };
-  }, [isDragging, applySwipeOffset, clearLongPressTimer, resolveGestureAxis]);
-
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
+  // Motion drag="x" owns horizontal movement; long-press is armed on pointer down.
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
       if (isOtherLongPressedRef.current) return;
-      const touch = e.touches[0];
-      if (!touch) return;
-      startXRef.current = touch.clientX;
-      startYRef.current = touch.clientY;
-      dragStartXRef.current = touch.clientX;
-      gestureAxisRef.current = 'none';
-      startPosRef.current = { x: touch.clientX, y: touch.clientY };
-      wasLongPressRef.current = false;
-      hasMovedRef.current = false;
-      ignoreClickRef.current = false;
-      lastTouchAtRef.current = Date.now();
-      isDraggingRef.current = true;
-      setIsDragging(true);
-      armLongPress();
-    },
-    [armLongPress]
-  );
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.button !== 0 || isOtherLongPressedRef.current) return;
-      if (Date.now() - lastTouchAtRef.current < GHOST_MOUSE_MS) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (e.pointerType === 'mouse' && Date.now() - lastTouchAtRef.current < GHOST_MOUSE_MS) return;
+      if (e.pointerType === 'touch') lastTouchAtRef.current = Date.now();
       startXRef.current = e.clientX;
       startYRef.current = e.clientY;
-      dragStartXRef.current = e.clientX;
       gestureAxisRef.current = 'none';
-      startPosRef.current = { x: e.clientX, y: e.clientY };
       wasLongPressRef.current = false;
       hasMovedRef.current = false;
       ignoreClickRef.current = false;
-      isDraggingRef.current = true;
-      setIsDragging(true);
       armLongPress();
     },
     [armLongPress]
   );
+
+  const handlePointerUp = useCallback(() => {
+    clearLongPressTimer();
+  }, [clearLongPressTimer]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -583,19 +497,45 @@ function HabitCardInner({
         <motion.article
           ref={swipeSurfaceRef}
           id={`habit-card-${habit.id}`}
-          role="button"
+          role="group"
           tabIndex={0}
+          aria-label={habitDisplayName}
           onClick={handleCardClick}
           onKeyDown={handleCardKeyDown}
           onContextMenu={(e) => e.preventDefault()}
-          onTouchStart={handleTouchStart}
-          onTouchEnd={endPointerGesture}
-          onTouchCancel={endPointerGesture}
-          onMouseDown={handleMouseDown}
-          onMouseUp={endPointerGesture}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          drag={!gesturesLocked && !isLongPressed && !isOtherLongPressed && !isFlipped ? 'x' : false}
+          dragConstraints={{ left: -SWIPE_MAX_PX, right: SWIPE_MAX_PX }}
+          dragElastic={0.2}
+          dragMomentum={false}
+          dragPropagation={false}
+          onDragStart={() => {
+            clearLongPressTimer();
+            hasMovedRef.current = true;
+            ignoreClickRef.current = true;
+            gestureAxisRef.current = 'horizontal';
+            isDraggingRef.current = true;
+            setIsDragging(true);
+            setTouchAction('none');
+          }}
+          onDrag={(_e, info) => {
+            if (Math.hypot(info.offset.x, info.offset.y) > 8) {
+              clearLongPressTimer();
+              hasMovedRef.current = true;
+            }
+            gestureAxisRef.current = 'horizontal';
+          }}
+          onDragEnd={(_e, info) => {
+            isDraggingRef.current = true;
+            x.set(info.offset.x);
+            gestureAxisRef.current = 'horizontal';
+            finishSwipe();
+          }}
           style={{ perspective: 1000, x, touchAction: 'pan-y' }}
           transition={isDragging ? DRAG_TRANSITION : SPRING_TRANSITION}
-          className="relative w-full cursor-pointer select-none"
+          className="swipe-card-surface relative w-full cursor-pointer select-none"
         >
           <motion.div
             key={celebration === 'full' ? `full-${fullPopSeq}` : 'idle'}

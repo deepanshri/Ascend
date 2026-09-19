@@ -203,7 +203,7 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
         width: pillWidth,
         minWidth: pillWidth,
       }}
-      className={`inline-flex items-center justify-center rounded-full border text-[11px] font-bold tabular-nums transform-gpu will-change-[width] overflow-hidden px-4 py-1.5 gap-1.5 ${
+      className={`inline-flex items-center justify-center rounded-full border text-[11px] font-bold tabular-nums transform-gpu will-change-[width] overflow-hidden px-3.5 py-1 gap-1.5 ${
         darkMode
           ? 'bg-slate-900/95 border-blue-500/50 text-blue-200'
           : 'bg-white/95 border-emerald-200 text-emerald-800 shadow-sm'

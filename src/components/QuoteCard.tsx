@@ -481,7 +481,7 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
       aria-label={isTip ? 'App tip, tap for next' : 'Quote, tap for next'}
       onClick={goNext}
       layout
-      className="my-2 w-full h-auto cursor-pointer rounded-xl py-1.5 px-3 bg-surface text-ink border border-line shadow-2xs select-none text-left transition-all duration-300 overflow-visible"
+      className="my-1 w-full h-auto cursor-pointer rounded-xl py-1 px-2.5 bg-surface text-ink border border-line shadow-2xs select-none text-left transition-all duration-300 overflow-visible"
     >
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
@@ -491,15 +491,15 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
         >
-          <p className="text-[12px] font-medium text-slate-800 dark:text-slate-100 italic leading-snug">
+          <p className="text-[11px] font-medium text-slate-800 dark:text-slate-100 italic leading-snug">
             {isTip ? currentQuote.text : `\u201C${currentQuote.text}\u201D`}
           </p>
 
-          <div className="flex items-center justify-between mt-1 text-[10.5px] gap-2">
+          <div className="flex items-center justify-between mt-0.5 text-[10px] gap-2">
             <span className="font-semibold text-emerald-900 dark:text-blue-300">
               {isTip ? 'Tip' : `— ${currentQuote.author}`}
             </span>
-            <span className="text-[10px] font-medium text-emerald-800/80 dark:text-blue-300/80 flex items-center space-x-1 shrink-0">
+            <span className="text-[9.5px] font-medium text-emerald-800/80 dark:text-blue-300/80 flex items-center space-x-1 shrink-0">
               <span>{currentQuote.icon}</span>
               <span>{isTip ? 'App' : currentQuote.category}</span>
             </span>

@@ -21,10 +21,17 @@ export function habitCategoryBadge(category: HabitCategory): string {
 export const ASCEND_STATUS_CHIP_CLASS =
   'bg-accent text-accent-fg border-accent dark:bg-blue-600 dark:text-white dark:border-blue-500';
 
+/**
+ * Self-improvement category chip — mint soft + accent ink (not orange/red).
+ * Orange is reserved for needs-attention only. Soft fill + solid accent text
+ * keeps the mint look while holding AA contrast (~5:1 on accent-soft).
+ */
+export const ASCEND_SI_CHIP_CLASS =
+  'bg-accent-soft text-accent border-accent dark:bg-blue-950 dark:text-blue-200 dark:border-blue-500';
+
 export function habitCategoryTagClass(category: HabitCategory): string {
   if (category === 'work') {
     return ASCEND_STATUS_CHIP_CLASS;
   }
-  // Self-improvement: locked orange primary (orange-700 / white ≈ 5.18:1)
-  return 'bg-orange-700 text-white border-orange-800 dark:bg-orange-600 dark:text-white dark:border-orange-500';
+  return ASCEND_SI_CHIP_CLASS;
 }

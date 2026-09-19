@@ -2056,7 +2056,7 @@ export default function App() {
               <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
 
               {/* Habit List Cards */}
-              <section id="habit-list" className="flex flex-col space-y-2.5">
+              <section id="habit-list" className="mt-0.5 flex flex-col gap-2.5">
               {(activeHabits ?? []).length === 0 ? (
                 <div className="bg-white/80 rounded-2xl p-6 text-center text-slate-400 text-[13px] border border-slate-200/80">
                   No habits active yet. Tap &quot;+&quot; in the header to create one!

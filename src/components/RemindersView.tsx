@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Plus } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Plus, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { StandaloneReminder, UserSession } from '../types';
 import { fetchPublicReminders } from '../lib/supabase';
@@ -11,6 +11,7 @@ import { DeleteReminderConfirmModal } from './DeleteReminderConfirmModal';
 import { ScreenHeader, SCREEN_INSET_CLASS, HEADER_ICON_BTN_CLASS } from './ScreenHeader';
 import { FriendsFeed } from './FriendsFeed';
 import { tapPress } from '../lib/motionPresets';
+import { useTaskArchiveGrace } from '../hooks/useTaskArchiveGrace';
 
 interface RemindersViewProps {
   reminders: StandaloneReminder[];
@@ -40,6 +41,15 @@ function hasTimedReminder(r: StandaloneReminder) {
   return Boolean(r.time && String(r.time).trim());
 }
 
+function sortTasks(list: StandaloneReminder[]) {
+  return [...list].sort((a, b) => {
+    const aTimed = hasTimedReminder(a) ? 0 : 1;
+    const bTimed = hasTimedReminder(b) ? 0 : 1;
+    if (aTimed !== bTimed) return aTimed - bTimed;
+    return `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`);
+  });
+}
+
 export const RemindersView: React.FC<RemindersViewProps> = ({
   reminders,
   focusReminderId = null,
@@ -61,6 +71,8 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
   const [longPressedRect, setLongPressedRect] = useState<DOMRect | null>(null);
   const [editingReminder, setEditingReminder] = useState<StandaloneReminder | null>(null);
   const [deletingReminder, setDeletingReminder] = useState<StandaloneReminder | null>(null);
+  const [completedOpen, setCompletedOpen] = useState(false);
+  const { pendingArchiveIds, beginGrace, cancelGrace, isInGrace } = useTaskArchiveGrace();
 
   useEffect(() => {
     if (!userSession || userSession.isGuest) return;
@@ -88,17 +100,53 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
     onOpenCreateConsumed?.();
   }, [openCreate, onOpenCreateConsumed]);
 
-  /** Timed (R) float above timeless to-dos (TD); open before completed; then by date/time. */
-  const sortedList = useMemo(() => {
-    const safeReminders = Array.isArray(reminders) ? reminders.filter((item) => !item.deleted) : [];
-    return [...safeReminders].sort((a, b) => {
-      const aTimed = hasTimedReminder(a) ? 0 : 1;
-      const bTimed = hasTimedReminder(b) ? 0 : 1;
-      if (aTimed !== bTimed) return aTimed - bTimed;
-      if (a.completed !== b.completed) return a.completed ? 1 : -1;
-      return `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`);
-    });
-  }, [reminders]);
+  const persistCompleted = useCallback(
+    (id: string, completed: boolean) => {
+      if (onSetReminderCompleted) onSetReminderCompleted(id, completed);
+      else onToggleComplete(id);
+    },
+    [onSetReminderCompleted, onToggleComplete]
+  );
+
+  /** Complete → persist immediately (metrics), keep in active list for grace + Undo. */
+  const handleSetCompleted = useCallback(
+    (id: string, completed: boolean) => {
+      if (completed) {
+        persistCompleted(id, true);
+        beginGrace(id);
+        return;
+      }
+      cancelGrace(id);
+      persistCompleted(id, false);
+    },
+    [beginGrace, cancelGrace, persistCompleted]
+  );
+
+  const handleUndoGrace = useCallback(
+    (id: string) => {
+      cancelGrace(id);
+      persistCompleted(id, false);
+    },
+    [cancelGrace, persistCompleted]
+  );
+
+  const liveReminders = useMemo(
+    () => (Array.isArray(reminders) ? reminders.filter((item) => !item.deleted) : []),
+    [reminders]
+  );
+
+  const { activeTasks, completedTasks } = useMemo(() => {
+    const active: StandaloneReminder[] = [];
+    const completed: StandaloneReminder[] = [];
+    for (const item of liveReminders) {
+      if (!item.completed || pendingArchiveIds.has(item.id)) {
+        active.push(item);
+      } else {
+        completed.push(item);
+      }
+    }
+    return { activeTasks: sortTasks(active), completedTasks: sortTasks(completed) };
+  }, [liveReminders, pendingArchiveIds]);
 
   return (
     <div
@@ -138,19 +186,22 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
 
       <section className="space-y-2.5">
         <AnimatePresence initial={false} mode="popLayout">
-          {sortedList.map((rem) => (
+          {activeTasks.map((rem) => (
             <motion.div
               key={rem.id}
               layout
               initial={{ opacity: 0, y: 8, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.98 }}
-              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              exit={{ opacity: 0, height: 0, marginBottom: 0, scale: 0.98 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             >
               <ReminderCard
                 reminder={rem}
+                variant="active"
+                inGrace={isInGrace(rem.id)}
                 onToggleComplete={onToggleComplete}
-                onSetCompleted={onSetReminderCompleted}
+                onSetCompleted={handleSetCompleted}
+                onUndoGrace={() => handleUndoGrace(rem.id)}
                 onDeleteReminder={onDeleteReminder}
                 onSnoozeReminder={onSnoozeReminder}
                 onLongPress={(reminder, rect) => {
@@ -162,7 +213,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
           ))}
         </AnimatePresence>
 
-        {sortedList.length === 0 && (
+        {activeTasks.length === 0 && completedTasks.length === 0 && (
           <div className="py-6 text-center text-slate-400 dark:text-slate-500 space-y-1.5">
             <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">No tasks yet</p>
             <p className="text-xs text-slate-400 dark:text-slate-500 px-6">
@@ -171,6 +222,78 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
           </div>
         )}
       </section>
+
+      {completedTasks.length > 0 ? (
+        <section className="pt-1 pb-2">
+          <button
+            type="button"
+            onClick={() => setCompletedOpen((open) => !open)}
+            aria-expanded={completedOpen}
+            className="flex w-full items-center justify-between rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/70 px-3.5 py-2.5 text-left cursor-pointer"
+          >
+            <span className="text-[12.5px] font-bold text-slate-700 dark:text-slate-200">
+              Completed ({completedTasks.length})
+            </span>
+            {completedOpen ? (
+              <ChevronUp className="w-4 h-4 text-slate-500 dark:text-slate-400" aria-hidden />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-500 dark:text-slate-400" aria-hidden />
+            )}
+          </button>
+
+          <AnimatePresence initial={false}>
+            {completedOpen ? (
+              <motion.div
+                key="completed-drawer"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                className="overflow-hidden"
+              >
+                <div className="space-y-2 pt-2.5">
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {completedTasks.map((rem) => (
+                      <motion.div
+                        key={rem.id}
+                        layout
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="flex items-stretch gap-1.5"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <ReminderCard
+                            reminder={rem}
+                            variant="archived"
+                            onToggleComplete={onToggleComplete}
+                            onSetCompleted={handleSetCompleted}
+                            onDeleteReminder={onDeleteReminder}
+                            onLongPress={(reminder, rect) => {
+                              setLongPressedReminder(reminder);
+                              setLongPressedRect(rect);
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${rem.title}`}
+                          title="Delete permanently"
+                          onClick={() => setDeletingReminder(rem)}
+                          className="shrink-0 self-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-slate-500 hover:text-orange-700 dark:hover:text-orange-400 hover:border-orange-300 dark:hover:border-orange-700 cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" strokeWidth={2.25} />
+                        </button>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </section>
+      ) : null}
 
       <CreateReminderModal
         isOpen={isCreateOpen}
@@ -219,6 +342,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
         onClose={() => setDeletingReminder(null)}
         onConfirm={() => {
           if (deletingReminder) {
+            cancelGrace(deletingReminder.id);
             onDeleteReminder(deletingReminder.id);
             setDeletingReminder(null);
           }

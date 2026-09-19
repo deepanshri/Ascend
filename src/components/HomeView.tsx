@@ -35,9 +35,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const cycleDays = Number.isFinite(bowlFill?.cycleDays) ? bowlFill.cycleDays : 7;
 
   return (
-    <div className="mt-1 flex w-full flex-col items-center pt-2">
-      {/* Momentum → Bowl: tight 8–12px stack (mb-2 + mt-1). */}
-      <div className="relative z-10 mb-2 flex w-full justify-center">
+    <div className="mt-0 flex w-full flex-col items-center pt-1">
+      {/* Momentum → Bowl: compact stack so habit cards clear the fold. */}
+      <div className="relative z-10 mb-1 flex w-full justify-center">
         <MomentumPill
           momentumScore={momentumScore}
           momentumPulse={momentumPulse}
@@ -45,7 +45,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         />
       </div>
 
-      <div className="mx-auto mt-1 flex w-full flex-col items-center justify-center">
+      <div className="mx-auto mt-0 flex w-full flex-col items-center justify-center">
         <AccumulationBowl
           pieces={safePieces}
           fillPercent={fillPercent}
@@ -60,7 +60,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         />
       </div>
 
-      <div className="mt-2 flex w-full flex-col gap-2">{children}</div>
+      <div className="mt-1.5 flex w-full flex-col gap-2">{children}</div>
     </div>
   );
 };
