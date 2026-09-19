@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
@@ -123,12 +123,8 @@ import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
 import { HabitCard } from './components/HabitCard';
 import { QuoteCard } from './components/QuoteCard';
-import { RemindersView } from './components/RemindersView';
-import { ReportView } from './components/ReportView';
 import { FriendsFeed } from './components/FriendsFeed';
-import { PersonalView } from './components/PersonalView';
 import { ScreenHeader, SCREEN_INSET_CLASS, HEADER_ICON_BTN_CLASS } from './components/ScreenHeader';
-import { SettingsView } from './components/SettingsView';
 import { AddHabitModal } from './components/AddHabitModal';
 import { HabitDetailModal } from './components/HabitDetailModal';
 import { DeleteHabitConfirmModal } from './components/DeleteHabitConfirmModal';
@@ -138,6 +134,20 @@ import { FrictionAuditModal } from './components/FrictionAuditModal';
 import { AuthView } from './components/AuthView';
 import { OnboardingView } from './components/OnboardingView';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { TabLoadingFallback } from './components/TabLoadingFallback';
+
+const RemindersView = lazy(() =>
+  import('./components/RemindersView').then((m) => ({ default: m.RemindersView }))
+);
+const ReportView = lazy(() =>
+  import('./components/ReportView').then((m) => ({ default: m.ReportView }))
+);
+const PersonalView = lazy(() =>
+  import('./components/PersonalView').then((m) => ({ default: m.PersonalView }))
+);
+const SettingsView = lazy(() =>
+  import('./components/SettingsView').then((m) => ({ default: m.SettingsView }))
+);
 
 const APP_TABS: readonly ActiveTab[] = ['home', 'reminders', 'report', 'personal', 'settings'];
 
@@ -1846,6 +1856,7 @@ export default function App() {
           onReset={() => setViewResetKey((value) => value + 1)}
         >
         <div className="absolute inset-0 z-10">
+        <Suspense fallback={<TabLoadingFallback />}>
         <AnimatePresence mode="wait" initial={false}>
         {safeActiveTab === 'reminders' ? (
           <motion.div
@@ -2087,6 +2098,7 @@ export default function App() {
           </motion.main>
         )}
         </AnimatePresence>
+        </Suspense>
         </div>
         </ErrorBoundary>
 

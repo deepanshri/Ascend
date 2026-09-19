@@ -1,10 +1,10 @@
-import avatar1 from '../avatars/avatar-1.png';
-import avatar2 from '../avatars/avatar-2.png';
-import avatar3 from '../avatars/avatar-3.png';
-import avatar4 from '../avatars/avatar-4.png';
-import avatar5 from '../avatars/avatar-5.png';
-import avatar6 from '../avatars/avatar-6.png';
-import avatar7 from '../avatars/avatar-7.png';
+import avatar1 from '../avatars/avatar-1.webp';
+import avatar2 from '../avatars/avatar-2.webp';
+import avatar3 from '../avatars/avatar-3.webp';
+import avatar4 from '../avatars/avatar-4.webp';
+import avatar5 from '../avatars/avatar-5.webp';
+import avatar6 from '../avatars/avatar-6.webp';
+import avatar7 from '../avatars/avatar-7.webp';
 
 export interface AvatarOption {
   id: string;

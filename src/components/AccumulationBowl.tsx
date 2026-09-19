@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import bowlMorning from '../assets/bowl/bowl-morning.png';
-import bowlNight from '../assets/bowl/bowl-night.png';
-import pieceGreenDark from '../assets/bowl/piece-green-dark.png';
-import pieceGreenLight from '../assets/bowl/piece-green-light.png';
-import pieceBlueDark from '../assets/bowl/piece-blue-dark.png';
-import pieceBlueLight from '../assets/bowl/piece-blue-light.png';
+import bowlMorning from '../assets/bowl/bowl-morning.webp';
+import bowlNight from '../assets/bowl/bowl-night.webp';
+import pieceGreenDark from '../assets/bowl/piece-green-dark.webp';
+import pieceGreenLight from '../assets/bowl/piece-green-light.webp';
+import pieceBlueDark from '../assets/bowl/piece-blue-dark.webp';
+import pieceBlueLight from '../assets/bowl/piece-blue-light.webp';
 import { CYCLE_DAY_OPTIONS, clampCycleDays, type AccumulationPiece, type CycleDays } from '../services/reportService';
 import { tapPress } from '../lib/motionPresets';
 
