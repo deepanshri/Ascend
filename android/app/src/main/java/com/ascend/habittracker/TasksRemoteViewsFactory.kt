@@ -12,6 +12,7 @@ class TasksRemoteViewsFactory(
     private val context: Context
 ) : RemoteViewsService.RemoteViewsFactory {
     private var rows: JSONArray = JSONArray()
+    private var appDark: Boolean = false
 
     override fun onCreate() {
         loadRows()
@@ -35,13 +36,14 @@ class TasksRemoteViewsFactory(
         val title = row.optString("title", "Task")
         val timeLabel = row.optString("time", "").trim()
         val timed = isTimedTask(timeLabel)
-        // Single-line label only — no subtitle TextView / no duplicate "To-Do".
+        val palette = WidgetTheme.palette(appDark)
         val main = if (timed) {
             "R · $timeLabel · $title"
         } else {
             "TD · $title"
         }
 
+        views.setInt(R.id.task_row, "setBackgroundResource", palette.pillBg)
         views.setTextViewText(R.id.task_title, main)
         views.setImageViewResource(
             R.id.task_check,
@@ -58,7 +60,7 @@ class TasksRemoteViewsFactory(
         )
         views.setTextColor(
             R.id.task_title,
-            context.getColor(if (completed) R.color.widget_muted else R.color.widget_text)
+            if (completed) palette.muted else palette.text
         )
 
         val toggleFill = Intent().apply {
@@ -83,7 +85,9 @@ class TasksRemoteViewsFactory(
     override fun hasStableIds(): Boolean = true
 
     private fun loadRows() {
-        val raw = WidgetStore.readSnapshot(context).optJSONArray("reminders") ?: JSONArray()
+        val snapshot = WidgetStore.readSnapshot(context)
+        appDark = WidgetTheme.isAppDark(snapshot)
+        val raw = snapshot.optJSONArray("reminders") ?: JSONArray()
         rows = sortTasks(filterVisible(raw))
     }
 

@@ -231,6 +231,27 @@ export function mapAuthError(raw: unknown): string {
   return message || 'Authentication failed. Please check your credentials.';
 }
 
+/** Prefer raw Supabase Auth policy text for password updates (e.g. "Password is too weak"). */
+function mapPasswordChangeError(raw: unknown): string {
+  const message = raw instanceof Error ? raw.message : String(raw || '');
+  const text = message.toLowerCase();
+  if (
+    text.includes('weak') ||
+    text.includes('password should') ||
+    text.includes('at least') ||
+    text.includes('character') ||
+    text.includes('too short') ||
+    text.includes('pwned') ||
+    (text.includes('same') && text.includes('password'))
+  ) {
+    return message || 'Password does not meet security requirements.';
+  }
+  if (text.includes('session') || text.includes('not authenticated') || text.includes('jwt')) {
+    return 'Session expired. Sign in again, then change your password.';
+  }
+  return mapAuthError(message);
+}
+
 function sessionFromAuthUser(
   user: { id: string; email?: string | null; created_at?: string; user_metadata?: Record<string, unknown> },
   email: string,
@@ -451,7 +472,7 @@ export const authService = {
 
   /**
    * Change the signed-in user's password via Supabase Auth.
-   * The user must have an active session (they are already signed in).
+   * Issues a real Auth `updateUser` (PATCH /auth/v1/user) — never a local fake success.
    * Returns null on success, or an error message string on failure.
    */
   async changePassword(newPassword: string): Promise<string | null> {
@@ -462,8 +483,14 @@ export const authService = {
       return 'Password must be at least 6 characters.';
     }
     try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) return mapPasswordChangeError(sessionError.message);
+      if (!sessionData?.session) {
+        return 'You must be signed in to change your password.';
+      }
+
       const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) return mapAuthError(error.message);
+      if (error) return mapPasswordChangeError(error.message);
       return null; // success
     } catch (err) {
       return err instanceof Error ? err.message : 'Password change failed.';

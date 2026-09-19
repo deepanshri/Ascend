@@ -140,11 +140,6 @@ export function isSeedHabitId(id: string): boolean {
   return SEED_HABIT_IDS.has(id) || id.startsWith('habit-onboarding-');
 }
 
-export const INITIAL_EVIDENCE: IdentityEvidence[] = seedEvidenceForHabit(
-  'habit-1',
-  'Deep Work & Coding',
-  'I am a focused creator who builds meaningful software.',
-  'work'
-);
+export const INITIAL_EVIDENCE: IdentityEvidence[] = [];
 
-export const INITIAL_COMPLETION_EVENTS: HabitCompletionEvent[] = seedEventsForHabit('habit-1');
+export const INITIAL_COMPLETION_EVENTS: HabitCompletionEvent[] = [];

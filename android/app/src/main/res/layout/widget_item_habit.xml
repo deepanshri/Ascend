@@ -2,17 +2,14 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/habit_row"
     android:layout_width="match_parent"
-    android:layout_height="32dp"
-    android:alpha="1"
-    android:background="@drawable/shape_rounded_pill"
-    android:clipChildren="false"
-    android:clipToPadding="false"
+    android:layout_height="34dp"
+    android:background="@drawable/shape_rounded_pill_light"
+    android:clipChildren="true"
+    android:clipToPadding="true"
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:paddingStart="8dp"
-    android:paddingTop="3dp"
-    android:paddingEnd="8dp"
-    android:paddingBottom="3dp">
+    android:paddingEnd="8dp">
 
     <ImageView
         android:id="@+id/habit_check"
@@ -28,8 +25,9 @@
         android:layout_marginStart="8dp"
         android:layout_weight="1"
         android:ellipsize="end"
+        android:includeFontPadding="false"
         android:maxLines="1"
-        android:textColor="@color/widget_text"
+        android:textColor="#0F172A"
         android:textSize="12sp"
         android:textStyle="bold" />
 

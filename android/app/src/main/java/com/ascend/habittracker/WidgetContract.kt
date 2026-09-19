@@ -19,6 +19,8 @@ object WidgetContract {
     const val ROUTE_REMINDERS = "ascend://app/reminders"
     const val ROUTE_HOME = "ascend://app/home"
     const val ROUTE_LEDGER = "ascend://app/ledger"
+    const val ROUTE_CREATE_HABIT = "ascend://app/create-habit"
+    const val ROUTE_CREATE_TASK = "ascend://app/create-task"
 
     const val ROW_COUNT = 5
     const val HABITS_LIST_VIEW_ID = "widget_habits_list"

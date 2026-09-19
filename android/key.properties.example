@@ -1,0 +1,10 @@
+# Copy to android/key.properties and fill in real values.
+# NEVER commit key.properties or the keystore file.
+#
+# Generate a keystore (from the android/ folder):
+#   keytool -genkey -v -keystore ascend-release-key.keystore -alias ascend-key-alias -keyalg RSA -keysize 2048 -validity 10000
+
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=ascend-key-alias
+storeFile=../ascend-release-key.keystore

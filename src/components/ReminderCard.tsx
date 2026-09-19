@@ -1,7 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { motion, useMotionValue, useTransform, animate as motionAnimate } from 'motion/react';
 import { StandaloneReminder } from '../types';
 
 const COMPLETE_GRACE_MS = 3000;
+const SWIPE_AXIS_LOCK_PX = 10;
+const SWIPE_MAX_PX = 120;
+const SWIPE_COMMIT_PX = 40;
+const LONG_PRESS_MS = 400;
+const GHOST_MOUSE_MS = 700;
+const DRAG_TRANSITION = { duration: 0 } as const;
+const SPRING_TRANSITION = { type: 'spring' as const, stiffness: 420, damping: 26, mass: 0.7 };
 
 interface ReminderCardProps {
   reminder: StandaloneReminder;
@@ -12,33 +20,51 @@ interface ReminderCardProps {
   onLongPress?: (reminder: StandaloneReminder, rect: DOMRect | null) => void;
 }
 
-export const ReminderCard: React.FC<ReminderCardProps> = ({
+function ReminderCardInner({
   reminder,
   onToggleComplete,
   onSetCompleted,
   onSnoozeReminder,
   onLongPress,
-}) => {
-  const [dragStartX, setDragStartX] = useState<number | null>(null);
-  const [swipeOffset, setSwipeOffset] = useState(0);
+}: ReminderCardProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [localCompleted, setLocalCompleted] = useState(Boolean(reminder.completed));
   const graceTimerRef = useRef<number | null>(null);
   const pendingCommitRef = useRef(false);
 
+  const x = useMotionValue(0);
+  const revealRightOpacity = useTransform(x, [8, 36], [0, 1]);
+  const revealLeftOpacity = useTransform(x, [-8, -36], [0, 1]);
+
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const swipeSurfaceRef = useRef<HTMLElement | null>(null);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
-  const isScrollingVerticallyRef = useRef(false);
-  const longPressTimerRef = useRef<number | null>(null);
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const dragStartXRef = useRef<number | null>(null);
+  const gestureAxisRef = useRef<'none' | 'horizontal' | 'vertical'>('none');
   const wasLongPressRef = useRef(false);
   const hasMovedRef = useRef(false);
+  const isDraggingRef = useRef(false);
+  const lastTouchAtRef = useRef(0);
+  const longPressTimerRef = useRef<number | null>(null);
+  const localCompletedRef = useRef(localCompleted);
+  localCompletedRef.current = localCompleted;
+  const reminderRef = useRef(reminder);
+  reminderRef.current = reminder;
+  const onLongPressRef = useRef(onLongPress);
+  onLongPressRef.current = onLongPress;
+  const onToggleCompleteRef = useRef(onToggleComplete);
+  onToggleCompleteRef.current = onToggleComplete;
+  const onSetCompletedRef = useRef(onSetCompleted);
+  onSetCompletedRef.current = onSetCompleted;
 
-  const clearLongPressTimer = () => {
+  const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current !== null) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!pendingCommitRef.current) {
@@ -49,46 +75,274 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
   useEffect(
     () => () => {
       if (graceTimerRef.current != null) window.clearTimeout(graceTimerRef.current);
+      clearLongPressTimer();
     },
-    []
+    [clearLongPressTimer]
   );
 
-  const clearGraceTimer = () => {
+  const clearGraceTimer = useCallback(() => {
     if (graceTimerRef.current != null) {
       window.clearTimeout(graceTimerRef.current);
       graceTimerRef.current = null;
     }
-  };
+  }, []);
 
   /** 3s undo window: optimistic UI first; cancel = zero-penalty revert. */
-  const requestCompleted = (next: boolean) => {
-    if (next) {
-      clearGraceTimer();
-      pendingCommitRef.current = true;
-      setLocalCompleted(true);
-      graceTimerRef.current = window.setTimeout(() => {
-        graceTimerRef.current = null;
+  const requestCompleted = useCallback(
+    (next: boolean) => {
+      const id = reminderRef.current.id;
+      if (next) {
+        clearGraceTimer();
+        pendingCommitRef.current = true;
+        setLocalCompleted(true);
+        graceTimerRef.current = window.setTimeout(() => {
+          graceTimerRef.current = null;
+          pendingCommitRef.current = false;
+          if (onSetCompletedRef.current) onSetCompletedRef.current(id, true);
+          else onToggleCompleteRef.current(id);
+        }, COMPLETE_GRACE_MS);
+        return;
+      }
+
+      if (pendingCommitRef.current) {
+        clearGraceTimer();
         pendingCommitRef.current = false;
-        if (onSetCompleted) onSetCompleted(reminder.id, true);
-        else onToggleComplete(reminder.id);
-      }, COMPLETE_GRACE_MS);
-      return;
-    }
+        setLocalCompleted(false);
+        return;
+      }
 
-    // Uncheck / undo within grace → cancel pending sync with no penalty.
-    if (pendingCommitRef.current) {
-      clearGraceTimer();
-      pendingCommitRef.current = false;
       setLocalCompleted(false);
+      if (onSetCompletedRef.current) onSetCompletedRef.current(id, false);
+      else onToggleCompleteRef.current(id);
+    },
+    [clearGraceTimer]
+  );
+
+  const setTouchAction = useCallback((mode: 'pan-y' | 'none') => {
+    const el = swipeSurfaceRef.current;
+    if (el) el.style.touchAction = mode;
+  }, []);
+
+  const applySwipeOffset = useCallback(
+    (deltaX: number) => {
+      const clamped = Math.max(-SWIPE_MAX_PX, Math.min(SWIPE_MAX_PX, deltaX));
+      x.set(clamped);
+    },
+    [x]
+  );
+
+  const resolveGestureAxis = useCallback(
+    (deltaX: number, deltaY: number) => {
+      if (gestureAxisRef.current !== 'none') return gestureAxisRef.current;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+      if (absX > absY && absX > SWIPE_AXIS_LOCK_PX) {
+        gestureAxisRef.current = 'horizontal';
+        setTouchAction('none');
+      } else if (absY > absX && absY > SWIPE_AXIS_LOCK_PX) {
+        gestureAxisRef.current = 'vertical';
+        x.set(0);
+        setTouchAction('pan-y');
+      }
+      return gestureAxisRef.current;
+    },
+    [setTouchAction, x]
+  );
+
+  const resetGesture = useCallback(() => {
+    x.set(0);
+    isDraggingRef.current = false;
+    setIsDragging(false);
+    gestureAxisRef.current = 'none';
+    setTouchAction('pan-y');
+  }, [setTouchAction, x]);
+
+  const finishSwipe = useCallback(() => {
+    const axis = gestureAxisRef.current;
+    const offset = x.get();
+
+    if (axis !== 'vertical' && offset > SWIPE_COMMIT_PX) {
+      if (!localCompletedRef.current) {
+        requestCompleted(true);
+        try {
+          if (navigator.vibrate) navigator.vibrate(40);
+        } catch {
+          /* ignore */
+        }
+      }
+    } else if (axis !== 'vertical' && offset < -SWIPE_COMMIT_PX) {
+      if (localCompletedRef.current) {
+        requestCompleted(false);
+        try {
+          if (navigator.vibrate) navigator.vibrate(30);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    dragStartXRef.current = null;
+    gestureAxisRef.current = 'none';
+    void motionAnimate(x, 0, SPRING_TRANSITION);
+    isDraggingRef.current = false;
+    setIsDragging(false);
+    setTouchAction('pan-y');
+  }, [requestCompleted, setTouchAction, x]);
+
+  const endPointerGesture = useCallback(() => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    clearLongPressTimer();
+    lastTouchAtRef.current = Date.now();
+
+    if (wasLongPressRef.current) {
+      wasLongPressRef.current = false;
+      resetGesture();
       return;
     }
 
-    setLocalCompleted(false);
-    if (onSetCompleted) onSetCompleted(reminder.id, false);
-    else onToggleComplete(reminder.id);
-  };
+    if (!hasMovedRef.current) {
+      resetGesture();
+      return;
+    }
 
-  // Format date and time for reminder card — omit bare "Today" on timeless to-dos.
+    finishSwipe();
+  }, [clearLongPressTimer, finishSwipe, resetGesture]);
+
+  const endPointerGestureRef = useRef(endPointerGesture);
+  endPointerGestureRef.current = endPointerGesture;
+
+  const armLongPress = useCallback(() => {
+    clearLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      wasLongPressRef.current = true;
+      gestureAxisRef.current = 'none';
+      isDraggingRef.current = false;
+      setIsDragging(false);
+      x.set(0);
+      setTouchAction('pan-y');
+      try {
+        if (navigator.vibrate) navigator.vibrate(40);
+      } catch {
+        /* ignore */
+      }
+      const rect = cardRef.current?.getBoundingClientRect() || null;
+      onLongPressRef.current?.(reminderRef.current, rect);
+    }, LONG_PRESS_MS);
+  }, [clearLongPressTimer, setTouchAction, x]);
+
+  useEffect(() => {
+    const el = swipeSurfaceRef.current;
+    if (!el) return;
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (wasLongPressRef.current) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+
+      const deltaX = touch.clientX - startXRef.current;
+      const deltaY = touch.clientY - startYRef.current;
+
+      if (startPosRef.current) {
+        const dist = Math.hypot(deltaX, deltaY);
+        if (dist > 8) {
+          clearLongPressTimer();
+          hasMovedRef.current = true;
+        }
+      }
+
+      const axis = resolveGestureAxis(deltaX, deltaY);
+      if (axis === 'horizontal') {
+        e.preventDefault();
+        const originX = dragStartXRef.current ?? startXRef.current;
+        applySwipeOffset(touch.clientX - originX);
+      }
+    };
+
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => el.removeEventListener('touchmove', onTouchMove);
+  }, [applySwipeOffset, clearLongPressTimer, resolveGestureAxis]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const onEnd = () => endPointerGestureRef.current();
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDraggingRef.current || wasLongPressRef.current) return;
+      const deltaX = e.clientX - startXRef.current;
+      const deltaY = e.clientY - startYRef.current;
+      if (startPosRef.current) {
+        const dist = Math.hypot(deltaX, deltaY);
+        if (dist > 8) {
+          clearLongPressTimer();
+          hasMovedRef.current = true;
+        }
+      }
+      const axis = resolveGestureAxis(deltaX, deltaY);
+      if (axis === 'horizontal') {
+        const originX = dragStartXRef.current ?? startXRef.current;
+        applySwipeOffset(e.clientX - originX);
+      }
+    };
+
+    window.addEventListener('touchend', onEnd);
+    window.addEventListener('touchcancel', onEnd);
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('blur', onEnd);
+    window.addEventListener('mousemove', onMouseMove);
+    return () => {
+      window.removeEventListener('touchend', onEnd);
+      window.removeEventListener('touchcancel', onEnd);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('blur', onEnd);
+      window.removeEventListener('mousemove', onMouseMove);
+    };
+  }, [isDragging, applySwipeOffset, clearLongPressTimer, resolveGestureAxis]);
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch) return;
+      startXRef.current = touch.clientX;
+      startYRef.current = touch.clientY;
+      dragStartXRef.current = touch.clientX;
+      gestureAxisRef.current = 'none';
+      startPosRef.current = { x: touch.clientX, y: touch.clientY };
+      wasLongPressRef.current = false;
+      hasMovedRef.current = false;
+      lastTouchAtRef.current = Date.now();
+      isDraggingRef.current = true;
+      setIsDragging(true);
+      armLongPress();
+    },
+    [armLongPress]
+  );
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      if (Date.now() - lastTouchAtRef.current < GHOST_MOUSE_MS) return;
+      startXRef.current = e.clientX;
+      startYRef.current = e.clientY;
+      dragStartXRef.current = e.clientX;
+      gestureAxisRef.current = 'none';
+      startPosRef.current = { x: e.clientX, y: e.clientY };
+      wasLongPressRef.current = false;
+      hasMovedRef.current = false;
+      isDraggingRef.current = true;
+      setIsDragging(true);
+      armLongPress();
+    },
+    [armLongPress]
+  );
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    clearLongPressTimer();
+    const rect = cardRef.current?.getBoundingClientRect() || null;
+    onLongPressRef.current?.(reminderRef.current, rect);
+  }, [clearLongPressTimer]);
+
   const formatReminderDate = (dateStr: string, timeStr?: string) => {
     const today = new Date().toISOString().slice(0, 10);
     const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
@@ -109,7 +363,6 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
     return timeStr ? `${prefix} at ${timeStr}` : prefix;
   };
 
-  // Status Badge calculation — no duplicate "Today" on timeless to-dos.
   const getStatusBadge = (dateStr: string, timeStr?: string, completed?: boolean) => {
     if (completed) {
       return {
@@ -165,183 +418,18 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
   };
 
   const statusBadge = getStatusBadge(reminder.date, reminder.time, localCompleted);
-
-  // TOUCH GESTURE HANDLERS
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    setDragStartX(touch.clientX);
-    startPosRef.current = { x: touch.clientX, y: touch.clientY };
-    isScrollingVerticallyRef.current = false;
-    wasLongPressRef.current = false;
-    hasMovedRef.current = false;
-    setIsDragging(true);
-
-    clearLongPressTimer();
-    longPressTimerRef.current = window.setTimeout(() => {
-      wasLongPressRef.current = true;
-      setIsDragging(false);
-      setSwipeOffset(0);
-      try {
-        if (navigator.vibrate) navigator.vibrate(40);
-      } catch {}
-      const rect = cardRef.current?.getBoundingClientRect() || null;
-      onLongPress?.(reminder, rect);
-    }, 400);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (wasLongPressRef.current) return;
-    const touch = e.touches[0];
-
-    if (startPosRef.current) {
-      const dist = Math.hypot(touch.clientX - startPosRef.current.x, touch.clientY - startPosRef.current.y);
-      if (dist > 8) {
-        clearLongPressTimer();
-        hasMovedRef.current = true;
-      }
-    }
-
-    if (!isDragging || isScrollingVerticallyRef.current || !startPosRef.current) return;
-    const diffX = touch.clientX - startPosRef.current.x;
-    const diffY = touch.clientY - startPosRef.current.y;
-
-    // Detect if user intended a vertical scroll rather than horizontal swipe
-    if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 8) {
-      isScrollingVerticallyRef.current = true;
-      clearLongPressTimer();
-      setSwipeOffset(0);
-      setIsDragging(false);
-      return;
-    }
-
-    if (dragStartX !== null) {
-      const diff = touch.clientX - dragStartX;
-      if (Math.abs(diff) < 130) {
-        setSwipeOffset(diff);
-      }
-    }
-  };
-
-  const handleTouchEnd = () => {
-    clearLongPressTimer();
-    if (wasLongPressRef.current) {
-      wasLongPressRef.current = false;
-      return;
-    }
-
-    if (!isScrollingVerticallyRef.current && isDragging) {
-      finishSwipe();
-    } else {
-      setSwipeOffset(0);
-      setIsDragging(false);
-    }
-  };
-
-  // MOUSE DRAG HANDLERS
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    setDragStartX(e.clientX);
-    startPosRef.current = { x: e.clientX, y: e.clientY };
-    isScrollingVerticallyRef.current = false;
-    wasLongPressRef.current = false;
-    hasMovedRef.current = false;
-    setIsDragging(true);
-
-    clearLongPressTimer();
-    longPressTimerRef.current = window.setTimeout(() => {
-      wasLongPressRef.current = true;
-      setIsDragging(false);
-      setSwipeOffset(0);
-      try {
-        if (navigator.vibrate) navigator.vibrate(40);
-      } catch {}
-      const rect = cardRef.current?.getBoundingClientRect() || null;
-      onLongPress?.(reminder, rect);
-    }, 400);
-  };
-
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    clearLongPressTimer();
-    const rect = cardRef.current?.getBoundingClientRect() || null;
-    onLongPress?.(reminder, rect);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (wasLongPressRef.current) return;
-
-    if (startPosRef.current) {
-      const dist = Math.hypot(e.clientX - startPosRef.current.x, e.clientY - startPosRef.current.y);
-      if (dist > 8) {
-        clearLongPressTimer();
-        hasMovedRef.current = true;
-      }
-    }
-
-    if (!isDragging || dragStartX === null) return;
-    const diff = e.clientX - dragStartX;
-    if (Math.abs(diff) < 130) {
-      setSwipeOffset(diff);
-    }
-  };
-
-  const handleMouseUp = () => {
-    clearLongPressTimer();
-    if (wasLongPressRef.current) {
-      wasLongPressRef.current = false;
-      return;
-    }
-    if (isDragging) {
-      finishSwipe();
-    }
-  };
-
-  const handleMouseLeave = () => {
-    clearLongPressTimer();
-    if (isDragging) {
-      finishSwipe();
-    }
-  };
-
-  // EVALUATE SWIPE GESTURE
-  // User Requirement:
-  // - Swiping right means: COMPLETED
-  // - Swiping left means: REMOVE MARK FOR COMPLETION (uncomplete / mark as active)
-  const finishSwipe = () => {
-    const threshold = 40;
-    if (swipeOffset > threshold) {
-      // Swiped Right -> Mark COMPLETED (grace-delayed)
-      if (!localCompleted) {
-        requestCompleted(true);
-        try {
-          if (navigator.vibrate) navigator.vibrate(40);
-        } catch {}
-      }
-    } else if (swipeOffset < -threshold) {
-      // Swiped Left -> REMOVE MARK FOR COMPLETION
-      if (localCompleted) {
-        requestCompleted(false);
-        try {
-          if (navigator.vibrate) navigator.vibrate(30);
-        } catch {}
-      }
-    }
-
-    setDragStartX(null);
-    setSwipeOffset(0);
-    setIsDragging(false);
-  };
+  const whenLabel = formatReminderDate(reminder.date, reminder.time);
 
   return (
-    <div className="relative overflow-hidden rounded-2xl select-none touch-pan-y transition-all duration-200 shadow-xs">
-      {/* ========================================================================= */}
-      {/* BACKGROUND SWIPE REVEAL LAYERS                                            */}
-      {/* ========================================================================= */}
-      {/* Right swipe reveal (Swipe right to complete) */}
-      <div
-        className={`absolute inset-0 text-white flex items-center justify-start px-5 font-bold rounded-2xl transition-opacity duration-150 ${
-          swipeOffset > 10 ? 'opacity-100' : 'opacity-0'
-        } bg-[#23C15D] dark:bg-blue-600`}
+    <div
+      ref={cardRef}
+      className={`relative overflow-hidden rounded-2xl select-none touch-pan-y shadow-xs ${
+        isDragging || Math.abs(x.get()) > 2 ? 'overflow-hidden' : 'overflow-hidden'
+      }`}
+    >
+      <motion.div
+        className="absolute inset-0 text-white flex items-center justify-start px-5 font-bold rounded-2xl bg-[#23C15D] dark:bg-blue-600"
+        style={{ opacity: revealRightOpacity }}
       >
         <div className="flex items-center space-x-2 text-xs">
           <svg className="w-5 h-5 text-white stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -349,13 +437,11 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
           </svg>
           <span>Complete</span>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Left swipe reveal (Swipe left to remove mark for completion) */}
-      <div
-        className={`absolute inset-0 text-white flex items-center justify-end px-5 font-bold rounded-2xl transition-opacity duration-150 ${
-          swipeOffset < -10 ? 'opacity-100' : 'opacity-0'
-        } bg-slate-700 dark:bg-slate-700`}
+      <motion.div
+        className="absolute inset-0 text-white flex items-center justify-end px-5 font-bold rounded-2xl bg-slate-700 dark:bg-slate-700"
+        style={{ opacity: revealLeftOpacity }}
       >
         <div className="flex items-center space-x-2 text-xs">
           <span>Remove completion</span>
@@ -363,32 +449,23 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
           </svg>
         </div>
-      </div>
+      </motion.div>
 
-      {/* ========================================================================= */}
-      {/* FOREGROUND REMINDER CARD                                                  */}
-      {/* ========================================================================= */}
-      <div
-        ref={cardRef}
+      <motion.div
+        ref={swipeSurfaceRef}
         id={`reminder-card-${reminder.id}`}
         onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        onTouchEnd={endPointerGesture}
+        onTouchCancel={endPointerGesture}
         onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
+        onMouseUp={endPointerGesture}
         onContextMenu={handleContextMenu}
-        style={{
-          transform: `translateX(${swipeOffset}px)`,
-          transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1)',
-        }}
-        className={`relative z-10 bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-100 dark:border-slate-800 flex items-start space-x-3.5 hover:border-slate-200 dark:hover:border-slate-700 transition-colors cursor-grab active:cursor-grabbing ${
-          localCompleted ? 'opacity-85 hover:opacity-100' : ''
+        style={{ x, touchAction: 'pan-y' }}
+        transition={isDragging ? DRAG_TRANSITION : SPRING_TRANSITION}
+        className={`relative z-10 bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-100 dark:border-slate-800 flex items-start space-x-3.5 cursor-grab active:cursor-grabbing ${
+          localCompleted ? 'opacity-85' : ''
         }`}
       >
-        {/* Tap-to-toggle completion checkbox:
-            Solid green in light mode (#23C15D), blue in dark mode, neutral when pending */}
         <button
           id={`toggle-reminder-${reminder.id}`}
           type="button"
@@ -410,7 +487,6 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
           )}
         </button>
 
-        {/* Reminder Card Details */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between space-x-2">
             <h4
@@ -439,32 +515,25 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
             </div>
           </div>
 
-          {/* Scheduled Date & Time — hidden for timeless to-dos due today */}
-          {(() => {
-            const when = formatReminderDate(reminder.date, reminder.time);
-            if (!when) return null;
-            return (
-              <div className="flex items-center space-x-2 mt-1 text-[12px] font-medium text-slate-600 dark:text-slate-300">
-                <div className="flex items-center space-x-1 text-emerald-800 dark:text-blue-400">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="font-semibold">{when}</span>
-                </div>
+          {whenLabel ? (
+            <div className="flex items-center space-x-2 mt-1 text-[12px] font-medium text-slate-600 dark:text-slate-300">
+              <div className="flex items-center space-x-1 text-emerald-800 dark:text-blue-400">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="font-semibold">{whenLabel}</span>
               </div>
-            );
-          })()}
+            </div>
+          ) : null}
 
-          {/* Notes if present */}
-          {reminder.notes && (
+          {reminder.notes ? (
             <p className="text-[11.5px] text-slate-500 dark:text-slate-400 mt-1.5 leading-snug line-clamp-2 bg-slate-50 dark:bg-slate-800/60 p-1.5 rounded-lg border border-slate-100/80 dark:border-slate-800">
               {reminder.notes}
             </p>
-          )}
+          ) : null}
         </div>
 
-        {/* Right Action: Snooze only (The dustbin icon has been removed from the card as requested) */}
-        {onSnoozeReminder && reminder.time && !localCompleted && (
+        {onSnoozeReminder && reminder.time && !localCompleted ? (
           <div className="flex flex-col items-center space-y-1 shrink-0">
             <button
               type="button"
@@ -478,8 +547,21 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
               +15m
             </button>
           </div>
-        )}
-      </div>
+        ) : null}
+      </motion.div>
     </div>
   );
-};
+}
+
+function reminderCardPropsEqual(prev: ReminderCardProps, next: ReminderCardProps): boolean {
+  return (
+    prev.reminder === next.reminder &&
+    prev.onToggleComplete === next.onToggleComplete &&
+    prev.onSetCompleted === next.onSetCompleted &&
+    prev.onDeleteReminder === next.onDeleteReminder &&
+    prev.onSnoozeReminder === next.onSnoozeReminder &&
+    prev.onLongPress === next.onLongPress
+  );
+}
+
+export const ReminderCard = memo(ReminderCardInner, reminderCardPropsEqual);

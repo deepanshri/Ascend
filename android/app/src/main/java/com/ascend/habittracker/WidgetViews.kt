@@ -5,7 +5,6 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -18,7 +17,6 @@ import android.widget.RemoteViews
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 object WidgetViews {
@@ -40,7 +38,7 @@ object WidgetViews {
 
     fun updateReport(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val snapshot = WidgetStore.readSnapshot(context)
-        val dark = isDark(context)
+        val dark = WidgetTheme.isAppDark(snapshot)
         val work = snapshot.optDouble("workRate", 0.0).toFloat()
         val self = snapshot.optDouble("selfRate", 0.0).toFloat()
         val sleep = if (!snapshot.has("sleepRate") || snapshot.isNull("sleepRate")) {
@@ -71,17 +69,23 @@ object WidgetViews {
     }
 
     fun updateReminders(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
-        val raw = WidgetStore.readSnapshot(context).optJSONArray("reminders") ?: JSONArray()
+        val snapshot = WidgetStore.readSnapshot(context)
+        val palette = WidgetTheme.palette(snapshot)
+        val raw = snapshot.optJSONArray("reminders") ?: JSONArray()
         val rows = sortTasksForWidget(raw)
         val doneCount = countCompletedTasks(rows)
         val yetToCount = countOpenTasks(rows)
         val visibleCount = countVisibleRows(rows, WidgetCompletionGrace.KIND_REMINDER)
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_tasks)
-            // Only the corner + opens the app.
+            applyTasksTheme(views, palette)
+            views.setOnClickPendingIntent(
+                R.id.widget_reminders_header,
+                openApp(context, WidgetContract.ROUTE_REMINDERS, widgetId * 60 + 1)
+            )
             views.setOnClickPendingIntent(
                 R.id.widget_tasks_add,
-                openApp(context, WidgetContract.ROUTE_REMINDERS, widgetId)
+                openApp(context, WidgetContract.ROUTE_CREATE_TASK, widgetId * 60 + 2)
             )
             views.setTextViewText(R.id.widget_tasks_done, doneCount.toString())
             views.setTextViewText(R.id.widget_tasks_yet, yetToCount.toString())
@@ -98,7 +102,7 @@ object WidgetViews {
 
             val toggleTemplate = PendingIntent.getBroadcast(
                 context,
-                widgetId * 60,
+                widgetId * 60 + 3,
                 Intent(context, WidgetActionReceiver::class.java).apply {
                     action = WidgetContract.ACTION_TOGGLE_REMINDER
                 },
@@ -113,16 +117,21 @@ object WidgetViews {
 
     fun updateHabits(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val snapshot = WidgetStore.readSnapshot(context)
+        val palette = WidgetTheme.palette(snapshot)
         val rows = snapshot.optJSONArray("habits") ?: JSONArray()
         val count = rows.length()
         val doneCount = snapshot.optInt("habitsCompleted", countCompletedHabits(rows)).coerceIn(0, count)
         val yetToCount = (count - doneCount).coerceAtLeast(0)
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_habits)
-            // Only the corner + opens the app; list toggles stay in-widget.
+            applyHabitsTheme(views, palette)
+            views.setOnClickPendingIntent(
+                R.id.widget_habits_header,
+                openApp(context, WidgetContract.ROUTE_HOME, widgetId * 40 + 1)
+            )
             views.setOnClickPendingIntent(
                 R.id.widget_habits_add,
-                openApp(context, WidgetContract.ROUTE_HOME, widgetId)
+                openApp(context, WidgetContract.ROUTE_CREATE_HABIT, widgetId * 40 + 2)
             )
             views.setTextViewText(R.id.widget_habits_done, doneCount.toString())
             views.setTextViewText(R.id.widget_habits_yet, yetToCount.toString())
@@ -139,7 +148,7 @@ object WidgetViews {
 
             val toggleTemplate = PendingIntent.getBroadcast(
                 context,
-                widgetId * 40,
+                widgetId * 40 + 3,
                 Intent(context, WidgetActionReceiver::class.java).apply {
                     action = WidgetContract.ACTION_TOGGLE_HABIT
                 },
@@ -257,9 +266,28 @@ object WidgetViews {
         return visible
     }
 
-    private fun isDark(context: Context): Boolean {
-        val mode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-        return mode == Configuration.UI_MODE_NIGHT_YES
+    private fun applyHabitsTheme(views: RemoteViews, palette: WidgetTheme.Palette) {
+        views.setInt(R.id.widget_habits_root, "setBackgroundResource", palette.cardBg)
+        views.setTextColor(R.id.widget_habits_header, palette.text)
+        views.setTextColor(R.id.widget_habits_done_label, palette.muted)
+        views.setTextColor(R.id.widget_habits_yet_label, palette.muted)
+        views.setTextColor(R.id.widget_habits_done, palette.accent)
+        views.setTextColor(R.id.widget_habits_yet, palette.text)
+        views.setTextColor(R.id.widget_habits_empty, palette.muted)
+        views.setInt(R.id.widget_habits_add, "setBackgroundResource", palette.fabBg)
+        views.setTextColor(R.id.widget_habits_add, palette.accent)
+    }
+
+    private fun applyTasksTheme(views: RemoteViews, palette: WidgetTheme.Palette) {
+        views.setInt(R.id.widget_reminders_root, "setBackgroundResource", palette.cardBg)
+        views.setTextColor(R.id.widget_reminders_header, palette.text)
+        views.setTextColor(R.id.widget_tasks_done_label, palette.muted)
+        views.setTextColor(R.id.widget_tasks_yet_label, palette.muted)
+        views.setTextColor(R.id.widget_tasks_done, palette.accent)
+        views.setTextColor(R.id.widget_tasks_yet, palette.text)
+        views.setTextColor(R.id.widget_reminders_empty, palette.muted)
+        views.setInt(R.id.widget_tasks_add, "setBackgroundResource", palette.fabBg)
+        views.setTextColor(R.id.widget_tasks_add, palette.accent)
     }
 
     private fun openApp(context: Context, url: String, requestCode: Int): PendingIntent {

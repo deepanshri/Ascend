@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { StandaloneReminder, UserSession } from '../types';
@@ -15,6 +15,8 @@ import { tapPress } from '../lib/motionPresets';
 interface RemindersViewProps {
   reminders: StandaloneReminder[];
   focusReminderId?: string | null;
+  openCreate?: boolean;
+  onOpenCreateConsumed?: () => void;
   onAddReminder: (
     reminder: Omit<StandaloneReminder, 'id' | 'completed' | 'createdAt' | 'updatedAt'> & {
       id?: string;
@@ -34,9 +36,15 @@ interface RemindersViewProps {
   onOpenSettings?: () => void;
 }
 
+function hasTimedReminder(r: StandaloneReminder) {
+  return Boolean(r.time && String(r.time).trim());
+}
+
 export const RemindersView: React.FC<RemindersViewProps> = ({
   reminders,
   focusReminderId = null,
+  openCreate = false,
+  onOpenCreateConsumed,
   onAddReminder,
   onUpdateReminder,
   onToggleComplete,
@@ -74,16 +82,23 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
     if (found) setEditingReminder(found);
   }, [focusReminderId, reminders]);
 
-  const safeReminders = Array.isArray(reminders) ? reminders.filter((item) => !item.deleted) : [];
-  const hasTime = (r: StandaloneReminder) => Boolean(r.time && String(r.time).trim());
-  /** Timed (R) float above timeless to-dos (TD); then by date/time. */
-  const sortedList = [...safeReminders].sort((a, b) => {
-    const aTimed = hasTime(a) ? 0 : 1;
-    const bTimed = hasTime(b) ? 0 : 1;
-    if (aTimed !== bTimed) return aTimed - bTimed;
-    if (a.completed !== b.completed) return a.completed ? 1 : -1;
-    return `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`);
-  });
+  useEffect(() => {
+    if (!openCreate) return;
+    setIsCreateOpen(true);
+    onOpenCreateConsumed?.();
+  }, [openCreate, onOpenCreateConsumed]);
+
+  /** Timed (R) float above timeless to-dos (TD); open before completed; then by date/time. */
+  const sortedList = useMemo(() => {
+    const safeReminders = Array.isArray(reminders) ? reminders.filter((item) => !item.deleted) : [];
+    return [...safeReminders].sort((a, b) => {
+      const aTimed = hasTimedReminder(a) ? 0 : 1;
+      const bTimed = hasTimedReminder(b) ? 0 : 1;
+      if (aTimed !== bTimed) return aTimed - bTimed;
+      if (a.completed !== b.completed) return a.completed ? 1 : -1;
+      return `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`);
+    });
+  }, [reminders]);
 
   return (
     <div

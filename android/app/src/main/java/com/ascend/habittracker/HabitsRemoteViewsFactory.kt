@@ -12,6 +12,7 @@ class HabitsRemoteViewsFactory(
     private val context: Context
 ) : RemoteViewsService.RemoteViewsFactory {
     private var rows: JSONArray = JSONArray()
+    private var appDark: Boolean = false
 
     override fun onCreate() {
         loadRows()
@@ -33,7 +34,9 @@ class HabitsRemoteViewsFactory(
         val id = row.optString("id")
         val completed = row.optBoolean("completed", false)
         val streak = row.optInt("streak", 0)
+        val palette = WidgetTheme.palette(appDark)
 
+        views.setInt(R.id.habit_row, "setBackgroundResource", palette.pillBg)
         views.setTextViewText(R.id.habit_title, row.optString("title", "Habit"))
         views.setTextViewText(R.id.habit_streak, if (streak > 0) "${streak}d" else "")
         views.setImageViewResource(
@@ -51,12 +54,10 @@ class HabitsRemoteViewsFactory(
         )
         views.setTextColor(
             R.id.habit_title,
-            context.getColor(if (completed) R.color.widget_muted else R.color.widget_text)
+            if (completed) palette.muted else palette.text
         )
-        // Completed rows stay visible but visually secondary.
         views.setFloat(R.id.habit_row, "setAlpha", if (completed) 0.6f else 1f)
 
-        // Checkbox (and row) toggles completion in-widget — never launches the app.
         val toggleFill = Intent().apply {
             putExtra(WidgetContract.EXTRA_ITEM_ID, id)
         }
@@ -79,8 +80,9 @@ class HabitsRemoteViewsFactory(
     override fun hasStableIds(): Boolean = true
 
     private fun loadRows() {
-        val source = WidgetStore.readSnapshot(context).optJSONArray("habits") ?: JSONArray()
-        // Keep every habit visible — incomplete (and in-grace) first, committed completes last.
+        val snapshot = WidgetStore.readSnapshot(context)
+        appDark = WidgetTheme.isAppDark(snapshot)
+        val source = snapshot.optJSONArray("habits") ?: JSONArray()
         rows = sortHabits(source)
     }
 
@@ -99,7 +101,6 @@ class HabitsRemoteViewsFactory(
                 val id = row.optString("id")
                 val completed = row.optBoolean("completed", false)
                 val inGrace = WidgetCompletionGrace.isPending(WidgetCompletionGrace.KIND_HABIT, id)
-                // Grace keeps the row in the "open" band so it does not jump until the timer fires.
                 if (completed && !inGrace) 1 else 0
             }.thenBy { (index, _) -> index }
         )

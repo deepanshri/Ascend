@@ -16,6 +16,7 @@ import {
   Send,
   HelpCircle,
   Shield,
+  KeyRound,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
@@ -565,7 +566,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
           </span>
         </button>
 
-        {/* Sync & Logout */}
+        {/* Sync, password & logout */}
         <div className="flex items-center space-x-2">
           <button
             type="button"
@@ -575,6 +576,17 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
           >
             <span>{isSyncing ? 'Syncing...' : '↻ Sync Data'}</span>
           </button>
+          {!userSession.isGuest && (
+            <button
+              type="button"
+              onClick={onChangePassword}
+              className="py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-emerald-300 dark:hover:border-blue-700 font-medium transition cursor-pointer text-[11.5px] flex items-center gap-1"
+              title="Change password"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>Password</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={onLogout}

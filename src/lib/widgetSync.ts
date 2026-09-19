@@ -66,8 +66,8 @@ export interface WidgetSnapshotInput {
 
 export type WidgetRoute =
   | { tab: 'report' }
-  | { tab: 'reminders'; reminderId?: string }
-  | { tab: 'home'; habitId?: string }
+  | { tab: 'reminders'; reminderId?: string; openCreate?: boolean }
+  | { tab: 'home'; habitId?: string; openCreate?: boolean }
   | { tab: 'ledger' };
 
 function clamp01(value: number): number {
@@ -284,8 +284,16 @@ export function parseWidgetRoute(url?: string | null): WidgetRoute | null {
     const reminderId = parsed.searchParams.get('id') || parsed.searchParams.get('reminder') || undefined;
     const habitId = parsed.searchParams.get('habit') || parsed.searchParams.get('habitId') || undefined;
     if (path === 'app/report' || path === 'report') return { tab: 'report' };
-    if (path === 'app/reminders' || path === 'reminders') return { tab: 'reminders', reminderId };
+    if (path === 'app/create-task' || path === 'create-task') {
+      return { tab: 'reminders', openCreate: true };
+    }
+    if (path === 'app/reminders' || path === 'reminders' || path === 'app/tasks' || path === 'tasks') {
+      return { tab: 'reminders', reminderId };
+    }
     if (path === 'app/ledger' || path === 'ledger') return { tab: 'ledger' };
+    if (path === 'app/create-habit' || path === 'create-habit') {
+      return { tab: 'home', openCreate: true };
+    }
     if (path === 'app/home' || path === 'home' || path === 'app') return { tab: 'home', habitId };
     return null;
   } catch {

@@ -430,41 +430,21 @@ export default function App() {
     return [];
   });
 
-  // Standalone Reminders state
+  // Standalone Reminders / Tasks — clean slate (no demo seed rows).
   const [reminders, setReminders] = useState<StandaloneReminder[]>(() => {
     try {
       const saved = localStorage.getItem('habit_tracker_reminders');
       if (saved) {
         const parsed = JSON.parse(saved) as StandaloneReminder[];
-        if (Array.isArray(parsed)) return parsed.map(withReminderNotificationIds);
+        if (Array.isArray(parsed)) {
+          const SEED_REMINDER_IDS = new Set(['rem-1', 'rem-2']);
+          return parsed
+            .filter((item) => item && !SEED_REMINDER_IDS.has(String(item.id)))
+            .map(withReminderNotificationIds);
+        }
       }
     } catch {}
-    const now = new Date();
-    const future15m = new Date(now.getTime() + 15 * 60 * 1000);
-    const time15m = future15m.toTimeString().slice(0, 5);
-
-    return [
-      {
-        id: 'rem-1',
-        title: 'Afternoon mental reset & posture',
-        date: now.toISOString().slice(0, 10),
-        time: time15m,
-        notes: 'Take 5 deep breaths & hydrate',
-        completed: false,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      },
-      {
-        id: 'rem-2',
-        title: 'Review today’s atomic habit wins',
-        date: now.toISOString().slice(0, 10),
-        time: '20:30',
-        notes: 'Cast another vote for your chosen identity',
-        completed: false,
-        createdAt: Date.now() - 3600000,
-        updatedAt: Date.now() - 3600000,
-      },
-    ].map(withReminderNotificationIds);
+    return [];
   });
 
   useEffect(() => {
@@ -550,6 +530,7 @@ export default function App() {
 
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
   const [widgetFocusReminderId, setWidgetFocusReminderId] = useState<string | null>(null);
+  const [widgetOpenCreateTask, setWidgetOpenCreateTask] = useState(false);
   const [detailHabit, setDetailHabit] = useState<Habit | null>(null);
   const [longPressedHabitId, setLongPressedHabitId] = useState<string | null>(null);
   const [longPressedRect, setLongPressedRect] = useState<DOMRect | null>(null);
@@ -1652,9 +1633,11 @@ export default function App() {
       if (route.tab === 'reminders') {
         setActiveTab('reminders');
         if (route.reminderId) setWidgetFocusReminderId(route.reminderId);
+        if (route.openCreate) setWidgetOpenCreateTask(true);
       }
       if (route.tab === 'home') {
         setActiveTab('home');
+        if (route.openCreate) setIsAddModalOpen(true);
         if (route.habitId) {
           const habit = derivedHabitsRef.current.find((item) => item.id === route.habitId);
           if (habit) setDetailHabit(habit);
@@ -1876,6 +1859,8 @@ export default function App() {
           <RemindersView
             reminders={reminders ?? []}
             focusReminderId={widgetFocusReminderId}
+            openCreate={widgetOpenCreateTask}
+            onOpenCreateConsumed={() => setWidgetOpenCreateTask(false)}
             onAddReminder={handleAddReminder}
             onUpdateReminder={handleUpdateReminder}
             onToggleComplete={handleToggleReminder}
@@ -2363,17 +2348,22 @@ export default function App() {
                   setPasswordStatusMsg(null);
                   setPasswordChangeLoading(true);
                   try {
+                    // Real Auth call: supabase.auth.updateUser via authService → PATCH {SUPABASE_URL}/auth/v1/user
                     const err = await authService.changePassword(newPasswordText);
                     if (err) {
                       setPasswordChangeError(err);
-                    } else {
-                      setPasswordStatusMsg('Password updated successfully.');
-                      setNewPasswordText('');
-                      setTimeout(() => {
-                        setIsPasswordModalOpen(false);
-                        setPasswordStatusMsg(null);
-                      }, 1800);
+                      return;
                     }
+                    setPasswordStatusMsg('Password updated successfully.');
+                    setNewPasswordText('');
+                    setTimeout(() => {
+                      setIsPasswordModalOpen(false);
+                      setPasswordStatusMsg(null);
+                    }, 1800);
+                  } catch (err) {
+                    setPasswordChangeError(
+                      err instanceof Error ? err.message : 'Password change failed.'
+                    );
                   } finally {
                     setPasswordChangeLoading(false);
                   }
