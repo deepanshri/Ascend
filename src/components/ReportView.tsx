@@ -216,14 +216,19 @@ function categoryRateFromLogs(
     list.forEach((habit) => {
       if (!isHabitScheduledOnIso(habit, iso)) return;
       const weight = habitWeight(habit);
+      if (!Number.isFinite(weight) || weight <= 0) return;
       weightTotal += weight;
-      weightedSum += weight * habitBestScoreOnIso(habit.id, iso, momentumEvents, completionEvents);
+      const dayScore = habitBestScoreOnIso(habit.id, iso, momentumEvents, completionEvents);
+      weightedSum += weight * (Number.isFinite(dayScore) ? dayScore : 0);
     });
     if (weightTotal <= 0) return;
     scheduledDays += 1;
     score += weightedSum / weightTotal;
   });
-  return scheduledDays === 0 ? 0 : score / scheduledDays;
+  if (scheduledDays === 0) return 0;
+  const rate = score / scheduledDays;
+  if (!Number.isFinite(rate)) return 0;
+  return Math.min(1, Math.max(0, rate));
 }
 
 function earliestLogIso(
@@ -269,16 +274,23 @@ function sleepRateForRange(
   todayIso: string
 ): number {
   if (!snapshot.hasSleepData) return 0;
-  if (startIso === endIso && startIso === todayIso && snapshot.todayHours != null) {
-    return Math.min(1, snapshot.todayHours / SLEEP_TARGET_HOURS);
+  if (startIso === endIso) {
+    const hours =
+      startIso === todayIso && snapshot.todayHours != null
+        ? snapshot.todayHours
+        : asArray(snapshot?.dailyHours).find((row) => row.isoDate === startIso)?.hours;
+    if (hours != null && Number.isFinite(hours)) {
+      return Math.min(1, Math.max(0, hours / SLEEP_TARGET_HOURS));
+    }
+    return 0;
   }
   const days = asArray(snapshot?.dailyHours).filter((row) => row.isoDate >= startIso && row.isoDate <= endIso);
   if (days.length > 0) {
     const average = days.reduce((sum, row) => sum + row.hours, 0) / days.length;
-    return Math.min(1, average / SLEEP_TARGET_HOURS);
+    return Math.min(1, Math.max(0, average / SLEEP_TARGET_HOURS));
   }
   if (snapshot.weekHours != null && startIso >= addDaysIso(todayIso, -6)) {
-    return Math.min(1, snapshot.weekHours / (SLEEP_TARGET_HOURS * 7));
+    return Math.min(1, Math.max(0, snapshot.weekHours / (SLEEP_TARGET_HOURS * 7)));
   }
   return 0;
 }
@@ -289,8 +301,13 @@ function sleepHoursLabelForRange(
   endIso: string,
   todayIso: string
 ): string {
-  if (startIso === endIso && startIso === todayIso) {
-    return snapshot.todayHours == null ? '—' : `${snapshot.todayHours}h`;
+  if (startIso === endIso) {
+    const hours =
+      startIso === todayIso && snapshot.todayHours != null
+        ? snapshot.todayHours
+        : asArray(snapshot?.dailyHours).find((row) => row.isoDate === startIso)?.hours;
+    if (hours != null && Number.isFinite(hours)) return `${hours}h`;
+    return snapshot.hasSleepData ? '0h' : '—';
   }
   const days = asArray(snapshot?.dailyHours).filter((row) => row.isoDate >= startIso && row.isoDate <= endIso);
   if (days.length > 0) {
@@ -300,7 +317,7 @@ function sleepHoursLabelForRange(
   if (snapshot.weekHours != null && startIso >= addDaysIso(todayIso, -6)) {
     return `${snapshot.weekHours}h`;
   }
-  return '—';
+  return snapshot.hasSleepData ? '0h' : '—';
 }
 
 function todayTimelineBuckets(now: Date): Array<{ label: string; endHour: number }> {
@@ -667,10 +684,15 @@ export const ReportView: React.FC<ReportViewProps> = ({
   const cx = 160;
   const cy = 110;
   const strokeW = 7.5;
-  const getArc = (radius: number, percent: number) => {
+  /** Clamp 0–1 rate → SVG circle stroke props (dashoffset form; avoids NaN / empty arcs). */
+  const ringStroke = (radius: number, rate: number) => {
     const circumference = 2 * Math.PI * radius;
-    const clamped = Math.min(1, Math.max(0, percent));
-    return `${circumference * clamped} ${circumference * (1 - clamped)}`;
+    const t = Number.isFinite(rate) ? Math.min(1, Math.max(0, rate)) : 0;
+    return {
+      circumference,
+      // offset = C - (percent/100)*C  with percent = t*100  ⇒  C * (1 - t)
+      dashOffset: circumference * (1 - t),
+    };
   };
 
   const ringLayout = hasSleepData
@@ -768,7 +790,9 @@ export const ReportView: React.FC<ReportViewProps> = ({
               >
                 <svg className="w-full h-full overflow-visible" viewBox="0 0 320 220">
                   <circle cx={cx} cy={cy} r={80} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
-                  {ringLayout.map((ring) => (
+                  {ringLayout.map((ring) => {
+                    const { circumference, dashOffset } = ringStroke(ring.r, ring.rate);
+                    return (
                     <g key={ring.key}>
                       <circle cx={cx} cy={cy} r={ring.r} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth={strokeW} />
                       <circle
@@ -778,12 +802,14 @@ export const ReportView: React.FC<ReportViewProps> = ({
                         fill="none"
                         stroke={ring.color}
                         strokeWidth={strokeW}
-                        strokeDasharray={getArc(ring.r, ring.rate)}
+                        strokeDasharray={circumference}
+                        strokeDashoffset={dashOffset}
                         strokeLinecap="round"
                         transform={`rotate(-90 ${cx} ${cy})`}
                       />
                     </g>
-                  ))}
+                    );
+                  })}
                   {hasSleepData ? (
                     <>
                       <polyline points={`${cx + 38},${cy - 42} ${cx + 52},${cy - 52} ${cx + 70},${cy - 52}`} fill="none" stroke={isDark ? '#64748b' : '#CBD5E1'} strokeWidth="1.2" />

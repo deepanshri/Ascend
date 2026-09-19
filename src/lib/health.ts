@@ -89,6 +89,9 @@ function sessionMinutes(session: HealthSleepSession): number {
 }
 
 function sessionIsoDate(session: HealthSleepSession): string | null {
+  // Attribute sleep to the wake (end) calendar day so last night's sleep counts toward today.
+  const end = session.end ? Date.parse(session.end) : NaN;
+  if (Number.isFinite(end)) return toISODate(new Date(end));
   const start = session.start ? Date.parse(session.start) : NaN;
   if (!Number.isFinite(start)) return null;
   return toISODate(new Date(start));
@@ -184,9 +187,13 @@ export async function readSleepSnapshot(todayIso: string = toISODate()): Promise
 export function sleepRingRate(snapshot: SleepSnapshot, window: 'today' | 'week'): number {
   if (!snapshot.hasSleepData) return 0;
   if (window === 'today') {
-    if (snapshot.todayHours == null) return 0;
-    return Math.min(1, snapshot.todayHours / SLEEP_TARGET_HOURS);
+    const hours =
+      snapshot.todayHours ??
+      snapshot.dailyHours.find((row) => row.isoDate === toISODate())?.hours ??
+      null;
+    if (hours == null || !Number.isFinite(hours)) return 0;
+    return Math.min(1, Math.max(0, hours / SLEEP_TARGET_HOURS));
   }
-  if (snapshot.weekHours == null) return 0;
-  return Math.min(1, snapshot.weekHours / (SLEEP_TARGET_HOURS * 7));
+  if (snapshot.weekHours == null || !Number.isFinite(snapshot.weekHours)) return 0;
+  return Math.min(1, Math.max(0, snapshot.weekHours / (SLEEP_TARGET_HOURS * 7)));
 }
