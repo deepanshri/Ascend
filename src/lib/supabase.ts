@@ -226,7 +226,7 @@ export function mapAuthError(raw: unknown): string {
     return 'That email already has an account. Use Sign In instead.';
   }
   if (text.includes('email not confirmed')) {
-    return 'Account created. Tap Sign In with the same email and password.';
+    return 'Confirm your email first — open the verification link we sent, then sign in.';
   }
   return message || 'Authentication failed. Please check your credentials.';
 }
@@ -442,6 +442,11 @@ export const authService = {
       const signedInUser = data.session?.user;
       if (signedInUser?.id) {
         updated.id = signedInUser.id;
+      } else if (data.user && !data.session) {
+        // Email confirmation required — do not pretend the guest is upgraded.
+        throw new Error(
+          'Check your email to verify this address, then sign in to finish upgrading.'
+        );
       } else {
         try {
           const signed = await signInRemote(email, password);

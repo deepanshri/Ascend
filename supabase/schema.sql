@@ -113,28 +113,11 @@ CREATE POLICY reminders_delete_own
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.reminders TO authenticated;
 
--- Auto-confirm Auth Users
-UPDATE auth.users
-SET email_confirmed_at = COALESCE(email_confirmed_at, NOW())
-WHERE email_confirmed_at IS NULL;
-
-CREATE OR REPLACE FUNCTION public.auto_confirm_auth_user()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = auth
-AS $$
-BEGIN
-  new.email_confirmed_at := COALESCE(new.email_confirmed_at, NOW());
-  RETURN new;
-END;
-$$;
-
+-- Auth email confirmation: do NOT auto-confirm.
+-- Trigger public.auto_confirm_auth_user / auto_confirm_auth_user on auth.users
+-- was removed in migration 017_remove_auto_confirm.sql (Friends requires real emails).
 DROP TRIGGER IF EXISTS auto_confirm_auth_user ON auth.users;
-CREATE TRIGGER auto_confirm_auth_user
-  BEFORE INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE PROCEDURE public.auto_confirm_auth_user();
+DROP FUNCTION IF EXISTS public.auto_confirm_auth_user();
 
 -- Extra Column Fixes
 ALTER TABLE IF EXISTS public.habit_logs
