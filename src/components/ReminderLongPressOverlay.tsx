@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { motion } from 'motion/react';
 import { StandaloneReminder } from '../types';
+import { ASCEND_STATUS_CHIP_CLASS } from '../utils/categories';
 
 interface ReminderLongPressOverlayProps {
   reminder: StandaloneReminder;
@@ -192,7 +193,7 @@ export const ReminderLongPressOverlay: React.FC<ReminderLongPressOverlayProps> =
                 >
                   {reminder.title}
                 </h4>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-50 dark:bg-blue-950/60 text-emerald-800 dark:text-blue-300 border-emerald-200 dark:border-blue-800 shrink-0">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${ASCEND_STATUS_CHIP_CLASS}`}>
                   {reminder.completed ? 'Done' : 'Active'}
                 </span>
               </div>

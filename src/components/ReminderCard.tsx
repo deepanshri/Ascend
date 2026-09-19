@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { motion, useMotionValue, useTransform, animate as motionAnimate } from 'motion/react';
 import { StandaloneReminder } from '../types';
+import { ASCEND_STATUS_CHIP_CLASS } from '../utils/categories';
 
 const COMPLETE_GRACE_MS = 3000;
 const SWIPE_AXIS_LOCK_PX = 10;
@@ -367,7 +368,7 @@ function ReminderCardInner({
     if (completed) {
       return {
         text: 'Done',
-        color: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+        color: ASCEND_STATUS_CHIP_CLASS,
       };
     }
     const today = new Date().toISOString().slice(0, 10);
@@ -402,7 +403,7 @@ function ReminderCardInner({
         const mins = Math.max(1, Math.round(diffMs / 60000));
         return {
           text: `In ${mins}m`,
-          color: 'bg-emerald-100 text-emerald-900 border-emerald-300 font-bold dark:bg-blue-900/60 dark:text-blue-200 dark:border-blue-700',
+          color: ASCEND_STATUS_CHIP_CLASS + ' font-bold',
         };
       }
       return {

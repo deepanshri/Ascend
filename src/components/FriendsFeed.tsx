@@ -413,7 +413,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
             <blockquote className="rounded-xl border border-line bg-surface-muted px-3.5 py-3 text-[13px] text-ink leading-relaxed">
               {ledgerLoading ? 'Loading…' : `"${ledger.identityStatement}"`}
             </blockquote>
-            <p className="inline-flex items-center rounded-full border border-emerald-200/80 dark:border-blue-800/70 bg-emerald-50/80 dark:bg-blue-950/40 px-3 py-1.5 text-[12px] font-bold text-emerald-800 dark:text-blue-200 tabular-nums">
+            <p className="inline-flex items-center rounded-full border border-accent dark:border-blue-500 bg-accent dark:bg-blue-600 px-3 py-1.5 text-[12px] font-bold text-accent-fg dark:text-white tabular-nums">
               {ledgerLoading
                 ? '…'
                 : `${ledger.completionRatio}% completion · ${ledger.cycleDays}d`}

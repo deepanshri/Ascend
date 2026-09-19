@@ -117,7 +117,7 @@ export const IdentityLedgerModal: React.FC<IdentityLedgerModalProps> = ({
               >
                 <div className="flex justify-between items-center text-[11px]">
                   <span className="font-bold text-slate-900 dark:text-white">{item.habitName}</span>
-                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-semibold uppercase tracking-wider bg-emerald-100 dark:bg-blue-950 text-emerald-800 dark:text-blue-300">
+                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-semibold uppercase tracking-wider bg-accent text-accent-fg dark:bg-blue-600 dark:text-white">
                     Vote Cast ✓
                   </span>
                 </div>

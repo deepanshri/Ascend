@@ -179,8 +179,8 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
         </p>
 
         {isSupabaseConfigured && (
-          <div className="inline-flex items-center space-x-1 mt-2 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-blue-950 border border-emerald-200 dark:border-blue-800 text-[10px] text-emerald-700 dark:text-blue-300 font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-blue-500 animate-pulse" />
+          <div className="inline-flex items-center space-x-1 mt-2 px-2 py-0.5 rounded-full border text-[10px] font-semibold bg-accent text-accent-fg border-accent dark:bg-blue-600 dark:text-white dark:border-blue-500">
+            <span className="w-1.5 h-1.5 rounded-full bg-white/90 animate-pulse" />
             <span>Supabase Cloud Connected</span>
           </div>
         )}

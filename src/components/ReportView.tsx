@@ -1157,10 +1157,10 @@ export const ReportView: React.FC<ReportViewProps> = ({
           <span className="px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
             {cycleVolume.completed}/{cycleVolume.target} days
           </span>
-          <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-blue-950/50 text-emerald-800 dark:text-blue-300">
+          <span className="px-2 py-0.5 rounded-lg bg-accent text-accent-fg dark:bg-blue-600 dark:text-white">
             {cycleVolume.full} full
           </span>
-          <span className="px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-slate-800 text-amber-800 dark:text-slate-300">
+                      <span className="px-2 py-0.5 rounded-lg bg-orange-700 text-white dark:bg-orange-600">
             {cycleVolume.fallback} fallback
           </span>
           <span className="px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400">

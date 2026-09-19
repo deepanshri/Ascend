@@ -425,7 +425,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
               <span
                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   examShieldActive
-                    ? 'bg-emerald-200/70 dark:bg-blue-900/80 text-[#165B33] dark:text-blue-200'
+                    ? 'bg-accent text-accent-fg dark:bg-blue-600 dark:text-white'
                     : 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400'
                 }`}
               >
@@ -467,7 +467,7 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
               <span
                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   vacationModeActive
-                    ? 'bg-emerald-200/70 dark:bg-blue-900/80 text-[#165B33] dark:text-blue-200'
+                    ? 'bg-accent text-accent-fg dark:bg-blue-600 dark:text-white'
                     : 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400'
                 }`}
               >
