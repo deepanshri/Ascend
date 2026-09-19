@@ -1,19 +1,17 @@
 /**
- * delete-account Edge Function
+ * delete-account Edge Function (optional / legacy)
  *
- * Permanently deletes an authenticated user's account:
- *   1. Calls the `delete_own_account()` RPC to purge all public.* data.
- *   2. Calls `supabase.auth.admin.deleteUser()` (requires SERVICE_ROLE_KEY)
- *      to delete the auth.users row.
+ * Preferred path: clients call `supabase.rpc('delete_own_account')` directly.
+ * That SECURITY DEFINER RPC purges public.* data and deletes auth.users for
+ * auth.uid() — no service_role on the client.
  *
- * Security:
- *   - The JWT from the Authorization header is verified by Supabase automatically.
- *   - We cross-check that the JWT sub (user id) matches the userId in the request body.
- *   - Only the authenticated user can delete their own account.
+ * This Edge Function remains as an ops fallback that:
+ *   1. Calls the same `delete_own_account()` RPC with the user JWT.
+ *   2. If the RPC already deleted auth.users, admin.deleteUser is a no-op/error
+ *      that we tolerate.
  *
- * Deployment:
+ * Deployment (optional):
  *   supabase functions deploy delete-account
- *   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';

@@ -500,32 +500,32 @@ export const authService = {
   /**
    * Permanently delete the signed-in user's account.
    *
-   * Step 1: Call the `delete-account` Edge Function, which uses the service role
-   *   key to delete the auth.users row (cascading to all owned public.* data).
-   * Step 2: Sign out locally and clear stored session.
+   * Calls `public.delete_own_account()` RPC with the user's JWT (no service_role
+   * on the client). The SECURITY DEFINER function deletes only auth.uid()'s
+   * public.* rows, then the auth.users row. Then we sign out locally.
    *
    * Returns null on success, or an error message string on failure.
    */
-  async deleteAccount(userId: string): Promise<string | null> {
+  async deleteAccount(_userId?: string): Promise<string | null> {
     if (!isSupabaseConfigured || !supabase) {
-      // No Supabase — just sign out locally.
       setStoredSession(null);
       return null;
     }
     try {
-      const { error } = await supabase.functions.invoke('delete-account', {
-        body: { userId },
-      });
+      const { error } = await supabase.rpc('delete_own_account');
       if (error) {
-        console.warn('delete-account edge function error:', error.message);
+        console.warn('delete_own_account RPC error:', error.message);
         return error.message || 'Account deletion failed. Please contact support.';
       }
-      // Sign out after successful deletion.
-      try { await supabase.auth.signOut(); } catch {}
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // Auth user may already be gone — still clear local session.
+      }
       setStoredSession(null);
-      return null; // success
+      return null;
     } catch (err) {
-      console.warn('delete-account error:', err);
+      console.warn('deleteAccount error:', err);
       return err instanceof Error ? err.message : 'Account deletion failed.';
     }
   },

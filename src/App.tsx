@@ -1353,7 +1353,7 @@ export default function App() {
     localStorage.removeItem('ascend_cache_timestamp');
   };
 
-  // Delete Account — calls Edge Function to delete auth.users row (cascades all data)
+  // Delete Account — JWT-scoped RPC deletes auth.users + owned public data (no service_role on client)
   const handleDeleteAccount = async () => {
     if (!session) return;
     setDeleteAccountLoading(true);
@@ -1370,7 +1370,7 @@ export default function App() {
       setDeleteAccountLoading(false);
       return;
     }
-    // Success — wipe local state
+    // Success — wipe local state; session=null returns user to Auth/landing
     localStorage.clear();
     setSession(null);
     setIsOnboarded(false);
