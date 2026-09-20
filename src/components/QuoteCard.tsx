@@ -462,7 +462,7 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
       setQuoteIndex((prev) => (prev + 1) % poolLength);
     }, ROTATE_MS);
     return () => window.clearInterval(id);
-  }, [poolLength, quoteIndex]);
+  }, [poolLength]);
 
   const goNext = () => {
     if (poolLength < 2) return;

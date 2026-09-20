@@ -2,10 +2,9 @@ import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { motion, useMotionValue, useTransform, animate as motionAnimate } from 'motion/react';
 import { StandaloneReminder } from '../types';
 import { ASCEND_STATUS_CHIP_CLASS } from '../utils/categories';
-import { SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD } from '../hooks/useHorizontalSwipeDrag';
+import { SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD, SWIPE_DRAG_CONSTRAINTS, SWIPE_MAX_PX } from '../hooks/useHorizontalSwipeDrag';
 
 const SWIPE_AXIS_LOCK_PX = 6;
-const SWIPE_MAX_PX = 100;
 const SWIPE_COMMIT_PX = SWIPE_COMMIT_THRESHOLD;
 const LONG_PRESS_MS = 400;
 const GHOST_MOUSE_MS = 700;
@@ -20,7 +19,7 @@ interface ReminderCardProps {
   inGrace?: boolean;
   onToggleComplete: (id: string) => void;
   onSetCompleted?: (id: string, completed: boolean) => void;
-  onUndoGrace?: () => void;
+  onUndoGrace?: (id: string) => void;
   onDeleteReminder?: (id: string) => void;
   onSnoozeReminder?: (id: string, minutes: number) => void;
   onLongPress?: (reminder: StandaloneReminder, rect: DOMRect | null) => void;
@@ -165,7 +164,7 @@ function ReminderCardInner({
     } else if (!isArchived && axis !== 'vertical' && offset < -SWIPE_COMMIT_PX) {
       if (localCompletedRef.current) {
         pendingAction = () => {
-          if (onUndoGraceRef.current) onUndoGraceRef.current();
+          if (onUndoGraceRef.current) onUndoGraceRef.current(reminderRef.current.id);
           else requestCompleted(false);
           try {
             if (navigator.vibrate) navigator.vibrate(30);
@@ -443,7 +442,7 @@ function ReminderCardInner({
         onMouseUp={isArchived ? undefined : () => clearLongPressTimer()}
         onContextMenu={handleContextMenu}
         drag={isArchived ? false : 'x'}
-        dragConstraints={{ left: -SWIPE_MAX_PX, right: SWIPE_MAX_PX }}
+        dragConstraints={SWIPE_DRAG_CONSTRAINTS}
         dragElastic={0.2}
         dragMomentum={false}
         dragPropagation={false}
@@ -464,7 +463,7 @@ function ReminderCardInner({
           onClick={(e) => {
             e.stopPropagation();
             if (localCompleted) {
-              if (onUndoGrace) onUndoGrace();
+              if (onUndoGrace) onUndoGrace(reminder.id);
               else requestCompleted(false);
             } else {
               requestCompleted(true);
@@ -502,7 +501,7 @@ function ReminderCardInner({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onUndoGrace?.();
+                    onUndoGrace?.(reminder.id);
                   }}
                   onPointerDown={(e) => e.stopPropagation()}
                   className="text-[10.5px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-lg border border-orange-300 text-orange-800 bg-orange-50 dark:border-orange-600 dark:text-orange-200 dark:bg-orange-950/40 cursor-pointer"

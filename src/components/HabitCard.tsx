@@ -4,14 +4,12 @@ import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
-import { SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD } from '../hooks/useHorizontalSwipeDrag';
+import { SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD, SWIPE_DRAG_CONSTRAINTS, SWIPE_MAX_PX } from '../hooks/useHorizontalSwipeDrag';
 
 const SWIPE_AXIS_LOCK_PX = 6;
 const LONG_PRESS_MS = 550;
 const GHOST_MOUSE_MS = 700;
 const FLIP_DEBOUNCE_MS = 400;
-/** Horizontal drag clamp — matches Framer dragConstraints. */
-const SWIPE_MAX_PX = 100;
 /** Commit complete / fallback once past this offset. */
 const SWIPE_COMMIT_PX = SWIPE_COMMIT_THRESHOLD;
 /** Undo window after optimistic complete — marble/score already updated. */
@@ -570,7 +568,7 @@ function HabitCardInner({
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
           drag={!gesturesLocked && !isLongPressed && !isOtherLongPressed && !isFlipped ? 'x' : false}
-          dragConstraints={{ left: -SWIPE_MAX_PX, right: SWIPE_MAX_PX }}
+          dragConstraints={SWIPE_DRAG_CONSTRAINTS}
           dragElastic={0.2}
           dragMomentum={false}
           dragPropagation={false}
@@ -846,9 +844,46 @@ function HabitCardInner({
   );
 }
 
+function boolArrEqual(a?: boolean[] | null, b?: boolean[] | null): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (Boolean(a[i]) !== Boolean(b[i])) return false;
+  }
+  return true;
+}
+
+function numArrEqual(a?: number[] | null, b?: number[] | null): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function habitVisualEqual(prev: Habit, next: Habit): boolean {
+  return (
+    prev.id === next.id &&
+    prev.name === next.name &&
+    prev.archived === next.archived &&
+    prev.isKeystone === next.isKeystone &&
+    prev.category === next.category &&
+    prev.priority === next.priority &&
+    prev.fallbackMicroHabit === next.fallbackMicroHabit &&
+    prev.identityStatement === next.identityStatement &&
+    prev.updatedAt === next.updatedAt &&
+    prev.scheduleType === next.scheduleType &&
+    prev.timeOfDay === next.timeOfDay &&
+    boolArrEqual(prev.days, next.days) &&
+    boolArrEqual(prev.microDays, next.microDays) &&
+    numArrEqual(prev.scheduledDays, next.scheduledDays)
+  );
+}
+
 function habitCardPropsEqual(prev: HabitCardProps, next: HabitCardProps): boolean {
   return (
-    prev.habit === next.habit &&
+    habitVisualEqual(prev.habit, next.habit) &&
     prev.todayIndex === next.todayIndex &&
     prev.viewIndex === next.viewIndex &&
     prev.gesturesLocked === next.gesturesLocked &&

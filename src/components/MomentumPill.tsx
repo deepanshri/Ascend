@@ -20,6 +20,8 @@ export interface MomentumPillProps {
 /**
  * Apple-style Dynamic Island momentum pill.
  * Strict sequence: expand → show delta → count → hide delta → contract.
+ * Count digits update via DOM textContent (not React setState) to avoid
+ * re-rendering Home during the 0.8s count animation.
  */
 export const MomentumPill: React.FC<MomentumPillProps> = ({
   momentumScore,
@@ -30,8 +32,8 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
   const darkMode = Boolean(isDark);
 
   const [delta, setDelta] = useState<number | null>(null);
-  const [displayMomentum, setDisplayMomentum] = useState(targetScore);
 
+  const scoreElRef = useRef<HTMLSpanElement | null>(null);
   const displayRef = useRef(targetScore);
   const pulseRef = useRef(momentumPulse);
   const animatingRef = useRef(false);
@@ -53,10 +55,15 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
   const count = useMotionValue(displayRef.current);
   const rounded = useTransform(count, (value) => Math.round(value));
 
+  const writeScore = (value: number) => {
+    displayRef.current = value;
+    const el = scoreElRef.current;
+    if (el) el.textContent = String(value);
+  };
+
   useEffect(() => {
     const unsubscribe = rounded.on('change', (value) => {
-      displayRef.current = value;
-      setDisplayMomentum(value);
+      writeScore(value);
     });
     return unsubscribe;
   }, [rounded]);
@@ -65,9 +72,8 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
   useEffect(() => {
     if (animatingRef.current || pendingPulseRef.current) return;
     if (displayRef.current === targetScore) return;
-    displayRef.current = targetScore;
     count.set(targetScore);
-    setDisplayMomentum(targetScore);
+    writeScore(targetScore);
   }, [targetScore, count]);
 
   useEffect(() => {
@@ -88,8 +94,7 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
     };
 
     count.set(from);
-    displayRef.current = from;
-    setDisplayMomentum(from);
+    writeScore(from);
     setDelta(nextDelta !== 0 ? nextDelta : null);
     deltaOpacity.set(0);
     animatingRef.current = true;
@@ -130,8 +135,7 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
                 duration: COUNT_MS,
                 ease: 'easeOut',
                 onComplete: () => {
-                  displayRef.current = to;
-                  setDisplayMomentum(to);
+                  writeScore(to);
                   resolve();
                 },
               })
@@ -174,9 +178,8 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
         });
       } finally {
         if (isLive()) {
-          displayRef.current = to;
           count.set(to);
-          setDisplayMomentum(to);
+          writeScore(to);
           setDelta(null);
           deltaOpacity.set(0);
           pillWidth.set(COLLAPSED_WIDTH);
@@ -203,7 +206,7 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
         width: pillWidth,
         minWidth: pillWidth,
       }}
-      className={`inline-flex items-center justify-center rounded-full border text-[11px] font-bold tabular-nums transform-gpu will-change-[width] overflow-hidden px-3.5 py-1 gap-1.5 ${
+      className={`inline-flex items-center justify-center rounded-full border text-[11px] font-bold tabular-nums overflow-hidden px-3.5 py-1 gap-1.5 ${
         darkMode
           ? 'bg-slate-900/95 border-blue-500/50 text-blue-200'
           : 'bg-white/95 border-emerald-200 text-emerald-800 shadow-sm'
@@ -213,7 +216,12 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
       <span className={`whitespace-nowrap ${darkMode ? 'text-blue-400' : 'text-emerald-600'}`}>
         Momentum
       </span>
-      <span className="text-[13px] font-black min-w-[1.75ch] text-center">{displayMomentum}</span>
+      <span
+        ref={scoreElRef}
+        className="text-[13px] font-black min-w-[1.75ch] text-center"
+      >
+        {displayRef.current}
+      </span>
       {deltaLabel ? (
         <motion.span
           style={{ opacity: deltaOpacity }}

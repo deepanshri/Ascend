@@ -5,6 +5,8 @@ import { animate as motionAnimate, useMotionValue, type PanInfo } from 'motion/r
 export const SWIPE_MAX_PX = 100;
 /** Commit threshold for complete / secondary swipe actions. */
 export const SWIPE_COMMIT_PX = 80;
+/** Shared drag constraints — hoist so cards don't allocate a new object per render. */
+export const SWIPE_DRAG_CONSTRAINTS = { left: -SWIPE_MAX_PX, right: SWIPE_MAX_PX } as const;
 
 const SPRING_TRANSITION = { type: 'spring' as const, stiffness: 420, damping: 26, mass: 0.7 };
 
@@ -77,7 +79,7 @@ export function useHorizontalSwipeDrag(options: {
     resetToOrigin,
     dragProps: {
       drag: enabled ? ('x' as const) : false,
-      dragConstraints: { left: -SWIPE_MAX_PX, right: SWIPE_MAX_PX },
+      dragConstraints: SWIPE_DRAG_CONSTRAINTS,
       dragElastic: 0.2,
       dragMomentum: false,
       dragPropagation: false,

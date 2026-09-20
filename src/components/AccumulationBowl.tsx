@@ -344,7 +344,7 @@ const MarblePiece: React.FC<{
       <motion.div
         key={item.piece.id}
         aria-hidden="true"
-        className="pointer-events-none absolute block shrink-0 transform-gpu will-change-transform"
+        className="pointer-events-none absolute block shrink-0"
         style={box}
         {...motionProps}
       >
@@ -368,7 +368,7 @@ const MarblePiece: React.FC<{
     <motion.div
       key={item.piece.id}
       aria-hidden="true"
-      className="pointer-events-none absolute block shrink-0 transform-gpu will-change-transform"
+      className="pointer-events-none absolute block shrink-0"
       style={box}
       {...motionProps}
     >

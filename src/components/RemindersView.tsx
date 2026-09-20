@@ -130,6 +130,11 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
     [cancelGrace, persistCompleted]
   );
 
+  const handleLongPress = useCallback((reminder: StandaloneReminder, rect: DOMRect | null) => {
+    setLongPressedReminder(reminder);
+    setLongPressedRect(rect);
+  }, []);
+
   const liveReminders = useMemo(
     () => (Array.isArray(reminders) ? reminders.filter((item) => !item.deleted) : []),
     [reminders]
@@ -200,13 +205,10 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
                 inGrace={isInGrace(rem.id)}
                 onToggleComplete={onToggleComplete}
                 onSetCompleted={handleSetCompleted}
-                onUndoGrace={() => handleUndoGrace(rem.id)}
+                onUndoGrace={handleUndoGrace}
                 onDeleteReminder={onDeleteReminder}
                 onSnoozeReminder={onSnoozeReminder}
-                onLongPress={(reminder, rect) => {
-                  setLongPressedReminder(reminder);
-                  setLongPressedRect(rect);
-                }}
+                onLongPress={handleLongPress}
               />
             </motion.div>
           ))}
@@ -268,10 +270,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
                             onToggleComplete={onToggleComplete}
                             onSetCompleted={handleSetCompleted}
                             onDeleteReminder={onDeleteReminder}
-                            onLongPress={(reminder, rect) => {
-                              setLongPressedReminder(reminder);
-                              setLongPressedRect(rect);
-                            }}
+                            onLongPress={handleLongPress}
                           />
                         </div>
                         <button

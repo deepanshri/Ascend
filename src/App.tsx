@@ -185,6 +185,9 @@ export default function App() {
   const handleToggleFallbackModeRef = useRef<(habitId: string) => void>(() => {});
   const handleToggleKeystoneRef = useRef<(habitId: string, next: boolean) => void>(() => {});
   const handleSetReminderCompletedRef = useRef<(id: string, completed: boolean) => void>(() => {});
+  const handleToggleReminderRef = useRef<(id: string) => void>(() => {});
+  const handleDeleteReminderRef = useRef<(id: string) => void>(() => {});
+  const handleSnoozeReminderRef = useRef<(id: string, minutes: number) => void>(() => {});
   const [isOnboarded, setIsOnboarded] = useState<boolean>(() => isOnboardingCompleted());
 
   // Theme state ('light' | 'dark' | 'system')
@@ -351,13 +354,19 @@ export default function App() {
   momentumEventsRef.current = momentumEvents;
 
   useEffect(() => {
-    try {
-      localStorage.setItem('ascend_completion_events', JSON.stringify(completionEvents));
-    } catch {}
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem('ascend_completion_events', JSON.stringify(completionEvents));
+      } catch {}
+    }, 320);
+    return () => window.clearTimeout(timer);
   }, [completionEvents]);
 
   useEffect(() => {
-    saveLocalMomentumEvents(momentumEvents);
+    const timer = window.setTimeout(() => {
+      saveLocalMomentumEvents(momentumEvents);
+    }, 320);
+    return () => window.clearTimeout(timer);
   }, [momentumEvents]);
 
   // Hydrate profile interests + tutorial flag from Supabase `profiles`
@@ -405,9 +414,12 @@ export default function App() {
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem('ascend_active_fallbacks', JSON.stringify(activeFallbackIds));
-    } catch {}
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem('ascend_active_fallbacks', JSON.stringify(activeFallbackIds));
+      } catch {}
+    }, 320);
+    return () => window.clearTimeout(timer);
   }, [activeFallbackIds]);
 
   const [cycleDays, setCycleDays] = useState<CycleDays>(() => readStoredCycleDays());
@@ -457,11 +469,7 @@ export default function App() {
     return [];
   });
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('habit_tracker_reminders', JSON.stringify(reminders));
-    } catch {}
-  }, [reminders]);
+  // Reminders persist via the debounced effect below (avoid duplicate sync writes).
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [viewResetKey, setViewResetKey] = useState(0);
@@ -638,23 +646,32 @@ export default function App() {
     };
   }, []);
 
-  // Sync state to localStorage
+  // Sync state to localStorage (debounced so swipe-complete doesn't block the main thread)
   useEffect(() => {
-    try {
-      localStorage.setItem('habit_tracker_habits', JSON.stringify(habits));
-    } catch {}
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem('habit_tracker_habits', JSON.stringify(habits));
+      } catch {}
+    }, 320);
+    return () => window.clearTimeout(timer);
   }, [habits]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('habit_tracker_evidence', JSON.stringify(evidenceList));
-    } catch {}
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem('habit_tracker_evidence', JSON.stringify(evidenceList));
+      } catch {}
+    }, 320);
+    return () => window.clearTimeout(timer);
   }, [evidenceList]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('habit_tracker_reminders', JSON.stringify(reminders));
-    } catch {}
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem('habit_tracker_reminders', JSON.stringify(reminders));
+      } catch {}
+    }, 320);
+    return () => window.clearTimeout(timer);
   }, [reminders]);
 
   useEffect(() => {
@@ -830,16 +847,8 @@ export default function App() {
     return derivedHabits.find((h) => h.id === longPressedHabitId) || null;
   }, [derivedHabits, longPressedHabitId]);
 
-  // Rolling momentum from the append-only events log
-  const momentumScore = useMemo(() => {
-    return calculateMomentumScore(momentumEvents, {
-      examShield: examShieldActive,
-      vacationMode: vacationModeActive,
-      asOf: endOfIsoDate(currentSelectedDate),
-      habits,
-    });
-  }, [momentumEvents, examShieldActive, vacationModeActive, currentSelectedDate, habits]);
-
+  // Rolling momentum from the append-only events log.
+  // When viewing today, reuse one calculation instead of scanning the log twice.
   const todayMomentumScore = useMemo(() => {
     return calculateMomentumScore(momentumEvents, {
       examShield: examShieldActive,
@@ -847,6 +856,24 @@ export default function App() {
       habits,
     });
   }, [momentumEvents, examShieldActive, vacationModeActive, habits]);
+
+  const momentumScore = useMemo(() => {
+    if (isViewingToday) return todayMomentumScore;
+    return calculateMomentumScore(momentumEvents, {
+      examShield: examShieldActive,
+      vacationMode: vacationModeActive,
+      asOf: endOfIsoDate(currentSelectedDate),
+      habits,
+    });
+  }, [
+    isViewingToday,
+    todayMomentumScore,
+    momentumEvents,
+    examShieldActive,
+    vacationModeActive,
+    currentSelectedDate,
+    habits,
+  ]);
 
   const displayedIdentityVotes = useMemo(
     () => displayedIdentityVoteCount(
@@ -948,16 +975,19 @@ export default function App() {
   }, [todayMomentumScore, todayDayIndex, session?.id, session?.isGuest]);
 
   useEffect(() => {
-    void publishWidgetSnapshot({
-      todayDayIndex,
-      origin: calendarOrigin,
-      dark: isDark,
-      momentumScore: todayMomentumScore,
-      habits: activeHabits,
-      reminders,
-      momentumEvents,
-      completionEvents,
-    });
+    const timer = window.setTimeout(() => {
+      void publishWidgetSnapshot({
+        todayDayIndex,
+        origin: calendarOrigin,
+        dark: isDark,
+        momentumScore: todayMomentumScore,
+        habits: activeHabits,
+        reminders,
+        momentumEvents,
+        completionEvents,
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
   }, [
     todayMomentumScore,
     activeHabits,
@@ -970,12 +1000,15 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    void schedulePsychologyNotifications({
-      windows: notificationWindows,
-      habits: activeHabits,
-      todayIndex: todayDayIndex,
-      momentumScore: todayMomentumScore,
-    });
+    const timer = window.setTimeout(() => {
+      void schedulePsychologyNotifications({
+        windows: notificationWindows,
+        habits: activeHabits,
+        todayIndex: todayDayIndex,
+        momentumScore: todayMomentumScore,
+      });
+    }, 500);
+    return () => window.clearTimeout(timer);
   }, [notificationWindows, activeHabits, todayDayIndex, todayMomentumScore, completionEvents]);
 
   // Cycle-window habit_logs hydrate (Home + any tab once signed in).
@@ -1749,6 +1782,23 @@ export default function App() {
     persistReminderSync(updated);
   };
 
+  handleToggleReminderRef.current = handleToggleReminder;
+  handleDeleteReminderRef.current = handleDeleteReminder;
+  handleSnoozeReminderRef.current = handleSnoozeReminder;
+
+  const stableToggleReminder = useCallback((id: string) => {
+    handleToggleReminderRef.current(id);
+  }, []);
+  const stableSetReminderCompleted = useCallback((id: string, completed: boolean) => {
+    handleSetReminderCompletedRef.current(id, completed);
+  }, []);
+  const stableDeleteReminder = useCallback((id: string) => {
+    handleDeleteReminderRef.current(id);
+  }, []);
+  const stableSnoozeReminder = useCallback((id: string, minutes: number) => {
+    handleSnoozeReminderRef.current(id, minutes);
+  }, []);
+
   // Apple-style chrome: hide header/nav on scroll down, reveal on scroll up
   const [isNavVisible, setIsNavVisible] = useState(true);
   const lastScrollYRef = useRef(0);
@@ -1882,10 +1932,10 @@ export default function App() {
             onOpenCreateConsumed={() => setWidgetOpenCreateTask(false)}
             onAddReminder={handleAddReminder}
             onUpdateReminder={handleUpdateReminder}
-            onToggleComplete={handleToggleReminder}
-            onSetReminderCompleted={handleSetReminderCompleted}
-            onDeleteReminder={handleDeleteReminder}
-            onSnoozeReminder={handleSnoozeReminder}
+            onToggleComplete={stableToggleReminder}
+            onSetReminderCompleted={stableSetReminderCompleted}
+            onDeleteReminder={stableDeleteReminder}
+            onSnoozeReminder={stableSnoozeReminder}
             userSession={session}
             onRemindersHydrated={(remote) => {
               const next = Array.isArray(remote) ? remote : [];

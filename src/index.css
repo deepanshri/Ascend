@@ -89,8 +89,6 @@ html, body, #root {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 
 #app-main-content,
@@ -102,16 +100,12 @@ html, body, #root {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  will-change: scroll-position;
 }
 
 .tab-pane-host,
 .tab-pane {
-  transform: translateZ(0);
+  /* Promote only while tab transitions run — idle will-change wastes GPU memory on mobile. */
   backface-visibility: hidden;
-  will-change: transform, opacity;
 }
 
 /**
@@ -122,8 +116,6 @@ html, body, #root {
  */
 .swipe-card-surface {
   touch-action: pan-y;
-  transform: translateZ(0);
-  will-change: transform;
 }
 
 .no-scrollbar::-webkit-scrollbar {

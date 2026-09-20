@@ -387,19 +387,41 @@ export function deriveHabitsFromEventLog(
 ): Habit[] {
   const weekIso = getWeekDates(origin).map((date) => toISODate(date));
 
+  // Index once (O(E)) instead of filter+sort per habit (O(H·E)).
+  const byHabitId = new Map<string, HabitCompletionEvent[]>();
+  for (const event of events) {
+    const list = byHabitId.get(event.habitId);
+    if (list) list.push(event);
+    else byHabitId.set(event.habitId, [event]);
+  }
+  for (const list of byHabitId.values()) {
+    list.sort((a, b) => a.timestamp - b.timestamp);
+  }
+
   return habits.map((habit) => {
     const days = [false, false, false, false, false, false, false];
     const microDays = [false, false, false, false, false, false, false];
 
-    const habitEvents = events
-      .filter((e) => e.habitId === habit.id)
-      .sort((a, b) => a.timestamp - b.timestamp);
-    for (const ev of habitEvents) {
-      const iso = resolveEventIsoDate(ev, origin);
-      const dayIndex = weekIso.indexOf(iso);
-      if (dayIndex < 0) continue;
-      days[dayIndex] = true;
-      microDays[dayIndex] = ev.type === 'fallback_micro';
+    const habitEvents = byHabitId.get(habit.id);
+    if (habitEvents) {
+      for (const ev of habitEvents) {
+        const iso = resolveEventIsoDate(ev, origin);
+        const dayIndex = weekIso.indexOf(iso);
+        if (dayIndex < 0) continue;
+        days[dayIndex] = true;
+        microDays[dayIndex] = ev.type === 'fallback_micro';
+      }
+    }
+
+    // Preserve object identity when the weekly projection is unchanged so memoized
+    // HabitCards for untouched habits skip re-render after a sibling swipe.
+    if (
+      habit.days?.length === 7 &&
+      habit.microDays?.length === 7 &&
+      days.every((done, i) => done === Boolean(habit.days![i])) &&
+      microDays.every((done, i) => done === Boolean(habit.microDays![i]))
+    ) {
+      return habit;
     }
 
     return {
