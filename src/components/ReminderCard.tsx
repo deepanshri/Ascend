@@ -9,8 +9,8 @@ const SWIPE_MAX_PX = 100;
 const SWIPE_COMMIT_PX = SWIPE_COMMIT_THRESHOLD;
 const LONG_PRESS_MS = 400;
 const GHOST_MOUSE_MS = 700;
-const DRAG_TRANSITION = { duration: 0 } as const;
 const SPRING_TRANSITION = { type: 'spring' as const, stiffness: 420, damping: 26, mass: 0.7 };
+const SWIPE_COMMIT_LOCK_MS = 450;
 
 interface ReminderCardProps {
   reminder: StandaloneReminder;
@@ -36,7 +36,6 @@ function ReminderCardInner({
   onSnoozeReminder,
   onLongPress,
 }: ReminderCardProps) {
-  const [isDragging, setIsDragging] = useState(false);
   const [localCompleted, setLocalCompleted] = useState(Boolean(reminder.completed));
   const isArchived = variant === 'archived';
 
@@ -54,6 +53,7 @@ function ReminderCardInner({
   const wasLongPressRef = useRef(false);
   const hasMovedRef = useRef(false);
   const isDraggingRef = useRef(false);
+  const commitLockRef = useRef(false);
   const lastTouchAtRef = useRef(0);
   const longPressTimerRef = useRef<number | null>(null);
   const localCompletedRef = useRef(localCompleted);
@@ -129,42 +129,68 @@ function ReminderCardInner({
   const resetGesture = useCallback(() => {
     x.set(0);
     isDraggingRef.current = false;
-    setIsDragging(false);
     gestureAxisRef.current = 'none';
     setTouchAction('pan-y');
   }, [setTouchAction, x]);
 
   const finishSwipe = useCallback(() => {
+    const springHome = () => {
+      dragStartXRef.current = null;
+      gestureAxisRef.current = 'none';
+      isDraggingRef.current = false;
+      setTouchAction('pan-y');
+      void motionAnimate(x, 0, SPRING_TRANSITION);
+    };
+
+    if (commitLockRef.current) {
+      springHome();
+      return;
+    }
+
     const axis = gestureAxisRef.current;
     const offset = x.get();
+    let pendingAction: (() => void) | null = null;
 
     if (!isArchived && axis !== 'vertical' && offset > SWIPE_COMMIT_PX) {
       if (!localCompletedRef.current) {
-        requestCompleted(true);
-        try {
-          if (navigator.vibrate) navigator.vibrate(40);
-        } catch {
-          /* ignore */
-        }
+        pendingAction = () => {
+          requestCompleted(true);
+          try {
+            if (navigator.vibrate) navigator.vibrate(40);
+          } catch {
+            /* ignore */
+          }
+        };
       }
     } else if (!isArchived && axis !== 'vertical' && offset < -SWIPE_COMMIT_PX) {
       if (localCompletedRef.current) {
-        if (onUndoGraceRef.current) onUndoGraceRef.current();
-        else requestCompleted(false);
-        try {
-          if (navigator.vibrate) navigator.vibrate(30);
-        } catch {
-          /* ignore */
-        }
+        pendingAction = () => {
+          if (onUndoGraceRef.current) onUndoGraceRef.current();
+          else requestCompleted(false);
+          try {
+            if (navigator.vibrate) navigator.vibrate(30);
+          } catch {
+            /* ignore */
+          }
+        };
       }
     }
 
-    dragStartXRef.current = null;
-    gestureAxisRef.current = 'none';
-    void motionAnimate(x, 0, SPRING_TRANSITION);
-    isDraggingRef.current = false;
-    setIsDragging(false);
-    setTouchAction('pan-y');
+    springHome();
+
+    if (!pendingAction) return;
+
+    commitLockRef.current = true;
+    const run = pendingAction;
+    requestAnimationFrame(() => {
+      try {
+        run();
+      } finally {
+        window.setTimeout(() => {
+          commitLockRef.current = false;
+        }, SWIPE_COMMIT_LOCK_MS);
+      }
+    });
   }, [isArchived, requestCompleted, setTouchAction, x]);
 
   const endPointerGesture = useCallback(() => {
@@ -196,7 +222,6 @@ function ReminderCardInner({
       wasLongPressRef.current = true;
       gestureAxisRef.current = 'none';
       isDraggingRef.current = false;
-      setIsDragging(false);
       x.set(0);
       setTouchAction('pan-y');
       try {
@@ -208,6 +233,50 @@ function ReminderCardInner({
       onLongPressRef.current?.(reminderRef.current, rect);
     }, LONG_PRESS_MS);
   }, [clearLongPressTimer, setTouchAction, x]);
+
+  const handleDragStart = useCallback(() => {
+    clearLongPressTimer();
+    hasMovedRef.current = true;
+    gestureAxisRef.current = 'horizontal';
+    isDraggingRef.current = true;
+    // DOM-only — never setState here; React re-render mid-drag freezes WebView.
+    setTouchAction('none');
+  }, [clearLongPressTimer, setTouchAction]);
+
+  const handleDrag = useCallback(
+    (_e: unknown, info: { offset: { x: number; y: number } }) => {
+      if (Math.hypot(info.offset.x, info.offset.y) > 8) {
+        clearLongPressTimer();
+        hasMovedRef.current = true;
+      }
+      gestureAxisRef.current = 'horizontal';
+    },
+    [clearLongPressTimer]
+  );
+
+  const handleDragEnd = useCallback(
+    (_e: unknown, info: { offset: { x: number } }) => {
+      isDraggingRef.current = true;
+      x.set(info.offset.x);
+      gestureAxisRef.current = 'horizontal';
+      finishSwipe();
+    },
+    [finishSwipe, x]
+  );
+
+  useEffect(
+    () => () => {
+      clearLongPressTimer();
+      try {
+        x.stop();
+      } catch {
+        /* ignore */
+      }
+      x.set(0);
+      isDraggingRef.current = false;
+    },
+    [clearLongPressTimer, x]
+  );
 
   // Motion drag="x" owns horizontal pan — native move/end listeners removed to avoid double commits.
 
@@ -378,29 +447,11 @@ function ReminderCardInner({
         dragElastic={0.2}
         dragMomentum={false}
         dragPropagation={false}
-        onDragStart={() => {
-          clearLongPressTimer();
-          hasMovedRef.current = true;
-          gestureAxisRef.current = 'horizontal';
-          isDraggingRef.current = true;
-          setIsDragging(true);
-          setTouchAction('none');
-        }}
-        onDrag={(_e, info) => {
-          if (Math.hypot(info.offset.x, info.offset.y) > 8) {
-            clearLongPressTimer();
-            hasMovedRef.current = true;
-          }
-          gestureAxisRef.current = 'horizontal';
-        }}
-        onDragEnd={(_e, info) => {
-          isDraggingRef.current = true;
-          x.set(info.offset.x);
-          gestureAxisRef.current = 'horizontal';
-          finishSwipe();
-        }}
-        style={{ x, touchAction: 'pan-y' }}
-        transition={isDragging ? DRAG_TRANSITION : SPRING_TRANSITION}
+        layout={false}
+        onDragStart={handleDragStart}
+        onDrag={handleDrag}
+        onDragEnd={handleDragEnd}
+        style={{ x }}
         className={`swipe-card-surface relative z-10 rounded-2xl p-3.5 border flex items-start space-x-3.5 cursor-grab active:cursor-grabbing ${
           isArchived
             ? 'bg-slate-50 dark:bg-slate-900/70 border-slate-200/80 dark:border-slate-800'

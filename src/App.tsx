@@ -1752,6 +1752,8 @@ export default function App() {
   // Apple-style chrome: hide header/nav on scroll down, reveal on scroll up
   const [isNavVisible, setIsNavVisible] = useState(true);
   const lastScrollYRef = useRef(0);
+  const pendingScrollYRef = useRef(0);
+  const scrollRafRef = useRef(0);
 
   useEffect(() => {
     setIsNavVisible(true);
@@ -1759,22 +1761,32 @@ export default function App() {
     if (activeTab === 'report') {
       setCurrentSelectedDate(toISODate());
     }
+    // Drop any in-flight scroll frame when leaving a tab (avoids stale nav toggles).
+    if (scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current);
+      scrollRafRef.current = 0;
+    }
   }, [activeTab]);
 
-  const handleMainScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const currentScrollY = e.currentTarget.scrollTop;
-    const delta = currentScrollY - lastScrollYRef.current;
+  const handleMainScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    pendingScrollYRef.current = e.currentTarget.scrollTop;
+    if (scrollRafRef.current) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = 0;
+      const currentScrollY = pendingScrollYRef.current;
+      const delta = currentScrollY - lastScrollYRef.current;
 
-    if (currentScrollY <= 8) {
-      setIsNavVisible(true);
-    } else if (delta > 8) {
-      setIsNavVisible(false);
-    } else if (delta < -8) {
-      setIsNavVisible(true);
-    }
+      if (currentScrollY <= 8) {
+        setIsNavVisible(true);
+      } else if (delta > 8) {
+        setIsNavVisible(false);
+      } else if (delta < -8) {
+        setIsNavVisible(true);
+      }
 
-    lastScrollYRef.current = currentScrollY;
-  };
+      lastScrollYRef.current = currentScrollY;
+    });
+  }, []);
 
   // Spotlight tutorial: only after onboarding, and only if the profile flag is false
   useEffect(() => {
@@ -1855,18 +1867,14 @@ export default function App() {
           resetKey={`${safeActiveTab}-${viewResetKey}`}
           onReset={() => setViewResetKey((value) => value + 1)}
         >
-        <div className="absolute inset-0 z-10">
+        <div className="absolute inset-0 z-10 tab-pane-host">
         <Suspense fallback={<TabLoadingFallback />}>
-        <AnimatePresence mode="wait" initial={false}>
+        {/*
+          Tabs mount one-at-a-time (inactive unmount). No AnimatePresence mode="wait" —
+          exit-wait was freezing rapid tab taps on Capacitor WebViews.
+        */}
         {safeActiveTab === 'reminders' ? (
-          <motion.div
-            key="tab-reminders"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0 z-10"
-          >
+          <div key="tab-reminders" className="absolute inset-0 z-10 tab-pane">
           <RemindersView
             reminders={reminders ?? []}
             focusReminderId={widgetFocusReminderId}
@@ -1894,16 +1902,9 @@ export default function App() {
             onScroll={handleMainScroll}
             onOpenSettings={() => setActiveTab('settings')}
           />
-          </motion.div>
+          </div>
         ) : safeActiveTab === 'report' ? (
-          <motion.div
-            key="tab-report"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0 z-10"
-          >
+          <div key="tab-report" className="absolute inset-0 z-10 tab-pane">
           <ReportView
             habits={activeHabits ?? []}
             evidenceList={ledgerEvidence}
@@ -1925,16 +1926,9 @@ export default function App() {
             cycleDays={cycleDays}
             cycleStartIso={bowlEpoch.startIso}
           />
-          </motion.div>
+          </div>
         ) : safeActiveTab === 'personal' ? (
-          <motion.div
-            key="tab-personal"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0 z-10"
-          >
+          <div key="tab-personal" className="absolute inset-0 z-10 tab-pane">
           <PersonalView
             userSession={session}
             evidenceList={ledgerEvidence}
@@ -1975,16 +1969,9 @@ export default function App() {
             }}
             onScroll={handleMainScroll}
           />
-          </motion.div>
+          </div>
         ) : safeActiveTab === 'settings' ? (
-          <motion.div
-            key="tab-settings"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0 z-10"
-          >
+          <div key="tab-settings" className="absolute inset-0 z-10 tab-pane">
           <SettingsView
             habits={habits ?? []}
             evidenceList={ledgerEvidence}
@@ -2003,17 +1990,13 @@ export default function App() {
             onScroll={handleMainScroll}
             onOpenSettings={() => setActiveTab('home')}
           />
-          </motion.div>
+          </div>
         ) : (
-          <motion.main
+          <main
             key="tab-home"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             id="app-main-content"
             onScroll={handleMainScroll}
-            className={`absolute inset-0 z-10 px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
+            className={`absolute inset-0 z-10 tab-pane px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
           >
             <ScreenHeader
               title="Home"
@@ -2095,9 +2078,8 @@ export default function App() {
               )}
             </section>
             </HomeView>
-          </motion.main>
+          </main>
         )}
-        </AnimatePresence>
         </Suspense>
         </div>
         </ErrorBoundary>

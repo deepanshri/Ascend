@@ -185,15 +185,14 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
       />
 
       <section className="space-y-2.5">
-        <AnimatePresence initial={false} mode="popLayout">
+        <AnimatePresence initial={false}>
           {activeTasks.map((rem) => (
             <motion.div
               key={rem.id}
-              layout
-              initial={{ opacity: 0, y: 8, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, height: 0, marginBottom: 0, scale: 0.98 }}
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
             >
               <ReminderCard
                 reminder={rem}
@@ -252,15 +251,14 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
                 className="overflow-hidden"
               >
                 <div className="space-y-2 pt-2.5">
-                  <AnimatePresence initial={false} mode="popLayout">
+                  <AnimatePresence initial={false}>
                     {completedTasks.map((rem) => (
                       <motion.div
                         key={rem.id}
-                        layout
-                        initial={{ opacity: 0, y: 6 }}
+                        initial={{ opacity: 0, y: 4 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6, height: 0 }}
-                        transition={{ duration: 0.2 }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.16 }}
                         className="flex items-stretch gap-1.5"
                       >
                         <div className="min-w-0 flex-1">

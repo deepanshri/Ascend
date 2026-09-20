@@ -17,8 +17,9 @@ const SWIPE_COMMIT_PX = SWIPE_COMMIT_THRESHOLD;
 /** Undo window after optimistic complete — marble/score already updated. */
 const COMPLETE_GRACE_MS = 3000;
 
-const DRAG_TRANSITION = { duration: 0 } as const;
 const SPRING_TRANSITION = { type: 'spring' as const, stiffness: 420, damping: 26, mass: 0.7 };
+/** Blocks re-entrant swipe commits while App state settles. */
+const SWIPE_COMMIT_LOCK_MS = 450;
 const FULL_POP_ANIMATE = { scale: [1, 1.03, 1] };
 const IDLE_SCALE = { scale: 1 };
 const FULL_POP_TRANSITION = {
@@ -70,7 +71,6 @@ function HabitCardInner({
   keystoneBoosted = false,
   weekOrigin,
 }: HabitCardProps) {
-  const [isDragging, setIsDragging] = useState(false);
   const [isFlipped, setIsFlipped] = useState(false);
   const [celebration, setCelebration] = useState<'none' | 'full' | 'fallback'>('none');
   const [fullPopSeq, setFullPopSeq] = useState(0);
@@ -96,6 +96,8 @@ function HabitCardInner({
   const lastFlipAtRef = useRef(0);
   const lastTouchAtRef = useRef(0);
   const isDraggingRef = useRef(false);
+  /** Prevents double-commit / re-entrant App updates while a swipe settles. */
+  const commitLockRef = useRef(false);
   const isFlippedRef = useRef(isFlipped);
   isFlippedRef.current = isFlipped;
   const isOtherLongPressedRef = useRef(isOtherLongPressed);
@@ -186,14 +188,6 @@ function HabitCardInner({
     onResetTodayRef.current(habitRef.current.id);
   }, [clearPendingComplete]);
 
-  useEffect(() => {
-    if (isLongPressed) {
-      x.set(0);
-      setIsDragging(false);
-      isDraggingRef.current = false;
-    }
-  }, [isLongPressed, x]);
-
   const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current !== null) {
       clearTimeout(longPressTimerRef.current);
@@ -210,6 +204,14 @@ function HabitCardInner({
     if (el) el.style.touchAction = mode;
   }, []);
 
+  // Abort drag when long-press menu opens — refs only (no setState mid-gesture).
+  useEffect(() => {
+    if (!isLongPressed) return;
+    x.set(0);
+    isDraggingRef.current = false;
+    setTouchAction('pan-y');
+  }, [isLongPressed, setTouchAction, x]);
+
   const requestFlip = useCallback(() => {
     const now = Date.now();
     if (now - lastFlipAtRef.current < FLIP_DEBOUNCE_MS) return;
@@ -224,7 +226,6 @@ function HabitCardInner({
       wasLongPressRef.current = true;
       gestureAxisRef.current = 'none';
       isDraggingRef.current = false;
-      setIsDragging(false);
       x.set(0);
       setTouchAction('pan-y');
       try {
@@ -267,56 +268,76 @@ function HabitCardInner({
   const resetGesture = useCallback(() => {
     x.set(0);
     isDraggingRef.current = false;
-    setIsDragging(false);
     gestureAxisRef.current = 'none';
     setTouchAction('pan-y');
   }, [setTouchAction, x]);
 
   const finishSwipe = useCallback(() => {
-    if (gesturesLockedRef.current) {
+    const springHome = () => {
       dragStartXRef.current = null;
       gestureAxisRef.current = 'none';
-      void motionAnimate(x, 0, SPRING_TRANSITION);
       isDraggingRef.current = false;
-      setIsDragging(false);
       setTouchAction('pan-y');
+      void motionAnimate(x, 0, SPRING_TRANSITION);
+    };
+
+    if (gesturesLockedRef.current || commitLockRef.current) {
+      springHome();
       return;
     }
 
     const axis = gestureAxisRef.current;
     const offset = x.get();
     const habitId = habitRef.current.id;
+    let pendingAction: (() => void) | null = null;
 
     if (axis !== 'vertical' && offset > SWIPE_COMMIT_PX) {
       if (isTodayDoneRef.current) {
-        undoOrResetToday();
+        pendingAction = () => undoOrResetToday();
       } else if (isFallbackActiveRef.current) {
-        setCelebration('fallback');
-        scheduleComplete(true);
+        pendingAction = () => {
+          setCelebration('fallback');
+          scheduleComplete(true);
+        };
       } else {
-        setCelebration('full');
-        setFullPopSeq((seq) => seq + 1);
-        scheduleComplete(false);
+        pendingAction = () => {
+          setCelebration('full');
+          setFullPopSeq((seq) => seq + 1);
+          scheduleComplete(false);
+        };
       }
     } else if (axis !== 'vertical' && offset < -SWIPE_COMMIT_PX) {
       if (isTodayDoneRef.current) {
-        undoOrResetToday();
+        pendingAction = () => undoOrResetToday();
       } else if (isFallbackActiveRef.current) {
-        onToggleFallbackModeRef.current(habitId);
+        pendingAction = () => onToggleFallbackModeRef.current(habitId);
       } else if (!isScheduledTodayRef.current) {
         // Off day: settle silently.
       } else {
-        setCelebration('fallback');
-        onToggleFallbackModeRef.current(habitId);
+        pendingAction = () => {
+          setCelebration('fallback');
+          onToggleFallbackModeRef.current(habitId);
+        };
       }
     }
 
-    dragStartXRef.current = null;
-    gestureAxisRef.current = 'none';
-    void motionAnimate(x, 0, SPRING_TRANSITION);
-    isDraggingRef.current = false;
-    setIsDragging(false);
-    setTouchAction('pan-y');
+    springHome();
+
+    if (!pendingAction) return;
+
+    // Defer App setState until after Motion releases the pointer frame —
+    // sync parent updates mid-dragEnd were freezing Capacitor WebViews.
+    commitLockRef.current = true;
+    const run = pendingAction;
+    requestAnimationFrame(() => {
+      try {
+        run();
+      } finally {
+        window.setTimeout(() => {
+          commitLockRef.current = false;
+        }, SWIPE_COMMIT_LOCK_MS);
+      }
+    });
   }, [scheduleComplete, setTouchAction, undoOrResetToday, x]);
 
   const endPointerGesture = useCallback(() => {
@@ -406,6 +427,52 @@ function HabitCardInner({
     [requestFlip]
   );
 
+  const handleDragStart = useCallback(() => {
+    clearLongPressTimer();
+    hasMovedRef.current = true;
+    ignoreClickRef.current = true;
+    gestureAxisRef.current = 'horizontal';
+    isDraggingRef.current = true;
+    // DOM-only — never setState here; React re-render mid-drag freezes WebView.
+    setTouchAction('none');
+  }, [clearLongPressTimer, setTouchAction]);
+
+  const handleDrag = useCallback(
+    (_e: unknown, info: { offset: { x: number; y: number } }) => {
+      if (Math.hypot(info.offset.x, info.offset.y) > 8) {
+        clearLongPressTimer();
+        hasMovedRef.current = true;
+      }
+      gestureAxisRef.current = 'horizontal';
+    },
+    [clearLongPressTimer]
+  );
+
+  const handleDragEnd = useCallback(
+    (_e: unknown, info: { offset: { x: number } }) => {
+      isDraggingRef.current = true;
+      x.set(info.offset.x);
+      gestureAxisRef.current = 'horizontal';
+      finishSwipe();
+    },
+    [finishSwipe, x]
+  );
+
+  // Abort in-flight drag / long-press when the card unmounts (tab switch).
+  useEffect(
+    () => () => {
+      clearLongPressTimer();
+      try {
+        x.stop();
+      } catch {
+        /* ignore */
+      }
+      x.set(0);
+      isDraggingRef.current = false;
+    },
+    [clearLongPressTimer, x]
+  );
+
   const tagLabel = habitCategoryBadge(habit.category);
   const tagClass = habitCategoryTagClass(habit.category);
   const tagFullName = habitCategoryLabel(habit.category);
@@ -425,11 +492,7 @@ function HabitCardInner({
         celebration === 'fallback' ? 'habit-fallback-ripple' : ''
       }`}
     >
-      <div
-        className={`relative rounded-2xl ${
-          isDragging || Math.abs(x.get()) > 2 ? 'overflow-hidden' : 'overflow-visible'
-        }`}
-      >
+      <div className="relative rounded-2xl overflow-hidden">
         <motion.div
           className={`absolute inset-0 text-white flex items-center justify-start px-5 font-bold rounded-2xl ${
             isTodayDone
@@ -511,30 +574,11 @@ function HabitCardInner({
           dragElastic={0.2}
           dragMomentum={false}
           dragPropagation={false}
-          onDragStart={() => {
-            clearLongPressTimer();
-            hasMovedRef.current = true;
-            ignoreClickRef.current = true;
-            gestureAxisRef.current = 'horizontal';
-            isDraggingRef.current = true;
-            setIsDragging(true);
-            setTouchAction('none');
-          }}
-          onDrag={(_e, info) => {
-            if (Math.hypot(info.offset.x, info.offset.y) > 8) {
-              clearLongPressTimer();
-              hasMovedRef.current = true;
-            }
-            gestureAxisRef.current = 'horizontal';
-          }}
-          onDragEnd={(_e, info) => {
-            isDraggingRef.current = true;
-            x.set(info.offset.x);
-            gestureAxisRef.current = 'horizontal';
-            finishSwipe();
-          }}
-          style={{ perspective: 1000, x, touchAction: 'pan-y' }}
-          transition={isDragging ? DRAG_TRANSITION : SPRING_TRANSITION}
+          layout={false}
+          onDragStart={handleDragStart}
+          onDrag={handleDrag}
+          onDragEnd={handleDragEnd}
+          style={{ perspective: 1000, x }}
           className="swipe-card-surface relative w-full cursor-pointer select-none"
         >
           <motion.div

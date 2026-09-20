@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { animate as motionAnimate, useMotionValue, type PanInfo } from 'motion/react';
 
 /** Horizontal clamp for Framer `dragConstraints`. */
@@ -12,7 +12,9 @@ type SwipeCommitHandler = (offsetX: number) => void;
 
 /**
  * Isolates horizontal card swipes from vertical list scrolling via Motion
- * `drag="x"` + `touch-action: pan-y` (parent lists keep pan-y).
+ * `drag="x"`. Touch-action is CSS `pan-y` by default; callers must set
+ * `el.style.touchAction = 'none'` on drag start via DOM (never React style /
+ * setState mid-gesture — that freezes Capacitor WebViews).
  */
 export function useHorizontalSwipeDrag(options: {
   enabled: boolean;
@@ -21,7 +23,6 @@ export function useHorizontalSwipeDrag(options: {
 }) {
   const { enabled, onCommit, onDragBegan } = options;
   const x = useMotionValue(0);
-  const [isDragging, setIsDragging] = useState(false);
   const isDraggingRef = useRef(false);
   const hasMovedRef = useRef(false);
   const onCommitRef = useRef(onCommit);
@@ -32,13 +33,11 @@ export function useHorizontalSwipeDrag(options: {
   const resetToOrigin = useCallback(() => {
     void motionAnimate(x, 0, SPRING_TRANSITION);
     isDraggingRef.current = false;
-    setIsDragging(false);
   }, [x]);
 
   const handleDragStart = useCallback(() => {
     hasMovedRef.current = true;
     isDraggingRef.current = true;
-    setIsDragging(true);
     onDragBeganRef.current?.();
   }, []);
 
@@ -52,9 +51,11 @@ export function useHorizontalSwipeDrag(options: {
   const handleDragEnd = useCallback(
     (_: unknown, info: PanInfo) => {
       isDraggingRef.current = false;
-      setIsDragging(false);
       const offsetX = info.offset.x;
-      onCommitRef.current(offsetX);
+      // Defer commit so Motion can finish pointer teardown before App setState.
+      requestAnimationFrame(() => {
+        onCommitRef.current(offsetX);
+      });
       void motionAnimate(x, 0, SPRING_TRANSITION);
     },
     [x]
@@ -68,7 +69,7 @@ export function useHorizontalSwipeDrag(options: {
 
   return {
     x,
-    isDragging,
+    isDragging: false,
     isDraggingRef,
     hasMovedRef,
     didMove,
@@ -83,7 +84,8 @@ export function useHorizontalSwipeDrag(options: {
       onDragStart: handleDragStart,
       onDrag: handleDrag,
       onDragEnd: handleDragEnd,
-      style: { x, touchAction: 'pan-y' as const },
+      // Do not put touchAction here — React would overwrite DOM locks on re-render.
+      style: { x },
     },
   };
 }
