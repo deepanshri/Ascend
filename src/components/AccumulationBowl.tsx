@@ -6,78 +6,46 @@ import pieceGreenDark from '../assets/bowl/piece-green-dark.webp';
 import pieceGreenLight from '../assets/bowl/piece-green-light.webp';
 import pieceBlueDark from '../assets/bowl/piece-blue-dark.webp';
 import pieceBlueLight from '../assets/bowl/piece-blue-light.webp';
-import { CYCLE_DAY_OPTIONS, clampCycleDays, type AccumulationPiece, type CycleDays } from '../services/reportService';
+import { CYCLE_DAY_OPTIONS, OVERFLOW_FILL_RATIO, clampCycleDays, type AccumulationPiece, type CycleDays } from '../services/reportService';
 import { tapPress } from '../lib/motionPresets';
 
 const DROP_SPRING = { type: 'spring' as const, stiffness: 220, damping: 26, mass: 0.75, restDelta: 0.4 };
 /** Spawn above the rim as a % of bowl height so drops scale with the container. */
-const SPAWN_Y_PCT = -42;
+const SPAWN_Y_PCT = -36;
 const MAX_VISIBLE_PIECES = 28;
-/** Marble diameter in px — large enough for baked specular to read. */
-const PIECE_SIZE = 20;
-const SPILL_ROW = 5;
-/** Min center distance as % of bowl width (~0.72× marble diameter at 140px wide). */
-const MIN_SEP_X_PCT = 11.4;
-const MIN_SEP_Y_PCT = 8.8;
-const ROW_RISE_Y_PCT = 6.8;
-const COL_STEP_X_PCT = 12.4;
+/** Flat-plane disc diameter (px) — matches the 108×96 bowl frame. */
+const PIECE_SIZE = 14;
+const BOWL_W = 108;
+const BOWL_H = 96;
+const PIECE_R = PIECE_SIZE / 2;
 
 /**
- * Inner-cavity map (percent of bowl image). Floor sits in the lower ~60% of
- * the frame so marbles rest in the glass base — not across the lip.
+ * Visible interior ellipse of the bowl art (percent of the 108×96 frame).
+ * Tuned to the glass cavity — NOT the full image bbox — so pieces never sit
+ * in the empty corners or below the foot.
  *
- * Ellipse half-width grows from floor → rim; parabolic floor lifts edges:
- *   y_floor(x) = floorY − k · (x / rxFloor)²
+ * Centers are packed inside this ellipse shrunk by the piece radius so the
+ * full disc stays inside the rim. Clip-path below mirrors the same oval.
  */
-const THEME_LAYOUT = {
+const THEME_CAVITY = {
   light: {
-    floorYPct: 72,
-    ceilingYPct: 44,
-    rxFloor: 15.5,
-    rxRim: 26,
-    parabolaK: 5.5,
-    /** Mask keeps front rim/lip; transparent hole reveals marbles in cavity. */
+    cy: 55,
+    rx: 38,
+    ry: 24,
+    /** Outer clip (piece edges) — slightly larger than center ellipse. */
+    clip: 'ellipse(44% 30% at 50% 55%)',
     rimMask: 'radial-gradient(ellipse 44% 40% at 50% 52%, transparent 52%, #000 64%)',
   },
   dark: {
-    floorYPct: 73.5,
-    ceilingYPct: 45,
-    rxFloor: 15,
-    rxRim: 25.5,
-    parabolaK: 5.5,
+    cy: 56,
+    rx: 37,
+    ry: 23,
+    clip: 'ellipse(43% 29% at 50% 56%)',
     rimMask: 'radial-gradient(ellipse 42% 38% at 50% 53%, transparent 50%, #000 62%)',
   },
 } as const;
 
-type CavityLayout = (typeof THEME_LAYOUT)[keyof typeof THEME_LAYOUT];
-
-/** Ellipse half-width at a given depth (narrower on the floor, wider near rim). */
-function halfWidthAt(yPct: number, layout: CavityLayout): number {
-  const span = Math.max(1, layout.floorYPct - layout.ceilingYPct);
-  const t = Math.max(0, Math.min(1, (layout.floorYPct - yPct) / span));
-  return layout.rxFloor + t * (layout.rxRim - layout.rxFloor);
-}
-
-/** Parabolic glass floor — center deepest, edges rise toward the walls. */
-function floorCurveY(xPct: number, layout: CavityLayout): number {
-  const nx = xPct / Math.max(1, layout.rxFloor);
-  return layout.floorYPct - layout.parabolaK * nx * nx;
-}
-
-/** Project a point into the elliptical cavity (lower 60% of the bowl frame). */
-function clampToCavity(xPct: number, yPct: number, layout: CavityLayout): { xPct: number; yPct: number } {
-  let x = xPct;
-  let y = yPct;
-  for (let i = 0; i < 3; i++) {
-    y = Math.max(layout.ceilingYPct, Math.min(layout.floorYPct, y));
-    const rx = halfWidthAt(y, layout);
-    if (Math.abs(x) > rx) x = Math.sign(x || 1) * rx;
-    const floorY = floorCurveY(x, layout);
-    y = Math.min(y, floorY);
-    y = Math.max(layout.ceilingYPct, y);
-  }
-  return { xPct: x, yPct: y };
-}
+type CavityLayout = (typeof THEME_CAVITY)[keyof typeof THEME_CAVITY];
 
 const BOWL_ASSETS = {
   morning: asAssetUrl(bowlMorning),
@@ -111,17 +79,14 @@ interface AccumulationBowlProps {
 }
 
 interface ParticleCoords {
-  /** Horizontal offset as % of bowl width from center. */
+  /** Horizontal center offset as % of bowl width from mid. */
   xPct: number;
-  /** Vertical landing as % of bowl height from top. */
+  /** Vertical center as % of bowl height from top. */
   yPct: number;
   rotation: number;
-  /** Settled scale variance for an imperfect pile. */
   scale: number;
   entryXPct: number;
   spills: boolean;
-  /** Organic blob radius so spheres aren't perfect clones. */
-  radius: string;
 }
 
 interface LaidPiece {
@@ -165,108 +130,135 @@ function getPieceAsset(isDark: boolean, isFallback: boolean): string {
   );
 }
 
-/**
- * Bottom-up packing inside the elliptical cavity: earliest pieces rest on the
- * parabolic glass floor; later pieces stack toward the rim (smaller yPct).
- */
-function getParticleCoords(
-  index: number,
-  _total: number,
-  isOverflowing: boolean,
-  isDark: boolean
-): ParticleCoords {
-  const layout = isDark ? THEME_LAYOUT.dark : THEME_LAYOUT.light;
-
-  // Wider base rows; odd rows nest in the gaps (hex lattice).
-  const rowCap = (row: number) => Math.max(2, 4 - Math.floor(row / 2));
-  let remaining = index;
-  let row = 0;
-  while (remaining >= rowCap(row)) {
-    remaining -= rowCap(row);
-    row += 1;
-  }
-  const cols = rowCap(row);
-  const col = remaining;
-
-  const nest = row % 2 === 1 ? COL_STEP_X_PCT * 0.5 : 0;
-  let xPct = (col - (cols - 1) / 2) * COL_STEP_X_PCT + nest;
-  xPct += hashUnit(index * 3 + 1) * 1.8;
-
-  // Rest on parabolic floor, then stack upward (decreasing y).
-  let yPct = floorCurveY(xPct, layout) - row * ROW_RISE_Y_PCT;
-  yPct += hashUnit(index * 5 + 2) * 0.9;
-
-  const spills = isOverflowing && row >= SPILL_ROW;
-  if (spills) {
-    yPct = layout.ceilingYPct - 4 - (row - SPILL_ROW) * 3.2;
-    xPct += hashUnit(index) * 4;
-  } else {
-    const clamped = clampToCavity(xPct, yPct, layout);
-    xPct = clamped.xPct;
-    yPct = clamped.yPct;
-  }
-
-  const rotation = hashUnit(index * 7 + 11) * 22 + (spills ? hashUnit(index + 40) * 18 : 0);
-  const scale = 0.9 + (hashUnit(index * 13 + 4) * 0.5 + 0.5) * 0.14;
-  const entryXPct = hashUnit(index * 17 + 9) * 9;
-  const rA = 42 + Math.round((hashUnit(index + 21) * 0.5 + 0.5) * 14);
-  const rB = 48 + Math.round((hashUnit(index + 27) * 0.5 + 0.5) * 10);
-  const rC = 46 + Math.round((hashUnit(index + 33) * 0.5 + 0.5) * 12);
-  const rD = 44 + Math.round((hashUnit(index + 39) * 0.5 + 0.5) * 12);
-
+function pxToPct(x: number, y: number): { xPct: number; yPct: number } {
   return {
-    xPct,
-    yPct,
-    rotation,
-    scale,
-    entryXPct,
-    spills,
-    radius: `${rA}% ${rB}% ${rC}% ${rD}% / ${rB}% ${rC}% ${rA}% ${rD}%`,
+    xPct: ((x - BOWL_W / 2) / BOWL_W) * 100,
+    yPct: (y / BOWL_H) * 100,
   };
 }
 
-/** Nudge centers apart, then re-project into the cavity ellipse. */
-function resolvePileSeparation(items: LaidPiece[], isDark: boolean): LaidPiece[] {
-  const layout = isDark ? THEME_LAYOUT.dark : THEME_LAYOUT.light;
-  const resolved = items.map((item) => ({
-    ...item,
-    coords: { ...item.coords },
-  }));
+/**
+ * Flat hex lattice of non-overlapping discs whose centers lie inside the
+ * cavity ellipse (shrunk by piece radius). Edges touch (sep = diameter).
+ * No stacking / z-piling — single plane only.
+ */
+function buildFlatSlots(layout: CavityLayout): { xPct: number; yPct: number }[] {
+  const cx = BOWL_W / 2;
+  const cy = (layout.cy / 100) * BOWL_H;
+  const rx = Math.max(1, (layout.rx / 100) * BOWL_W - PIECE_R);
+  const ry = Math.max(1, (layout.ry / 100) * BOWL_H - PIECE_R);
+  const sep = PIECE_SIZE; // edge-to-edge contact
+  const rowH = sep * (Math.sqrt(3) / 2);
 
-  for (let i = 0; i < resolved.length; i++) {
-    const a = resolved[i].coords;
-    if (a.spills) continue;
-    for (let pass = 0; pass < 3; pass++) {
-      for (let j = 0; j < i; j++) {
-        const b = resolved[j].coords;
-        if (b.spills) continue;
-        const dx = a.xPct - b.xPct;
-        const dy = (a.yPct - b.yPct) * (MIN_SEP_X_PCT / MIN_SEP_Y_PCT);
-        const dist = Math.hypot(dx, dy);
-        if (dist >= MIN_SEP_X_PCT || dist < 0.001) continue;
-        const push = ((MIN_SEP_X_PCT - dist) / dist) * 0.55;
-        a.xPct += dx * push;
-        // Lift newer marble toward the rim (smaller yPct).
-        a.yPct += Math.min(-0.4, dy * push * 0.35);
+  const centers: { x: number; y: number }[] = [];
+  let row = 0;
+  // Bottom → top so the bowl fills from the floor upward.
+  for (let y = cy + ry; y >= cy - ry - 0.01; y -= rowH) {
+    const dy = (y - cy) / ry;
+    const halfW = rx * Math.sqrt(Math.max(0, 1 - dy * dy));
+    const nest = (row % 2) * (sep / 2);
+    const xMin = cx - halfW;
+    const xMax = cx + halfW;
+    for (let x = xMin + nest; x <= xMax + 0.01; x += sep) {
+      const nx = (x - cx) / rx;
+      const ny = (y - cy) / ry;
+      if (nx * nx + ny * ny <= 1.002) {
+        centers.push({ x, y });
       }
-      const clamped = clampToCavity(a.xPct, a.yPct, layout);
-      a.xPct = clamped.xPct;
-      a.yPct = clamped.yPct;
     }
+    row += 1;
   }
 
-  return resolved;
+  centers.sort((a, b) => b.y - a.y || Math.abs(a.x - cx) - Math.abs(b.x - cx));
+  return centers.map((c) => pxToPct(c.x, c.y));
 }
 
 /**
- * Depth order: deeper (higher yPct) behind; toward-rim + later drops in front.
+ * Spill landing spots just outside / over the rim — used when fill ≥ 80%
+ * (`isOverflowing`) for pieces that no longer fit in the flat cavity.
  */
-function depthZIndex(item: LaidPiece): number {
-  const depthFromFloor = Math.round((90 - item.coords.yPct) * 3);
-  return 10 + depthFromFloor + item.index;
+function buildSpillSlots(layout: CavityLayout, count: number): { xPct: number; yPct: number }[] {
+  const cx = BOWL_W / 2;
+  const cy = (layout.cy / 100) * BOWL_H;
+  const rx = (layout.rx / 100) * BOWL_W;
+  const ry = (layout.ry / 100) * BOWL_H;
+  const slots: { xPct: number; yPct: number }[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const ring = Math.floor(i / 6);
+    const slot = i % 6;
+    // Fan across the top rim, then cascade slightly outward/down the shoulders.
+    const t = (slot - 2.5) / 2.5; // -1 … +1
+    const rimY = cy - ry - PIECE_R - 2 - ring * (PIECE_SIZE * 0.72);
+    const rimX = cx + t * (rx + PIECE_R + 2 + ring * 3) + hashUnit(i * 3) * 2;
+    // A few pieces tumble past the outer lip (below rim sides).
+    const tumble = slot === 0 || slot === 5;
+    const y = tumble ? cy + ry * 0.15 + ring * (PIECE_SIZE * 0.55) : rimY;
+    const x = tumble
+      ? cx + Math.sign(t || 1) * (rx + PIECE_R + 6 + ring * 4)
+      : rimX;
+    slots.push(pxToPct(x, y));
+  }
+  return slots;
 }
 
-const pieceBoxStyle = (zIndex: number): React.CSSProperties => ({
+function layoutPieces(
+  pieces: AccumulationPiece[],
+  isOverflowing: boolean,
+  isDark: boolean,
+  celebrating: boolean,
+  capacity: number
+): LaidPiece[] {
+  const layout = isDark ? THEME_CAVITY.dark : THEME_CAVITY.light;
+  const visible = pieces.slice(-MAX_VISIBLE_PIECES);
+  const flatSlots = buildFlatSlots(layout);
+  const maxInside = flatSlots.length;
+
+  // Soft cap mirrors reportService OVERFLOW_FILL_RATIO (80% of C = habits × cycleDays).
+  // When overflowing, pieces past that count spill over the rim even if the cavity
+  // still has empty hex slots — so spill is the ≥80% signal (glow removed).
+  const softCap = Math.max(0, Math.floor(Math.max(0, capacity) * OVERFLOW_FILL_RATIO));
+  let insideBudget: number;
+  if (celebrating) {
+    insideBudget = Math.min(maxInside, visible.length);
+  } else if (isOverflowing) {
+    insideBudget = Math.min(maxInside, softCap, visible.length);
+  } else {
+    insideBudget = Math.min(maxInside, visible.length);
+  }
+
+  const spillCount = Math.max(0, visible.length - insideBudget);
+  const spillSlots = buildSpillSlots(layout, spillCount);
+
+  return visible.map((piece, index) => {
+    const spills = index >= insideBudget;
+    const slot = spills
+      ? spillSlots[index - insideBudget] ?? { xPct: 0, yPct: layout.cy - layout.ry - 12 }
+      : flatSlots[index] ?? { xPct: 0, yPct: layout.cy };
+
+    let { xPct, yPct } = slot;
+    if (celebrating) {
+      yPct = yPct + 22 + Math.abs(hashUnit(index + 8)) * 10;
+      xPct = xPct + hashUnit(index * 5) * 14;
+    }
+
+    return {
+      piece,
+      index,
+      coords: {
+        xPct,
+        yPct,
+        rotation: hashUnit(index * 7 + 11) * (spills || celebrating ? 48 : 14),
+        scale: 1,
+        entryXPct: hashUnit(index * 17 + 9) * 8,
+        spills: spills || celebrating,
+      },
+    };
+  });
+}
+
+/** Center-anchored box — fixes the old top-left `top`/`left` offset bug. */
+const pieceBoxStyle = (): React.CSSProperties => ({
   width: PIECE_SIZE,
   height: PIECE_SIZE,
   minWidth: PIECE_SIZE,
@@ -275,8 +267,9 @@ const pieceBoxStyle = (zIndex: number): React.CSSProperties => ({
   maxHeight: PIECE_SIZE,
   aspectRatio: '1 / 1',
   position: 'absolute',
-  marginLeft: -PIECE_SIZE / 2,
-  zIndex,
+  marginLeft: -PIECE_R,
+  marginTop: -PIECE_R,
+  zIndex: 10,
 });
 
 const MarblePiece: React.FC<{
@@ -300,22 +293,13 @@ const MarblePiece: React.FC<{
       ? 'bg-blue-500'
       : 'bg-emerald-500';
 
-  const specular = isDark
-    ? 'radial-gradient(ellipse 48% 38% at 30% 26%, rgba(255,255,255,0.72) 0%, rgba(147,197,253,0.25) 38%, transparent 62%)'
-    : 'radial-gradient(ellipse 48% 38% at 30% 26%, rgba(255,255,255,0.78) 0%, rgba(167,243,208,0.28) 38%, transparent 62%)';
-  const coreShade =
-    'radial-gradient(ellipse 70% 55% at 62% 78%, rgba(0,0,0,0.38) 0%, transparent 68%)';
-  const rimLight = isDark
-    ? 'inset 1px 1px 2px rgba(147,197,253,0.45), inset -2px -3px 4px rgba(15,23,42,0.45)'
-    : 'inset 1px 1px 2px rgba(167,243,208,0.5), inset -2px -3px 4px rgba(6,78,59,0.35)';
-
   const motionProps = {
     initial: {
       left: `calc(50% + ${coords.xPct + coords.entryXPct * 0.35}%)`,
-      top: `${Math.min(SPAWN_Y_PCT, coords.yPct - 28)}%`,
-      rotate: coords.rotation * 0.2,
+      top: `${Math.min(SPAWN_Y_PCT, coords.yPct - 30)}%`,
+      rotate: coords.rotation * 0.15,
       opacity: 0,
-      scale: coords.scale * 0.88,
+      scale: 0.86,
     },
     animate: {
       left: `calc(50% + ${coords.xPct}%)`,
@@ -329,37 +313,26 @@ const MarblePiece: React.FC<{
       opacity: 0,
     },
     transition: {
-      left: { ...DROP_SPRING, stiffness: 260, damping: 28 },
-      top: DROP_SPRING,
+      left: { ...DROP_SPRING, stiffness: coords.spills ? 180 : 260, damping: 28 },
+      top: { ...DROP_SPRING, stiffness: coords.spills ? 160 : 220, damping: coords.spills ? 22 : 26 },
       rotate: { ...DROP_SPRING, stiffness: 180, damping: 24 },
       opacity: { duration: 0.22, ease: 'easeOut' as const },
       scale: { type: 'spring' as const, stiffness: 280, damping: 24 },
     },
   };
 
-  const box = pieceBoxStyle(depthZIndex(item));
+  const box = pieceBoxStyle();
 
   if (broken || !src) {
     return (
       <motion.div
         key={item.piece.id}
         aria-hidden="true"
-        className="pointer-events-none absolute block shrink-0"
+        className="pointer-events-none absolute block shrink-0 rounded-full"
         style={box}
         {...motionProps}
       >
-        <span
-          className={`absolute inset-0 ${fallbackTone}`}
-          style={{
-            borderRadius: coords.radius,
-            boxShadow: `${rimLight}, 0 3px 5px rgba(0,0,0,0.35)`,
-            backgroundImage: `${specular}, ${coreShade}`,
-          }}
-        />
-        <span
-          className="absolute left-1/2 top-[88%] h-[22%] w-[72%] -translate-x-1/2 rounded-full bg-black/40 blur-[2.5px]"
-          aria-hidden
-        />
+        <span className={`absolute inset-0 rounded-full ${fallbackTone}`} />
       </motion.div>
     );
   }
@@ -372,46 +345,13 @@ const MarblePiece: React.FC<{
       style={box}
       {...motionProps}
     >
-      {/* Soft contact shadow — sits under the sphere where it meets the pile */}
-      <span
-        className="absolute left-1/2 top-[86%] z-0 h-[24%] w-[78%] -translate-x-1/2 rounded-full bg-black/45 blur-[3px]"
-        aria-hidden
+      <img
+        src={src}
+        alt=""
+        draggable={false}
+        onError={() => setBroken(true)}
+        className="pointer-events-none absolute inset-0 h-full w-full rounded-full object-contain object-center"
       />
-      <span className="relative z-[1] block h-full w-full" style={{ filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.18))' }}>
-        <img
-          src={src}
-          alt=""
-          draggable={false}
-          onError={() => setBroken(true)}
-          className="pointer-events-none absolute inset-0 h-full w-full object-contain object-center"
-          style={{ borderRadius: coords.radius }}
-        />
-        {/* Consistent top-left light source on top of baked asset shading */}
-        <span
-          className="pointer-events-none absolute inset-[8%]"
-          style={{
-            borderRadius: coords.radius,
-            backgroundImage: specular,
-            mixBlendMode: 'soft-light',
-          }}
-          aria-hidden
-        />
-        <span
-          className="pointer-events-none absolute inset-[8%]"
-          style={{
-            borderRadius: coords.radius,
-            backgroundImage: coreShade,
-            mixBlendMode: 'multiply',
-            opacity: 0.45,
-          }}
-          aria-hidden
-        />
-        <span
-          className="pointer-events-none absolute inset-[8%]"
-          style={{ borderRadius: coords.radius, boxShadow: rimLight }}
-          aria-hidden
-        />
-      </span>
     </motion.div>
   );
 };
@@ -419,19 +359,13 @@ const MarblePiece: React.FC<{
 const PieceLayer: React.FC<{
   items: LaidPiece[];
   isDark: boolean;
-}> = ({ items, isDark }) => {
-  const ordered = useMemo(
-    () => [...items].sort((a, b) => depthZIndex(a) - depthZIndex(b)),
-    [items]
-  );
-  return (
-    <AnimatePresence initial={false}>
-      {ordered.map((item) => (
-        <MarblePiece key={item.piece.id} item={item} isDark={isDark} />
-      ))}
-    </AnimatePresence>
-  );
-};
+}> = ({ items, isDark }) => (
+  <AnimatePresence initial={false}>
+    {items.map((item) => (
+      <MarblePiece key={item.piece.id} item={item} isDark={isDark} />
+    ))}
+  </AnimatePresence>
+);
 
 function BowlShellFallback({ isDark }: { isDark: boolean }) {
   return (
@@ -465,42 +399,27 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
 
   const darkMode = Boolean(isDark);
   const bowlSrc = resolveBowlSrc(darkMode);
-  const layout = darkMode ? THEME_LAYOUT.dark : THEME_LAYOUT.light;
+  const cavity = darkMode ? THEME_CAVITY.dark : THEME_CAVITY.light;
 
   useEffect(() => {
     setBowlBroken(false);
   }, [bowlSrc, darkMode]);
 
-  const laid = useMemo<LaidPiece[]>(() => {
-    const safePieces = Array.isArray(pieces) ? pieces : [];
-    const visible = safePieces.slice(-MAX_VISIBLE_PIECES);
-    const total = visible.length;
-    const raw = visible.map((piece, index) => ({
-      piece,
-      index,
-      coords: getParticleCoords(index, total, isOverflowing, darkMode),
-    }));
-    return resolvePileSeparation(raw, darkMode);
-  }, [pieces, isOverflowing, darkMode]);
+  const laid = useMemo(
+    () =>
+      layoutPieces(
+        Array.isArray(pieces) ? pieces : [],
+        isOverflowing,
+        darkMode,
+        celebrating,
+        capacity
+      ),
+    [pieces, isOverflowing, darkMode, celebrating, capacity]
+  );
 
-  const displayLaid = celebrating
-    ? laid.map((item) => ({
-        ...item,
-        coords: {
-          ...item.coords,
-          yPct: item.coords.yPct + 28,
-          spills: true,
-        },
-      }))
-    : laid;
-  const insidePieces = displayLaid.filter((item) => !item.coords.spills);
-  const spillPieces = displayLaid.filter((item) => item.coords.spills);
+  const insidePieces = laid.filter((item) => !item.coords.spills);
+  const spillPieces = laid.filter((item) => item.coords.spills);
   const roundedFill = Math.round(fillPercent);
-  const overflowGlow = isOverflowing
-    ? darkMode
-      ? 'drop-shadow-[0_0_14px_rgba(59,130,246,0.5)]'
-      : 'drop-shadow-[0_0_14px_rgba(34,197,94,0.45)]'
-    : '';
 
   useEffect(() => {
     if (!celebrating) return;
@@ -551,16 +470,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
       </AnimatePresence>
 
       <div className="relative mx-auto h-24 w-[108px] overflow-visible">
-        {isOverflowing && !celebrating && (
-          <div
-            className={`pointer-events-none absolute left-1/2 top-[55%] z-[1] h-9 w-[70%] -translate-x-1/2 rounded-full blur-xl ${
-              darkMode ? 'bg-blue-500/35' : 'bg-emerald-400/40'
-            }`}
-            aria-hidden="true"
-          />
-        )}
-
-        {/* Layer 1 — back glass (full bowl plate) */}
+        {/* Layer 1 — back glass */}
         {bowlBroken || !bowlSrc ? (
           <BowlShellFallback isDark={darkMode} />
         ) : (
@@ -574,13 +484,12 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
           />
         )}
 
-        {/* Layer 2 — marbles settle in the elliptical cavity, behind the front lip */}
+        {/* Layer 2 — flat packed pieces inside the cavity (clipped to rim oval) */}
         <div
           className="pointer-events-none absolute inset-0 z-[2] overflow-hidden"
           style={{
-            // Soft clip to the inner cavity so pieces never paint across the outer lip.
-            clipPath: 'ellipse(46% 38% at 50% 58%)',
-            WebkitClipPath: 'ellipse(46% 38% at 50% 58%)',
+            clipPath: cavity.clip,
+            WebkitClipPath: cavity.clip,
           }}
         >
           <div className="relative h-full w-full">
@@ -588,7 +497,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
           </div>
         </div>
 
-        {/* Layer 3 — front rim / glass overlay (masked hole; marbles show through cavity) */}
+        {/* Layer 3 — front rim overlay */}
         {!bowlBroken && bowlSrc ? (
           <img
             key={`bowl-rim-${darkMode ? 'night' : 'morning'}`}
@@ -596,37 +505,27 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
             alt=""
             draggable={false}
             onError={() => setBowlBroken(true)}
-            className={`pointer-events-none absolute inset-0 z-[3] h-full w-full object-contain ${overflowGlow}`}
+            className="pointer-events-none absolute inset-0 z-[3] h-full w-full object-contain"
             style={{
-              WebkitMaskImage: layout.rimMask,
-              maskImage: layout.rimMask,
+              WebkitMaskImage: cavity.rimMask,
+              maskImage: cavity.rimMask,
               opacity: 0.97,
             }}
           />
         ) : null}
 
-        {/* Light glass sheen over the front lip only */}
         <div
           className="pointer-events-none absolute inset-0 z-[3] mix-blend-overlay"
           style={{
             background:
               'linear-gradient(180deg, transparent 38%, rgba(255,255,255,0.14) 52%, transparent 68%)',
-            WebkitMaskImage: layout.rimMask,
-            maskImage: layout.rimMask,
+            WebkitMaskImage: cavity.rimMask,
+            maskImage: cavity.rimMask,
           }}
           aria-hidden="true"
         />
 
-        {isOverflowing && !celebrating && (
-          <div
-            className={`pointer-events-none absolute left-1/2 top-[38%] z-[4] h-6 w-[62%] -translate-x-1/2 rounded-full blur-md ${
-              darkMode ? 'bg-blue-400/25' : 'bg-emerald-300/30'
-            }`}
-            aria-hidden="true"
-          />
-        )}
-
-        {/* Spill layer sits above the rim so overflow reads over the lip */}
+        {/* Spill layer — above the rim; hooks the same isOverflowing (≥80%) flag */}
         <div className="pointer-events-none absolute inset-0 z-[4] overflow-visible">
           <PieceLayer items={spillPieces} isDark={darkMode} />
         </div>

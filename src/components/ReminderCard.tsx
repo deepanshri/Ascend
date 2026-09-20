@@ -451,7 +451,7 @@ function ReminderCardInner({
         onDrag={handleDrag}
         onDragEnd={handleDragEnd}
         style={{ x }}
-        className={`swipe-card-surface relative z-10 rounded-2xl p-3.5 border flex items-start space-x-3.5 cursor-grab active:cursor-grabbing ${
+        className={`swipe-card-surface gpu-layer relative z-10 rounded-2xl p-3.5 border flex items-start space-x-3.5 cursor-grab active:cursor-grabbing ${
           isArchived
             ? 'bg-slate-50 dark:bg-slate-900/70 border-slate-200/80 dark:border-slate-800'
             : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'

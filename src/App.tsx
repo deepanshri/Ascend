@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
@@ -134,25 +134,20 @@ import { FrictionAuditModal } from './components/FrictionAuditModal';
 import { AuthView } from './components/AuthView';
 import { OnboardingView } from './components/OnboardingView';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { TabLoadingFallback } from './components/TabLoadingFallback';
-
-const RemindersView = lazy(() =>
-  import('./components/RemindersView').then((m) => ({ default: m.RemindersView }))
-);
-const ReportView = lazy(() =>
-  import('./components/ReportView').then((m) => ({ default: m.ReportView }))
-);
-const PersonalView = lazy(() =>
-  import('./components/PersonalView').then((m) => ({ default: m.PersonalView }))
-);
-const SettingsView = lazy(() =>
-  import('./components/SettingsView').then((m) => ({ default: m.SettingsView }))
-);
+import { RemindersView } from './components/RemindersView';
+import { ReportView } from './components/ReportView';
+import { PersonalView } from './components/PersonalView';
+import { SettingsView } from './components/SettingsView';
 
 const APP_TABS: readonly ActiveTab[] = ['home', 'reminders', 'report', 'personal', 'settings'];
 
 function resolveActiveTab(tab: ActiveTab | string | null | undefined): ActiveTab {
   return APP_TABS.includes(tab as ActiveTab) ? (tab as ActiveTab) : 'home';
+}
+
+/** Keep visited tabs mounted; hide inactive panes via CSS (0ms switch). */
+function tabPaneClassName(isActive: boolean, extra = ''): string {
+  return `absolute inset-0 tab-pane gpu-layer ${isActive ? 'tab-pane-active' : 'tab-pane-cached'}${extra ? ` ${extra}` : ''}`;
 }
 
 export default function App() {
@@ -474,10 +469,24 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [viewResetKey, setViewResetKey] = useState(0);
   const safeActiveTab = resolveActiveTab(activeTab);
+  /** Tabs stay mounted after first visit so switches are visibility flips, not remounts. */
+  const [warmedTabs, setWarmedTabs] = useState<ReadonlySet<ActiveTab>>(() => new Set<ActiveTab>(['home']));
 
   useEffect(() => {
     if (activeTab !== safeActiveTab) setActiveTab(safeActiveTab);
   }, [activeTab, safeActiveTab]);
+
+  useEffect(() => {
+    setWarmedTabs((prev) => {
+      if (prev.has(safeActiveTab)) return prev;
+      const next = new Set(prev);
+      next.add(safeActiveTab);
+      return next;
+    });
+  }, [safeActiveTab]);
+
+  const isTabWarmed = useCallback((tab: ActiveTab) => warmedTabs.has(tab), [warmedTabs]);
+  const isTabActive = useCallback((tab: ActiveTab) => safeActiveTab === tab, [safeActiveTab]);
   const [calendarOrigin, setCalendarOrigin] = useState<Date>(() => startOfDay(new Date()));
   const [currentSelectedDate, setCurrentSelectedDate] = useState<string>(() => toISODate());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -1140,6 +1149,8 @@ export default function App() {
     if (!isViewingToday) return;
     const targetHabit = habits.find((h) => h.id === habitId);
     if (!targetHabit) return;
+    // Off-day: schedule feature blocks completion (no ledger / momentum / pulse).
+    if (!isHabitScheduledOnDayIndex(targetHabit, todayDayIndex, calendarOrigin)) return;
 
     const isMicro = isFallback || activeFallbackIds.includes(habitId);
     const loggedDate = toISODate(calendarOrigin);
@@ -1168,6 +1179,7 @@ export default function App() {
 
     // momentum_events stays append-only; skip a second full/fallback row for the same local day.
     // Defer remote append briefly so a grace undo can drop the local row with zero penalty.
+    // Island pulse only when a new vote is appended — pill still no-ops if the rounded score is flat.
     if (!alreadyVotedMomentum) {
       const momentumEvent = createMomentumEvent(
         targetHabit,
@@ -1180,9 +1192,8 @@ export default function App() {
       if (existing) window.clearTimeout(existing.timer);
       const timer = window.setTimeout(() => flushGraceMomentum(habitId), 3000);
       pendingGraceMomentumRef.current.set(habitId, { event: momentumEvent, timer });
+      setMomentumPulse((n) => n + 1);
     }
-    // Always pulse the Dynamic Island on a successful swipe-complete (score may round flat).
-    setMomentumPulse((n) => n + 1);
 
     const newEvidence: IdentityEvidence = {
       id: alreadyCompletedToday
@@ -1914,139 +1925,23 @@ export default function App() {
         className="relative w-full h-full overflow-hidden"
       >
         <ErrorBoundary
-          resetKey={`${safeActiveTab}-${viewResetKey}`}
+          resetKey={String(viewResetKey)}
           onReset={() => setViewResetKey((value) => value + 1)}
         >
-        <div className="absolute inset-0 z-10 tab-pane-host">
-        <Suspense fallback={<TabLoadingFallback />}>
+        <div className="absolute inset-0 z-10 tab-pane-host gpu-layer">
         {/*
-          Tabs mount one-at-a-time (inactive unmount). No AnimatePresence mode="wait" —
-          exit-wait was freezing rapid tab taps on Capacitor WebViews.
+          Warm tab cache: once visited, panes stay mounted and flip via CSS
+          visibility/opacity (no unmount / re-parse on switch).
         */}
-        {safeActiveTab === 'reminders' ? (
-          <div key="tab-reminders" className="absolute inset-0 z-10 tab-pane">
-          <RemindersView
-            reminders={reminders ?? []}
-            focusReminderId={widgetFocusReminderId}
-            openCreate={widgetOpenCreateTask}
-            onOpenCreateConsumed={() => setWidgetOpenCreateTask(false)}
-            onAddReminder={handleAddReminder}
-            onUpdateReminder={handleUpdateReminder}
-            onToggleComplete={stableToggleReminder}
-            onSetReminderCompleted={stableSetReminderCompleted}
-            onDeleteReminder={stableDeleteReminder}
-            onSnoozeReminder={stableSnoozeReminder}
-            userSession={session}
-            onRemindersHydrated={(remote) => {
-              const next = Array.isArray(remote) ? remote : [];
-              setReminders((prev) => mergeRemindersByUpdatedAt(prev, next));
-              notificationScheduler.bootReschedulePendingAlerts(next);
-            }}
-            onSyncReminders={() => {
-              const seq = ++reminderSyncSeqRef.current;
-              remindersSyncService.syncReminders(reminders ?? [], session).then((res) => {
-                if (seq !== reminderSyncSeqRef.current) return;
-                setReminders((prev) => mergeRemindersByUpdatedAt(prev, Array.isArray(res.reminders) ? res.reminders : []));
-              });
-            }}
-            onScroll={handleMainScroll}
-            onOpenSettings={() => setActiveTab('settings')}
-          />
-          </div>
-        ) : safeActiveTab === 'report' ? (
-          <div key="tab-report" className="absolute inset-0 z-10 tab-pane">
-          <ReportView
-            habits={activeHabits ?? []}
-            evidenceList={ledgerEvidence}
-            identityVoteCount={displayedIdentityVotes}
-            userId={session.id}
-            isGuest={session.isGuest}
-            userEmail={session.email}
-            userName={session.name}
-            onOpenLedger={() => setIsLedgerModalOpen(true)}
-            onOpenSettings={() => setActiveTab('settings')}
-            frictionAudits={frictionAudits ?? []}
-            onScroll={handleMainScroll}
-            isDark={isDark}
-            momentumScore={todayMomentumScore}
-            momentumEvents={momentumEvents ?? []}
-            completionEvents={completionEvents ?? []}
-            selectedDayIso={currentSelectedDate}
-            onSelectDayIso={setCurrentSelectedDate}
-            cycleDays={cycleDays}
-            cycleStartIso={bowlEpoch.startIso}
-          />
-          </div>
-        ) : safeActiveTab === 'personal' ? (
-          <div key="tab-personal" className="absolute inset-0 z-10 tab-pane">
-          <PersonalView
-            userSession={session}
-            evidenceList={ledgerEvidence}
-            identityVoteCount={displayedIdentityVotes}
-            selectedInterests={selectedInterests ?? []}
-            onToggleInterest={handleToggleInterest}
-            examShieldActive={examShieldActive}
-            examShieldStatus={examShieldStatus}
-            onToggleExamShield={handleToggleExamShield}
-            vacationModeActive={vacationModeActive}
-            vacationStatus={vacationStatus}
-            onToggleVacationMode={handleToggleVacationMode}
-            momentumScore={momentumScore}
-            onOpenSettings={() => setActiveTab('settings')}
-            onOpenLedger={() => setIsLedgerModalOpen(true)}
-            onUpgradeGuest={() => setIsUpgradeModalOpen(true)}
-            onSyncNow={async () => {
-              if (!session || session.isGuest) {
-                throw new Error('Guest sessions stay local');
-              }
-              const result = await runAuthenticatedSync(session);
-              if (!result.ok) {
-                throw new Error(result.error || 'Sync failed');
-              }
-            }}
-            onChangePassword={() => setIsPasswordModalOpen(true)}
-            onUpdateAvatar={(avatarUrl) => {
-              setSession((prev) => {
-                if (!prev) return prev;
-                const next = { ...prev, avatarUrl };
-                setStoredSession(next);
-                return next;
-              });
-            }}
-            onLogout={handleDeleteAccount}
-            onUpdateName={(newName) => {
-              setSession((prev) => (prev ? { ...prev, name: newName } : prev));
-            }}
-            onScroll={handleMainScroll}
-          />
-          </div>
-        ) : safeActiveTab === 'settings' ? (
-          <div key="tab-settings" className="absolute inset-0 z-10 tab-pane">
-          <SettingsView
-            habits={habits ?? []}
-            evidenceList={ledgerEvidence}
-            completionEvents={completionEvents ?? []}
-            momentumEvents={momentumEvents ?? []}
-            theme={theme}
-            onThemeChange={setTheme}
-            notificationWindows={notificationWindows}
-            onToggleNotificationWindow={handleToggleNotificationWindow}
-            onResetData={handleResetData}
-            onRestoreHabit={handleRestoreHabit}
-            onDeleteHabit={handleDeleteHabit}
-            onImportJSON={handleImportJSON}
-            onDeleteAccount={handleDeleteAccount}
-            onClearCache={handleClearCache}
-            onScroll={handleMainScroll}
-            onOpenSettings={() => setActiveTab('home')}
-          />
-          </div>
-        ) : (
+        {isTabWarmed('home') ? (
           <main
-            key="tab-home"
             id="app-main-content"
             onScroll={handleMainScroll}
-            className={`absolute inset-0 z-10 tab-pane px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col overflow-y-auto overscroll-y-contain no-scrollbar ${longPressedHabitId ? 'filter blur-[4px] pointer-events-none' : ''}`}
+            aria-hidden={!isTabActive('home')}
+            className={tabPaneClassName(
+              isTabActive('home'),
+              `px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col overflow-y-auto overscroll-y-contain no-scrollbar${longPressedHabitId && isTabActive('home') ? ' filter blur-[4px] pointer-events-none' : ''}`
+            )}
           >
             <ScreenHeader
               title="Home"
@@ -2088,7 +1983,6 @@ export default function App() {
             >
               <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
 
-              {/* Habit List Cards */}
               <section id="habit-list" className="mt-0.5 flex flex-col gap-2.5">
               {(activeHabits ?? []).length === 0 ? (
                 <div className="bg-white/80 rounded-2xl p-6 text-center text-slate-400 text-[13px] border border-slate-200/80">
@@ -2129,8 +2023,145 @@ export default function App() {
             </section>
             </HomeView>
           </main>
-        )}
-        </Suspense>
+        ) : null}
+
+        {isTabWarmed('reminders') ? (
+          <div
+            aria-hidden={!isTabActive('reminders')}
+            className={tabPaneClassName(isTabActive('reminders'))}
+          >
+          <RemindersView
+            reminders={reminders ?? []}
+            focusReminderId={widgetFocusReminderId}
+            openCreate={widgetOpenCreateTask}
+            onOpenCreateConsumed={() => setWidgetOpenCreateTask(false)}
+            onAddReminder={handleAddReminder}
+            onUpdateReminder={handleUpdateReminder}
+            onToggleComplete={stableToggleReminder}
+            onSetReminderCompleted={stableSetReminderCompleted}
+            onDeleteReminder={stableDeleteReminder}
+            onSnoozeReminder={stableSnoozeReminder}
+            userSession={session}
+            onRemindersHydrated={(remote) => {
+              const next = Array.isArray(remote) ? remote : [];
+              setReminders((prev) => mergeRemindersByUpdatedAt(prev, next));
+              notificationScheduler.bootReschedulePendingAlerts(next);
+            }}
+            onSyncReminders={() => {
+              const seq = ++reminderSyncSeqRef.current;
+              remindersSyncService.syncReminders(reminders ?? [], session).then((res) => {
+                if (seq !== reminderSyncSeqRef.current) return;
+                setReminders((prev) => mergeRemindersByUpdatedAt(prev, Array.isArray(res.reminders) ? res.reminders : []));
+              });
+            }}
+            onScroll={handleMainScroll}
+            onOpenSettings={() => setActiveTab('settings')}
+          />
+          </div>
+        ) : null}
+
+        {isTabWarmed('report') ? (
+          <div
+            aria-hidden={!isTabActive('report')}
+            className={tabPaneClassName(isTabActive('report'))}
+          >
+          <ReportView
+            habits={activeHabits ?? []}
+            evidenceList={ledgerEvidence}
+            identityVoteCount={displayedIdentityVotes}
+            userId={session.id}
+            isGuest={session.isGuest}
+            userEmail={session.email}
+            userName={session.name}
+            onOpenLedger={() => setIsLedgerModalOpen(true)}
+            onOpenSettings={() => setActiveTab('settings')}
+            frictionAudits={frictionAudits ?? []}
+            onScroll={handleMainScroll}
+            isDark={isDark}
+            momentumScore={todayMomentumScore}
+            momentumEvents={momentumEvents ?? []}
+            completionEvents={completionEvents ?? []}
+            selectedDayIso={currentSelectedDate}
+            onSelectDayIso={setCurrentSelectedDate}
+            cycleDays={cycleDays}
+            cycleStartIso={bowlEpoch.startIso}
+          />
+          </div>
+        ) : null}
+
+        {isTabWarmed('personal') ? (
+          <div
+            aria-hidden={!isTabActive('personal')}
+            className={tabPaneClassName(isTabActive('personal'))}
+          >
+          <PersonalView
+            userSession={session}
+            evidenceList={ledgerEvidence}
+            identityVoteCount={displayedIdentityVotes}
+            selectedInterests={selectedInterests ?? []}
+            onToggleInterest={handleToggleInterest}
+            examShieldActive={examShieldActive}
+            examShieldStatus={examShieldStatus}
+            onToggleExamShield={handleToggleExamShield}
+            vacationModeActive={vacationModeActive}
+            vacationStatus={vacationStatus}
+            onToggleVacationMode={handleToggleVacationMode}
+            momentumScore={momentumScore}
+            onOpenSettings={() => setActiveTab('settings')}
+            onOpenLedger={() => setIsLedgerModalOpen(true)}
+            onUpgradeGuest={() => setIsUpgradeModalOpen(true)}
+            onSyncNow={async () => {
+              if (!session || session.isGuest) {
+                throw new Error('Guest sessions stay local');
+              }
+              const result = await runAuthenticatedSync(session);
+              if (!result.ok) {
+                throw new Error(result.error || 'Sync failed');
+              }
+            }}
+            onChangePassword={() => setIsPasswordModalOpen(true)}
+            onUpdateAvatar={(avatarUrl) => {
+              setSession((prev) => {
+                if (!prev) return prev;
+                const next = { ...prev, avatarUrl };
+                setStoredSession(next);
+                return next;
+              });
+            }}
+            onLogout={handleDeleteAccount}
+            onUpdateName={(newName) => {
+              setSession((prev) => (prev ? { ...prev, name: newName } : prev));
+            }}
+            onScroll={handleMainScroll}
+          />
+          </div>
+        ) : null}
+
+        {isTabWarmed('settings') ? (
+          <div
+            aria-hidden={!isTabActive('settings')}
+            className={tabPaneClassName(isTabActive('settings'))}
+          >
+          <SettingsView
+            habits={habits ?? []}
+            evidenceList={ledgerEvidence}
+            completionEvents={completionEvents ?? []}
+            momentumEvents={momentumEvents ?? []}
+            theme={theme}
+            onThemeChange={setTheme}
+            notificationWindows={notificationWindows}
+            onToggleNotificationWindow={handleToggleNotificationWindow}
+            onResetData={handleResetData}
+            onRestoreHabit={handleRestoreHabit}
+            onDeleteHabit={handleDeleteHabit}
+            onImportJSON={handleImportJSON}
+            onDeleteAccount={handleDeleteAccount}
+            onClearCache={handleClearCache}
+            onScroll={handleMainScroll}
+            onOpenSettings={() => setActiveTab('home')}
+          />
+          </div>
+        ) : null}
         </div>
         </ErrorBoundary>
 

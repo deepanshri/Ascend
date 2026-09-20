@@ -102,10 +102,41 @@ html, body, #root {
   touch-action: pan-y;
 }
 
-.tab-pane-host,
-.tab-pane {
-  /* Promote only while tab transitions run — idle will-change wastes GPU memory on mobile. */
+/**
+ * Hardware compositor hint for Capacitor Android WebViews.
+ * Used on tab panes, swipe cards, and hero stacks so Motion transforms
+ * stay off the main JS thread during swipes / tab switches.
+ */
+.gpu-layer {
+  transform: translateZ(0);
   backface-visibility: hidden;
+  perspective: 1000px;
+  will-change: transform, opacity;
+}
+
+.tab-pane-host {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.tab-pane {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
+.tab-pane-active {
+  z-index: 10;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.tab-pane-cached {
+  z-index: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /**
@@ -116,6 +147,9 @@ html, body, #root {
  */
 .swipe-card-surface {
   touch-action: pan-y;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
 }
 
 .no-scrollbar::-webkit-scrollbar {

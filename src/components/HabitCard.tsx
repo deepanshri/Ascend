@@ -292,6 +292,8 @@ function HabitCardInner({
     if (axis !== 'vertical' && offset > SWIPE_COMMIT_PX) {
       if (isTodayDoneRef.current) {
         pendingAction = () => undoOrResetToday();
+      } else if (!isScheduledTodayRef.current) {
+        // Off day: settle silently — no complete / momentum.
       } else if (isFallbackActiveRef.current) {
         pendingAction = () => {
           setCelebration('fallback');
@@ -577,7 +579,7 @@ function HabitCardInner({
           onDrag={handleDrag}
           onDragEnd={handleDragEnd}
           style={{ perspective: 1000, x }}
-          className="swipe-card-surface relative w-full cursor-pointer select-none"
+          className="swipe-card-surface gpu-layer relative w-full cursor-pointer select-none"
         >
           <motion.div
             key={celebration === 'full' ? `full-${fullPopSeq}` : 'idle'}

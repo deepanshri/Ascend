@@ -12,7 +12,7 @@ const CONTRACT_MS = 0.3;
 
 export interface MomentumPillProps {
   momentumScore: number;
-  /** Increments on each habit completion / miss so the island always pulses. */
+  /** Increments when a genuine momentum vote may have changed the score. */
   momentumPulse?: number;
   isDark?: boolean;
 }
@@ -20,6 +20,7 @@ export interface MomentumPillProps {
 /**
  * Apple-style Dynamic Island momentum pill.
  * Strict sequence: expand → show delta → count → hide delta → contract.
+ * Animation runs ONLY when the rounded score actually changes (from !== to).
  * Count digits update via DOM textContent (not React setState) to avoid
  * re-rendering Home during the 0.8s count animation.
  */
@@ -42,11 +43,13 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
   const pendingPulseRef = useRef<{ from: number; to: number } | null>(null);
 
   if (momentumPulse > pulseRef.current) {
-    pendingPulseRef.current = {
-      from: displayRef.current,
-      to: targetScore,
-    };
-    animatingRef.current = true;
+    const from = displayRef.current;
+    const to = targetScore;
+    // Safeguard: never queue an island sequence when the score did not move.
+    if (from !== to) {
+      pendingPulseRef.current = { from, to };
+      animatingRef.current = true;
+    }
   }
   pulseRef.current = momentumPulse;
 
@@ -83,6 +86,12 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
 
     const from = pending.from;
     const to = pending.to;
+    // Second guard — refuse no-op sequences even if a stale pulse sneaks through.
+    if (from === to) {
+      animatingRef.current = false;
+      return;
+    }
+
     const nextDelta = to - from;
     const runId = ++runIdRef.current;
     const isLive = () => runId === runIdRef.current;
@@ -113,58 +122,46 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
         });
         if (!isLive()) return;
 
-        // 2) Show delta (only when score actually changed)
-        if (nextDelta !== 0) {
-          await new Promise<void>((resolve) => {
-            run(
-              animate(deltaOpacity, 1, {
-                duration: DELTA_IN_MS,
-                ease: 'easeOut',
-                onComplete: () => resolve(),
-              })
-            );
-          });
-          if (!isLive()) return;
-        }
+        // 2) Show delta
+        await new Promise<void>((resolve) => {
+          run(
+            animate(deltaOpacity, 1, {
+              duration: DELTA_IN_MS,
+              ease: 'easeOut',
+              onComplete: () => resolve(),
+            })
+          );
+        });
+        if (!isLive()) return;
 
         // 3) Count up / down while delta stays visible
-        if (from !== to) {
-          await new Promise<void>((resolve) => {
-            run(
-              animate(count, to, {
-                duration: COUNT_MS,
-                ease: 'easeOut',
-                onComplete: () => {
-                  writeScore(to);
-                  resolve();
-                },
-              })
-            );
-          });
-          if (!isLive()) return;
-        } else {
-          // Pulse with no score change: brief hold at expanded width
-          await new Promise<void>((resolve) => {
-            window.setTimeout(resolve, DELTA_READ_DELAY_MS * 1000);
-          });
-          if (!isLive()) return;
-        }
+        await new Promise<void>((resolve) => {
+          run(
+            animate(count, to, {
+              duration: COUNT_MS,
+              ease: 'easeOut',
+              onComplete: () => {
+                writeScore(to);
+                resolve();
+              },
+            })
+          );
+        });
+        if (!isLive()) return;
 
         // 4) Hold so the delta is readable, then fade it out
-        if (nextDelta !== 0) {
-          await new Promise<void>((resolve) => {
-            run(
-              animate(deltaOpacity, 0, {
-                duration: DELTA_OUT_MS,
-                delay: DELTA_READ_DELAY_MS,
-                ease: 'easeIn',
-                onComplete: () => resolve(),
-              })
-            );
-          });
-          if (!isLive()) return;
-          setDelta(null);
-        }
+        await new Promise<void>((resolve) => {
+          run(
+            animate(deltaOpacity, 0, {
+              duration: DELTA_OUT_MS,
+              delay: DELTA_READ_DELAY_MS,
+              ease: 'easeIn',
+              onComplete: () => resolve(),
+            })
+          );
+        });
+        if (!isLive()) return;
+        setDelta(null);
 
         // 5) Contract pill
         await new Promise<void>((resolve) => {
