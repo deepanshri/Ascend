@@ -42,11 +42,10 @@ export function formatEvidenceDate(date: Date = new Date()): string {
 }
 
 export function toISODate(date: Date = new Date()): string {
-  const d = startOfDay(date);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export function parseIsoDateParts(iso: string): { year: number; month: number; day: number } | null {
@@ -58,7 +57,7 @@ export function parseIsoDateParts(iso: string): { year: number; month: number; d
 export function addDaysIso(iso: string, days: number): string {
   const parts = parseIsoDateParts(iso);
   if (!parts) return iso;
-  const date = new Date(parts.year, parts.month - 1, parts.day);
+  const date = new Date(parts.year, parts.month - 1, parts.day, 12, 0, 0);
   date.setDate(date.getDate() + days);
   return toISODate(date);
 }
@@ -68,8 +67,8 @@ export function diffDaysIso(fromIso: string, toIso: string): number {
   const from = parseIsoDateParts(fromIso);
   const to = parseIsoDateParts(toIso);
   if (!from || !to) return 0;
-  const a = new Date(from.year, from.month - 1, from.day).getTime();
-  const b = new Date(to.year, to.month - 1, to.day).getTime();
+  const a = Date.UTC(from.year, from.month - 1, from.day);
+  const b = Date.UTC(to.year, to.month - 1, to.day);
   return Math.round((b - a) / 86_400_000);
 }
 

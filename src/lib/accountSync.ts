@@ -10,7 +10,7 @@ import {
 } from '../utils/momentum';
 import { fetchMomentumEventsFromTable, pushMomentumEventsRemote } from './momentumEvents';
 import { mergeHabitsByUpdatedAt } from './syncMerge';
-import { getTodayDayIndex } from '../utils/dates';
+import { getTodayDayIndex, toISODate } from '../utils/dates';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface AccountSyncInput {
@@ -51,7 +51,7 @@ export async function persistMomentumHistory(
 ): Promise<void> {
   if (!isSupabaseConfigured || !supabase || !userId || userId.startsWith('guest_')) return;
   try {
-    const recordedOn = new Date().toISOString().slice(0, 10);
+    const recordedOn = toISODate();
     const { error } = await supabase.from('momentum_history').upsert(
       {
         user_id: userId,

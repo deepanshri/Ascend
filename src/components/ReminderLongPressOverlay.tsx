@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { motion } from 'motion/react';
 import { StandaloneReminder } from '../types';
 import { ASCEND_STATUS_CHIP_CLASS } from '../utils/categories';
+import { addDaysIso, toISODate } from '../utils/dates';
 
 interface ReminderLongPressOverlayProps {
   reminder: StandaloneReminder;
@@ -47,8 +48,8 @@ export const ReminderLongPressOverlay: React.FC<ReminderLongPressOverlayProps> =
 
   // Date formatting helper
   const formatReminderDate = (dateStr: string, timeStr?: string) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const today = toISODate();
+    const tomorrow = addDaysIso(today, 1);
 
     let prefix = '';
     if (dateStr === today) {

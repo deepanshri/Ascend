@@ -4,6 +4,7 @@ import { MotionModal } from './MotionModal';
 import { tapPress } from '../lib/motionPresets';
 import { Habit, IdentityEvidence, ThemeMode, HabitCompletionEvent, MomentumEvent } from '../types';
 import { habitCategoryLabel } from '../utils/categories';
+import { toISODate } from '../utils/dates';
 import { NotificationWindowToggles } from './NotificationWindowToggles';
 import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import type { NotificationWindowKey, PsychologyNotificationWindows } from '../lib/notifications';
@@ -101,7 +102,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ascend-habits-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `ascend-habits-backup-${toISODate()}.json`;
     a.click();
     URL.revokeObjectURL(url);
 
@@ -149,7 +150,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ascend-habits-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `ascend-habits-log-${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
 

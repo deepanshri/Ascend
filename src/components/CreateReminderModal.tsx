@@ -5,6 +5,7 @@ import { tapPress } from '../lib/motionPresets';
 import { StandaloneReminder, UserSession } from '../types';
 import { reminderNotificationIds, weekdayFromIsoDate } from '../lib/notifications';
 import { upsertPublicReminder } from '../lib/supabase';
+import { toISODate } from '../utils/dates';
 
 const FIELD_CLASS =
   'w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-[12.5px] transition-colors focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6]';
@@ -29,13 +30,13 @@ export const CreateReminderModal: React.FC<CreateReminderModalProps> = ({
   onAddReminder,
 }) => {
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => toISODate());
   const [time, setTime] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
     setTitle('');
-    setDate(new Date().toISOString().slice(0, 10));
+    setDate(toISODate());
     setTime('');
   }, [isOpen]);
 
@@ -135,7 +136,7 @@ export const CreateReminderModal: React.FC<CreateReminderModalProps> = ({
                       Date
                       <button
                         type="button"
-                        onClick={() => setDate(new Date().toISOString().slice(0, 10))}
+                        onClick={() => setDate(toISODate())}
                         className="text-[10px] text-[#22C55E] dark:text-[#3B82F6] font-semibold cursor-pointer hover:underline"
                       >
                         Today

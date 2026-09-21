@@ -32,7 +32,19 @@ import {
   deleteHabitLog,
 } from './utils/momentum';
 import { appendMomentumEventRemote, fetchMomentumEventsFromTable, loadLocalMomentumEvents, MOMENTUM_EVENTS_STORAGE_KEY, saveLocalMomentumEvents } from './lib/momentumEvents';
-import { endOfIsoDate, formatEvidenceDate, getTodayDayIndex, getWeekDates, resolveEventIsoDate, startOfDay, toISODate } from './utils/dates';
+import {
+  addDaysIso,
+  diffDaysIso,
+  endOfIsoDate,
+  formatEvidenceDate,
+  getTodayDayIndex,
+  getWeekDates,
+  isIsoDate,
+  parseIsoDateParts,
+  resolveEventIsoDate,
+  startOfDay,
+  toISODate,
+} from './utils/dates';
 import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso, scheduledHabitsForDayIndex } from './utils/schedule';
 import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome, hideNativeSplash } from './lib/nativeChrome';
@@ -523,46 +535,107 @@ export default function App() {
     });
   }, [safeActiveTab]);
 
-  const [calendarOrigin, setCalendarOrigin] = useState<Date>(() => startOfDay(new Date()));
+  const CALENDAR_LAST_ACTIVE_KEY = 'ascend_last_active_date';
+
+  const [calendarOrigin, setCalendarOrigin] = useState<Date>(() => {
+    try {
+      const saved = localStorage.getItem('ascend_last_active_date');
+      if (saved && isIsoDate(saved)) {
+        const parts = parseIsoDateParts(saved);
+        if (parts) {
+          return startOfDay(new Date(parts.year, parts.month - 1, parts.day));
+        }
+      }
+    } catch {}
+    return startOfDay(new Date());
+  });
   const [currentSelectedDate, setCurrentSelectedDate] = useState<string>(() => toISODate());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  useEffect(() => {
+    (window as any).__setCalendarOrigin = (target: Date | string) => {
+      let d: Date;
+      if (typeof target === 'string') {
+        const parts = parseIsoDateParts(target);
+        d = parts ? new Date(parts.year, parts.month - 1, parts.day) : new Date(target);
+      } else {
+        d = target;
+      }
+      setCalendarOrigin(startOfDay(d));
+    };
+    return () => {
+      delete (window as any).__setCalendarOrigin;
+    };
+  }, []);
 
   useEffect(() => {
     const rollForwardIfMidnightPassed = () => {
       const nowIso = toISODate();
       const originIso = toISODate(calendarOrigin);
-      if (nowIso === originIso) return;
+      if (nowIso === originIso) {
+        try {
+          localStorage.setItem(CALENDAR_LAST_ACTIVE_KEY, nowIso);
+        } catch {}
+        return;
+      }
 
       setProtection((prev) => tickProtectionState(prev, nowIso));
 
-      if (!examShieldRef.current && !vacationModeRef.current) {
-        const missed = collectMissedMomentumEvents(
-          habitsRef.current,
-          momentumEventsRef.current,
-          originIso,
-          calendarOrigin
-        );
-        if (missed.length > 0) {
-          setMomentumEvents((prev) => mergeMomentumEvents(prev, missed));
+      const dayDiff = diffDaysIso(originIso, nowIso);
+      if (dayDiff > 0) {
+        let runningEvents = momentumEventsRef.current;
+        const accumulatedMissed: MomentumEvent[] = [];
+        const accumulatedPrompts: { habitId: string; habitName: string; loggedDate: string }[] = [];
+
+        // Loop day-by-day from calendarOrigin up to (today - 1 day)
+        for (let step = 0; step < dayDiff; step++) {
+          const stepIso = addDaysIso(originIso, step);
+          const parts = parseIsoDateParts(stepIso);
+          const stepOrigin = parts
+            ? new Date(parts.year, parts.month - 1, parts.day, 12, 0, 0)
+            : new Date(calendarOrigin.getTime() + step * 86_400_000);
+
+          if (!examShieldRef.current && !vacationModeRef.current) {
+            const missed = collectMissedMomentumEvents(
+              habitsRef.current,
+              runningEvents,
+              stepIso,
+              stepOrigin
+            );
+            if (missed.length > 0) {
+              accumulatedMissed.push(...missed);
+              runningEvents = mergeMomentumEvents(runningEvents, missed);
+              missed.forEach((event) => {
+                const habit = habitsRef.current.find((item) => item.id === event.habitId);
+                accumulatedPrompts.push({
+                  habitId: event.habitId,
+                  habitName: habit?.name || 'Habit',
+                  loggedDate: stepIso,
+                });
+              });
+            }
+          }
+        }
+
+        if (accumulatedMissed.length > 0) {
+          setMomentumEvents((prev) => mergeMomentumEvents(prev, accumulatedMissed));
           const userId = sessionRef.current?.id;
-          missed.forEach((event) => {
+          accumulatedMissed.forEach((event) => {
             void appendMomentumEventRemote(userId, event);
           });
-          const prompts = missed.map((event) => {
-            const habit = habitsRef.current.find((item) => item.id === event.habitId);
-            return {
-              habitId: event.habitId,
-              habitName: habit?.name || 'Habit',
-              loggedDate: originIso,
-            };
-          });
-          setPendingFriction((prev) => enqueueFrictionPrompts(prev, prompts));
+        }
+        if (accumulatedPrompts.length > 0) {
+          setPendingFriction((prev) => enqueueFrictionPrompts(prev, accumulatedPrompts));
         }
       }
 
+      // Update calendarOrigin only after processing all intermediate days
       const nextOrigin = startOfDay(new Date());
       const week = getWeekDates(nextOrigin).map((date) => toISODate(date));
       setCalendarOrigin(nextOrigin);
+      try {
+        localStorage.setItem(CALENDAR_LAST_ACTIVE_KEY, nowIso);
+      } catch {}
       setCurrentSelectedDate((prev) => {
         if (prev === originIso) return nowIso;
         return week.includes(prev) ? prev : nowIso;

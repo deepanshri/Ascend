@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, memo, startTransition 
 import { motion, useMotionValue, useTransform, animate as motionAnimate } from 'motion/react';
 import { StandaloneReminder } from '../types';
 import { ASCEND_STATUS_CHIP_CLASS } from '../utils/categories';
+import { addDaysIso, toISODate } from '../utils/dates';
 import {
   SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD,
   SWIPE_COMMIT_VELOCITY,
@@ -308,8 +309,8 @@ function ReminderCardInner({
   }, [clearLongPressTimer]);
 
   const formatReminderDate = (dateStr: string, timeStr?: string) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const today = toISODate();
+    const tomorrow = addDaysIso(today, 1);
 
     if (!timeStr && dateStr === today) return '';
 
@@ -334,7 +335,7 @@ function ReminderCardInner({
         color: ASCEND_STATUS_CHIP_CLASS,
       };
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = toISODate();
     if (!timeStr) {
       if (dateStr < today) {
         return {
