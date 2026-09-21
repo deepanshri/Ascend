@@ -36,21 +36,17 @@ const THEME_CAVITY = {
     cy: 52,
     rx: 33,
     ry: 16,
-    rimCy: 26,
-    rimRx: 41,
-    // Clip tight to the actual bowl interior floor (not the front glass rim)
-    clip: 'ellipse(38% 21% at 50% 52%)',
-    // Strong rim mask — covers the front glass overlay aggressively so pieces stay BEHIND it
-    rimMask: 'radial-gradient(ellipse 44% 40% at 50% 48%, transparent 44%, rgba(0,0,0,0.5) 55%, #000 65%)',
+    clip: 'ellipse(36% 20% at 50% 53%)',
+    frontGlassMask:
+      'linear-gradient(180deg, transparent 0%, transparent 34%, rgba(0,0,0,0.35) 42%, rgba(0,0,0,0.85) 49%, #000 58%, #000 100%)',
   },
   dark: {
     cy: 54,
     rx: 32,
     ry: 15,
-    rimCy: 28,
-    rimRx: 40,
-    clip: 'ellipse(36% 20% at 50% 54%)',
-    rimMask: 'radial-gradient(ellipse 42% 38% at 50% 49%, transparent 42%, rgba(0,0,0,0.5) 53%, #000 63%)',
+    clip: 'ellipse(35% 19% at 50% 54%)',
+    frontGlassMask:
+      'linear-gradient(180deg, transparent 0%, transparent 35%, rgba(0,0,0,0.35) 43%, rgba(0,0,0,0.85) 50%, #000 60%, #000 100%)',
   },
 } as const;
 
@@ -160,156 +156,110 @@ function hashString(str: string): number {
 }
 
 /**
- * Procedural organic slot generation inside the bowl floor ellipse.
- * Un-aligned, casually packed with procedural jitter while strictly
- * bounded within the inner perimeter.
+ * Procedural random scatter algorithm inside the bounded bowl floor ellipse.
+ * Eliminates artificial grid/line stacking at the top rim by computing
+ * bounded elliptical scatter coordinates with organic deterministic jitter.
+ *
+ * Formula:
+ *   x = centerX + (rand(-1, 1) * radiusX * 0.75)
+ *   y = centerY + (rand(-1, 1) * radiusY * 0.5) + verticalBias
+ *   rotation = rand(0, 360)
+ *
+ * Strict containment:
+ *   (x / (rx * 0.82))^2 + ((y - cy) / (ry * 0.82))^2 <= 1
  */
-function buildOrganicSlots(layout: CavityLayout, count: number = 60): { xPct: number; yPct: number }[] {
-  const cx = BOWL_W / 2;
-  const cy = (layout.cy / 100) * BOWL_H;
-  const rx = Math.max(1, (layout.rx / 100) * BOWL_W - PIECE_R * 0.9);
-  const ry = Math.max(1, (layout.ry / 100) * BOWL_H - PIECE_R * 0.9);
-
-  const slots: { x: number; y: number }[] = [];
-  const minDistSq = (PIECE_SIZE * 0.78) * (PIECE_SIZE * 0.78);
-
-  // Center cluster first, then spiral outwards organically with phyllotaxis + jitter
-  slots.push({ x: cx, y: cy });
-
-  for (let i = 1; slots.length < count && i < 220; i++) {
-    // Golden angle spiral (~137.5 degrees) for natural organic packing
-    const phi = i * 2.3999632;
-    const rNorm = Math.sqrt((i + 0.5) / 130);
-    if (rNorm > 0.92) continue;
-
-    const jitterX = hashUnit(i * 17 + 3) * (PIECE_R * 0.45);
-    const jitterY = hashUnit(i * 29 + 11) * (PIECE_R * 0.35);
-
-    const x = cx + Math.cos(phi) * rx * rNorm + jitterX;
-    const y = cy + Math.sin(phi) * ry * rNorm + jitterY;
-
-    // Strict ellipse containment check
-    const nx = (x - cx) / rx;
-    const ny = (y - cy) / ry;
-    if (nx * nx + ny * ny > 0.92) continue;
-
-    // Avoid unnatural overlapping
-    let ok = true;
-    for (let j = 0; j < slots.length; j++) {
-      const dx = x - slots[j].x;
-      const dy = y - slots[j].y;
-      if (dx * dx + dy * dy < minDistSq) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok) {
-      slots.push({ x, y });
-    }
-  }
-
-  // Fill order: bottom of the cavity first (physical gravity stacking)
-  slots.sort((a, b) => b.y - a.y || Math.abs(a.x - cx) - Math.abs(b.x - cx));
-  return slots.map((c) => pxToPct(c.x, c.y));
-}
-
-/**
- * Spill landings over / outside the rim — never into the foot or under the bowl.
- * Hooked from the same `isOverflowing` (≥80% of C) flag as the old glow.
- */
-function buildSpillSlots(layout: CavityLayout, count: number): { xPct: number; yPct: number }[] {
-  const cx = BOWL_W / 2;
-  const rimCy = (layout.rimCy / 100) * BOWL_H;
-  const rimRx = (layout.rimRx / 100) * BOWL_W;
-  const slots: { xPct: number; yPct: number }[] = [];
-
-  for (let i = 0; i < count; i++) {
-    const ring = Math.floor(i / 7);
-    const slot = i % 7;
-    const t = (slot - 3) / 3; // -1 … +1 across the lip
-    const jitter = hashUnit(i * 5 + 2) * 1.6;
-
-    if (ring === 0) {
-      // Rest on / just outside the rim crest.
-      const x = cx + t * (rimRx + PIECE_R * 0.4) + jitter;
-      const y = rimCy - PIECE_R * 0.35 + Math.abs(t) * 1.5 + hashUnit(i) * 1.2;
-      slots.push(pxToPct(x, y));
-      continue;
-    }
-
-    // Later rings cascade down the OUTER shoulders (clear of the stem).
-    const side = t === 0 ? (i % 2 === 0 ? -1 : 1) : Math.sign(t);
-    const x = cx + side * (rimRx + PIECE_R + 3 + (ring - 1) * (PIECE_SIZE * 0.65) + Math.abs(t) * 2) + jitter;
-    const y = rimCy + ring * (PIECE_SIZE * 0.7) + Math.abs(t) * 2;
-    slots.push(pxToPct(x, y));
-  }
-  return slots;
-}
-
-const STATIC_SLOTS_LIGHT = buildOrganicSlots(THEME_CAVITY.light, 60);
-const STATIC_SLOTS_DARK = buildOrganicSlots(THEME_CAVITY.dark, 60);
-const STATIC_SPILLS_LIGHT = buildSpillSlots(THEME_CAVITY.light, 35);
-const STATIC_SPILLS_DARK = buildSpillSlots(THEME_CAVITY.dark, 35);
-
 function layoutPieces(
   pieces: AccumulationPiece[],
-  isOverflowing: boolean,
-  isDark: boolean,
-  celebrating: boolean,
-  capacity: number
+  isDark: boolean
 ): LaidPiece[] {
   const layout = isDark ? THEME_CAVITY.dark : THEME_CAVITY.light;
   const visible = pieces.slice(-MAX_VISIBLE_PIECES);
-  const organicSlots = isDark ? STATIC_SLOTS_DARK : STATIC_SLOTS_LIGHT;
-  const maxInside = organicSlots.length;
+  const totalCount = visible.length;
 
-  // Soft cap mirrors reportService OVERFLOW_FILL_RATIO (80% of C = habits × cycleDays).
-  // Spill replaces the old overflow glow: at ≥80%, pieces past softCap tumble
-  // over the rim even if hex slots remain. Floor-full also spills (physical cap).
-  const softCap = Math.max(0, Math.floor(Math.max(0, capacity) * OVERFLOW_FILL_RATIO));
-  let insideBudget: number;
-  if (celebrating) {
-    // Cycle complete → keep a small floor cluster; rest spill over the rim
-    // (never the old +22% shove that dumped pieces under the foot).
-    insideBudget = Math.min(maxInside, Math.max(0, Math.floor(visible.length * 0.35)));
-  } else if (isOverflowing) {
-    insideBudget = Math.min(maxInside, softCap, visible.length);
-  } else {
-    insideBudget = Math.min(maxInside, visible.length);
-  }
+  const centerX = 0; // xPct relative to 50% horizontal center
+  const centerY = layout.cy;
+  const radiusX = layout.rx;
+  const radiusY = layout.ry;
+  const maxRx = radiusX * 0.82;
+  const maxRy = radiusY * 0.82;
 
-  const spillSlots = isDark ? STATIC_SPILLS_DARK : STATIC_SPILLS_LIGHT;
-  const spillFallback = { xPct: 0, yPct: layout.rimCy - 8 };
+  const laidPieces: LaidPiece[] = [];
 
-  return visible.map((piece, index) => {
-    const spills = index >= insideBudget;
-    const slot = spills
-      ? spillSlots[index - insideBudget] ?? spillFallback
-      : organicSlots[index] ?? { xPct: 0, yPct: layout.cy };
+  for (let index = 0; index < totalCount; index++) {
+    const piece = visible[index];
+    const seed = hashString(piece.id || `${piece.habitId}-${index}`);
 
-    const pieceSeed = hashString(piece.id || `${piece.habitId}-${index}`);
-    // Random rotation across full 360 degrees (unaligned, casual)
-    const rotation = Math.abs((pieceSeed * 179) % 360);
-    // Natural scale variance: 0.95 - 1.05
-    const scale = 0.95 + Math.abs(hashUnit(index * 23 + 7)) * 0.1;
+    // Bounded pseudo-random values in [-1, 1]
+    const randX = hashUnit(seed * 17 + index * 7 + 11);
+    const randY = hashUnit(seed * 31 + index * 11 + 23);
+    const randRot = Math.abs(seed * 179 + index * 41) % 360;
+    const randScale = 0.94 + Math.abs(hashUnit(seed * 43 + index * 13 + 7)) * 0.12;
 
-    return {
+    // Spec formula:
+    // x = centerX + (random(-1, 1) * radiusX * 0.75)
+    // y = centerY + (random(-1, 1) * radiusY * 0.5)
+    // Newer pieces cluster naturally inside the bottom container volume
+    const depthProgression = totalCount > 1 ? index / (totalCount - 1) : 0;
+    const verticalBias = (depthProgression - 0.5) * (radiusY * 0.25);
+
+    let xPct = centerX + randX * radiusX * 0.75;
+    let yPct = centerY + randY * radiusY * 0.5 + verticalBias;
+
+    // Strict ellipse containment check: (x / maxRx)^2 + ((y - cy) / maxRy)^2 <= 1
+    const dx = (xPct - centerX) / maxRx;
+    const dy = (yPct - centerY) / maxRy;
+    const distSq = dx * dx + dy * dy;
+
+    if (distSq > 1) {
+      const norm = Math.sqrt(distSq);
+      xPct = centerX + (xPct - centerX) / norm;
+      yPct = centerY + (yPct - centerY) / norm;
+    }
+
+    // Pairwise separation pass to prevent unnatural direct stacking
+    for (let j = 0; j < laidPieces.length; j++) {
+      const prev = laidPieces[j].coords;
+      const sepX = xPct - prev.xPct;
+      const sepY = (yPct - prev.yPct) * (radiusX / radiusY);
+      const sepDistSq = sepX * sepX + sepY * sepY;
+      const minDist = 5.2; // minimum separation threshold
+      if (sepDistSq < minDist * minDist && sepDistSq > 0.001) {
+        const sepDist = Math.sqrt(sepDistSq);
+        const push = (minDist - sepDist) * 0.45;
+        xPct += (sepX / sepDist) * push;
+        yPct += ((sepY / sepDist) * push) * (radiusY / radiusX);
+      }
+    }
+
+    // Final safety clamp to ellipse bounds
+    const finalDx = (xPct - centerX) / maxRx;
+    const finalDy = (yPct - centerY) / maxRy;
+    const finalDistSq = finalDx * finalDx + finalDy * finalDy;
+    if (finalDistSq > 1) {
+      const norm = Math.sqrt(finalDistSq);
+      xPct = centerX + (xPct - centerX) / norm;
+      yPct = centerY + (yPct - centerY) / norm;
+    }
+
+    laidPieces.push({
       piece,
       index,
       coords: {
-        xPct: slot.xPct,
-        yPct: slot.yPct,
-        rotation,
-        scale,
-        entryXPct: hashUnit(index * 17 + 9) * 8,
-        spills,
+        xPct,
+        yPct,
+        rotation: randRot,
+        scale: randScale,
+        entryXPct: hashUnit(index * 17 + 9) * 6,
+        spills: false,
       },
-    };
-  });
+    });
+  }
+
+  return laidPieces;
 }
 
-/** Center-anchored box — fixes the old top-left `top`/`left` offset bug. */
-const pieceBoxStyle = (): React.CSSProperties => ({
+/** Center-anchored box with DOM depth order. */
+const pieceBoxStyle = (zIndex: number = 10): React.CSSProperties => ({
   width: PIECE_SIZE,
   height: PIECE_SIZE,
   minWidth: PIECE_SIZE,
@@ -320,7 +270,7 @@ const pieceBoxStyle = (): React.CSSProperties => ({
   position: 'absolute',
   marginLeft: -PIECE_R,
   marginTop: -PIECE_R,
-  zIndex: 10,
+  zIndex,
 });
 
 const MarblePiece: React.FC<{
@@ -347,7 +297,7 @@ const MarblePiece: React.FC<{
     const rotation = Number.isFinite(coords?.rotation) ? coords.rotation : 0;
     const scale = Number.isFinite(coords?.scale) ? coords.scale : 1;
 
-    const box = pieceBoxStyle();
+    const box = pieceBoxStyle(10 + item.index);
 
     return (
       <motion.div
@@ -467,12 +417,9 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
     () =>
       layoutPieces(
         Array.isArray(pieces) ? pieces : [],
-        isOverflowing,
-        darkMode,
-        celebrating,
-        capacity
+        darkMode
       ),
-    [pieces, isOverflowing, darkMode, celebrating, capacity]
+    [pieces, darkMode]
   );
 
   const visibleLaid = useMemo(() => {
@@ -480,8 +427,6 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
     return laid.filter((item) => !deferredPieceIds.has(item.piece.id));
   }, [laid, deferredPieceIds]);
 
-  const insidePieces = visibleLaid.filter((item) => !item.coords.spills);
-  const spillPieces = visibleLaid.filter((item) => item.coords.spills);
   const roundedFill = Math.round(fillPercent);
 
   useEffect(() => {
@@ -539,7 +484,8 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
           className="pointer-events-none absolute left-1/2 top-[56%] h-0 w-0 -translate-x-1/2"
           aria-hidden="true"
         />
-        {/* Layer 1 — back glass */}
+
+        {/* Layer 1 — Back Interior Glass (z-index: 10) */}
         {bowlBroken || !bowlSrc ? (
           <BowlShellFallback isDark={darkMode} />
         ) : (
@@ -549,60 +495,64 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
             alt=""
             draggable={false}
             onError={() => setBowlBroken(true)}
-            className="pointer-events-none absolute inset-0 z-[1] h-full w-full object-contain"
+            className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain"
           />
         )}
 
-        {/* Layer 2 — flat packed pieces inside the cavity (clipped to rim oval) */}
+        {/* Layer 2 — Marble Pieces Container (z-index: 20, clipped strictly to inner rim contour) */}
         <div
-          className="pointer-events-none absolute inset-0 z-[2] overflow-hidden"
+          className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
           style={{
             clipPath: cavity.clip,
             WebkitClipPath: cavity.clip,
           }}
         >
           <div className="relative h-full w-full">
-            <PieceLayer items={insidePieces} isDark={darkMode} settlePieceIds={settlePieceIds} />
+            <PieceLayer items={visibleLaid} isDark={darkMode} settlePieceIds={settlePieceIds} />
           </div>
         </div>
 
-        {/* Layer 3 — front rim overlay: opacity boosted + stronger mask to visually place pieces INSIDE */}
+        {/* Layer 3 — Front Glass Lip & Reflection Overlay (z-index: 30, pointer-events: none) */}
         {!bowlBroken && bowlSrc ? (
           <img
-            key={`bowl-rim-${darkMode ? 'night' : 'morning'}`}
+            key={`bowl-front-${darkMode ? 'night' : 'morning'}`}
             src={bowlSrc}
             alt=""
             draggable={false}
             onError={() => setBowlBroken(true)}
-            className="pointer-events-none absolute inset-0 z-[3] h-full w-full object-contain"
+            className="pointer-events-none absolute inset-0 z-30 h-full w-full object-contain"
             style={{
-              WebkitMaskImage: cavity.rimMask,
-              maskImage: cavity.rimMask,
+              WebkitMaskImage: cavity.frontGlassMask,
+              maskImage: cavity.frontGlassMask,
               opacity: 1,
             }}
           />
         ) : null}
 
+        {/* Front specular glass reflection & rim highlights (z-index: 30) */}
         <div
-          className="pointer-events-none absolute inset-0 z-[3] mix-blend-overlay"
+          className="pointer-events-none absolute inset-0 z-30 mix-blend-overlay"
           style={{
             background:
-              'linear-gradient(180deg, transparent 30%, rgba(255,255,255,0.18) 48%, transparent 62%)',
-            WebkitMaskImage: cavity.rimMask,
-            maskImage: cavity.rimMask,
+              'radial-gradient(ellipse 65% 35% at 50% 60%, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.08) 50%, transparent 80%)',
+          }}
+          aria-hidden="true"
+        />
+        <div
+          className="pointer-events-none absolute inset-0 z-30"
+          style={{
+            background:
+              'linear-gradient(180deg, transparent 40%, rgba(255,255,255,0.22) 48%, rgba(255,255,255,0.06) 56%, transparent 66%)',
+            WebkitMaskImage: cavity.frontGlassMask,
+            maskImage: cavity.frontGlassMask,
           }}
           aria-hidden="true"
         />
 
-        {/* Spill layer — above the rim; same isOverflowing (≥80%) trigger; replaces overflow glow */}
-        <div className="pointer-events-none absolute inset-0 z-[4] overflow-visible">
-          <PieceLayer items={spillPieces} isDark={darkMode} settlePieceIds={settlePieceIds} />
-        </div>
-
-        {/* Cycle-complete flash only — overflow feedback is the spill, not a persistent glow */}
+        {/* Cycle-complete celebration flash */}
         {celebrating && (
           <motion.div
-            className={`pointer-events-none absolute inset-x-4 bottom-2 z-[5] h-8 rounded-full blur-md ${
+            className={`pointer-events-none absolute inset-x-4 bottom-2 z-[35] h-8 rounded-full blur-md ${
               darkMode ? 'bg-blue-400/40' : 'bg-emerald-400/35'
             }`}
             initial={{ opacity: 0, scaleX: 0.4 }}
