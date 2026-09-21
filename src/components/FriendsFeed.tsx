@@ -519,7 +519,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
           title="Add Friends"
           className={HEADER_ICON_BTN_CLASS}
         >
-          <UserPlus className="w-4 h-4" strokeWidth={2.2} />
+          <UserPlus className="w-5 h-5" strokeWidth={2.2} />
         </motion.button>
         {friendsModal}
         {ledgerModal}

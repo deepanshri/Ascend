@@ -2102,7 +2102,7 @@ export default function App() {
                     title="Add Habit"
                     className={HEADER_ICON_BTN_CLASS}
                   >
-                    <Plus className="w-4 h-4" strokeWidth={2.5} />
+                    <Plus className="w-5 h-5" strokeWidth={2.5} />
                   </motion.button>
                 </>
               }

@@ -656,9 +656,9 @@ function HabitCardInner({
                               key={dayIdx}
                               id={`habit-${habit.id}-day-${dayIdx + 1}`}
                               title={`Day ${dayIdx + 1}: Not scheduled`}
-                              className={`w-6 h-6 rounded-md flex items-center justify-center select-none cursor-default border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/40 ${viewedRing}`}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center select-none cursor-default bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 text-slate-400 ${viewedRing}`}
                             >
-                              <span className="text-[8px] font-bold text-slate-300 dark:text-slate-600 leading-none">
+                              <span className="text-[8.5px] font-bold text-slate-400 dark:text-slate-500 leading-none">
                                 —
                               </span>
                             </div>
@@ -677,12 +677,12 @@ function HabitCardInner({
                                     : 'Completed (100%)'
                                   : 'Missed'
                               }`}
-                              className={`w-6 h-6 rounded-md flex items-center justify-center select-none cursor-default ${viewedRing} ${
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center select-none cursor-default ${viewedRing} ${
                                 isDone
                                   ? isMicro
                                     ? 'bg-emerald-300 dark:bg-blue-400 text-emerald-950 dark:text-slate-950 border border-emerald-300 dark:border-blue-500'
                                     : 'bg-emerald-600 dark:bg-blue-600 text-white shadow-2xs'
-                                  : 'bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700'
+                                  : 'bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 text-slate-400'
                               }`}
                             >
                               {isDone ? (
@@ -705,7 +705,7 @@ function HabitCardInner({
                                   </svg>
                                 )
                               ) : (
-                                <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+                                <span className="w-1 h-1 rounded-full bg-slate-400 dark:bg-slate-500" />
                               )}
                             </div>
                           );
@@ -728,7 +728,7 @@ function HabitCardInner({
                                 title={`Day ${dayIdx + 1} (Today): ${
                                   isTodayMicro ? 'Micro fallback completed' : 'Completed'
                                 }. Tap or swipe to reset.`}
-                                className={`w-6 h-6 rounded-md flex items-center justify-center select-none cursor-pointer ring-2 ring-emerald-500/20 dark:ring-blue-500/20 ${
+                                className={`w-6 h-6 rounded-lg flex items-center justify-center select-none cursor-pointer ring-2 ring-emerald-500/20 dark:ring-blue-500/20 ${
                                   isTodayMicro
                                     ? 'bg-emerald-300 dark:bg-blue-400 text-emerald-950 dark:text-slate-950 border border-emerald-400 dark:border-blue-500 shadow-2xs'
                                     : 'bg-emerald-600 dark:bg-blue-600 text-white shadow-2xs border border-emerald-700 dark:border-blue-500'
@@ -771,7 +771,7 @@ function HabitCardInner({
                                   scheduleComplete(true);
                                 }}
                                 title="Fallback active: Tap or swipe right to complete fallback"
-                                className="w-6 h-6 rounded-md flex items-center justify-center select-none cursor-pointer bg-emerald-50 dark:bg-blue-950 border-2 border-emerald-500 dark:border-blue-500 text-emerald-700 dark:text-blue-300 shadow-xs"
+                                className="w-6 h-6 rounded-lg flex items-center justify-center select-none cursor-pointer bg-emerald-50 dark:bg-blue-950 border-2 border-emerald-500 dark:border-blue-500 text-emerald-700 dark:text-blue-300 shadow-xs"
                               >
                                 <span className="text-[12px] font-black text-emerald-700 dark:text-blue-300 font-mono leading-none">
                                   ~
@@ -795,7 +795,7 @@ function HabitCardInner({
                                 scheduleComplete(false);
                               }}
                               title="Today: Tap or swipe right to complete, swipe left for fallback"
-                              className="w-6 h-6 rounded-md flex items-center justify-center select-none cursor-pointer bg-emerald-50/90 dark:bg-blue-950/90 border-2 border-emerald-500 dark:border-blue-500 text-emerald-700 dark:text-blue-300 shadow-xs"
+                              className="w-6 h-6 rounded-lg flex items-center justify-center select-none cursor-pointer bg-emerald-50/90 dark:bg-blue-950/90 border-2 border-emerald-500 dark:border-blue-500 text-emerald-700 dark:text-blue-300 shadow-xs"
                             >
                               <span className="text-[9px] font-black text-emerald-700 dark:text-blue-300">
                                 {getWeekDateNumber(todayIndex)}
@@ -809,9 +809,9 @@ function HabitCardInner({
                             key={dayIdx}
                             id={`habit-${habit.id}-day-${dayIdx + 1}`}
                             title={`Day ${dayIdx + 1}: Locked`}
-                            className="w-6 h-6 rounded-md flex items-center justify-center select-none cursor-default bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200/80 dark:border-slate-700 text-slate-300 dark:text-slate-600"
+                            className="w-6 h-6 rounded-lg flex items-center justify-center select-none cursor-default bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 text-slate-400"
                           >
-                            <span className="text-[8.5px] font-bold text-slate-300 dark:text-slate-600 leading-none">
+                            <span className="text-[8.5px] font-bold text-slate-400 dark:text-slate-500 leading-none">
                               —
                             </span>
                           </div>
@@ -824,7 +824,7 @@ function HabitCardInner({
                     <span
                       title={tagFullName}
                       aria-label={tagFullName}
-                      className={`min-w-[1.75rem] px-1.5 py-1 rounded-lg text-[10px] font-black tracking-wide text-center border transition ${tagClass}`}
+                      className={`min-w-[1.75rem] px-1.5 py-1 rounded-md text-[10px] font-black tracking-wide text-center border transition ${tagClass}`}
                     >
                       {tagLabel}
                     </span>

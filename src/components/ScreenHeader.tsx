@@ -31,7 +31,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
           <p className="text-[13px] text-slate-500 dark:text-slate-400 font-normal mt-1 leading-snug">{subtitle}</p>
         ) : null}
       </div>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2.5 shrink-0">
         {actions}
         {onOpenSettings ? (
           <button
@@ -46,7 +46,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                 : 'bg-white/90 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800 shadow-xs'
             }`}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"

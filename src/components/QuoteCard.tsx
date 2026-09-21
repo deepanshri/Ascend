@@ -483,7 +483,7 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
       aria-label={isTip ? 'App tip, tap for next' : 'Quote, tap for next'}
       onClick={goNext}
       layout={false}
-      className="my-1 w-full h-auto cursor-pointer rounded-xl py-1 px-2.5 bg-surface text-ink border border-line shadow-2xs select-none text-left transition-all duration-300 overflow-visible"
+      className="my-1 w-full h-auto cursor-pointer bg-slate-50/80 dark:bg-slate-800/40 border-none rounded-xl p-3.5 select-none text-left transition-all duration-300 overflow-visible"
     >
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
