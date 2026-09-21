@@ -10,7 +10,7 @@ export type ScheduleType = 'daily' | 'specific_days' | 'interval' | 'weekly_targ
 
 export type CompletionType = 'full' | 'fallback_micro';
 
-export type MomentumEventType = 'full' | 'fallback' | 'missed';
+export type MomentumEventType = 'full' | 'fallback' | 'missed' | 'reversal';
 
 /** Append-only swipe / miss record. Historical rows are never overwritten. */
 export interface MomentumEvent {

@@ -83,11 +83,30 @@ export function applyMomentumDecayStep(
   return applyRollingMomentumStep(prev, score, weight, decayFactor);
 }
 
+/**
+ * Reversal step: Inverts the observation added by a previous completion event.
+ * nextScore = clamp((prevScore - observation * δ) / (1 - δ), 0, 100)
+ */
+export function applyReversalMomentumStep(
+  prevScore: number,
+  eventWeight: number,
+  decayFactor: number = MOMENTUM_DECAY_FACTOR
+): number {
+  const observation = (eventWeight / WORK_HABIT_WEIGHT) * 100;
+  const denominator = 1 - decayFactor;
+  if (denominator <= 0) return clampMomentum(prevScore - observation);
+  const reversed = (prevScore - observation * decayFactor) / denominator;
+  return clampMomentum(reversed);
+}
+
 export function applyMomentumEvent(
   prev: number,
   event: Pick<MomentumEvent, 'eventType' | 'weight'>,
   decayFactor: number = MOMENTUM_DECAY_FACTOR
 ): number {
+  if (event.eventType === 'reversal') {
+    return applyReversalMomentumStep(prev, event.weight, decayFactor);
+  }
   return applyRollingMomentumStep(prev, eventScore(event.eventType), event.weight, decayFactor);
 }
 
@@ -115,13 +134,14 @@ export function createMomentumEvent(
   habit: Pick<Habit, 'id' | 'category'> & Partial<Pick<Habit, 'timeOfDay' | 'timestamp'>>,
   eventType: MomentumEventType,
   loggedDate: string = toISODate(),
-  timestamp: number = Date.now()
+  timestamp: number = Date.now(),
+  weight?: number
 ): MomentumEvent {
   return {
     id: newMomentumEventId(),
     habitId: habit.id,
     eventType,
-    weight: habitWeight({ category: habit.category } as Habit),
+    weight: weight !== undefined ? weight : habitWeight({ category: habit.category } as Habit),
     timestamp,
     loggedDate,
     timeOfDay: resolveHabitTimeOfDay({
@@ -175,12 +195,17 @@ export function countIdentityVotes(
 ): number {
   const allow = activeHabitIds ? new Set(activeHabitIds) : null;
   const keys = new Set<string>();
-  for (const event of events) {
-    if (event.eventType !== 'full' && event.eventType !== 'fallback') continue;
+  const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
+  for (const event of sorted) {
     if (allow && !allow.has(event.habitId)) continue;
     const iso = resolveMomentumEventDate(event);
     if (!iso) continue;
-    keys.add(`${event.habitId}::${iso}`);
+    const key = `${event.habitId}::${iso}`;
+    if (event.eventType === 'full' || event.eventType === 'fallback') {
+      keys.add(key);
+    } else if (event.eventType === 'reversal') {
+      keys.delete(key);
+    }
   }
   return keys.size;
 }
@@ -497,6 +522,10 @@ export function calculateMomentumScore(
   let prevScore = 0;
   for (const event of sorted) {
     if (asOf !== undefined && event.timestamp > asOf) continue;
+    if (event.eventType === 'reversal') {
+      prevScore = applyReversalMomentumStep(prevScore, event.weight, decayFactor);
+      continue;
+    }
     const eventScoreValue = eventScore(event.eventType);
     const eventWeight = event.weight;
     const habit = habitById?.get(event.habitId);

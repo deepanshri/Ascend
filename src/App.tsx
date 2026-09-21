@@ -21,6 +21,7 @@ import {
   calculateMomentumScore,
   collectMissedMomentumEvents,
   createMomentumEvent,
+  habitWeight,
   deriveHabitsFromEventLog,
   mergeCompletionEvents,
   mergeMomentumEvents,
@@ -1321,20 +1322,43 @@ export default function App() {
     setActiveFallbackIds((prev) => [...prev, habitId]);
   };
 
-  // GESTURE / TAP ACTION: Uncheck today. Daily habit_logs drop; momentum_events identity points stay
-  // unless still inside the grace window (pending remote flush) — then local vote is rolled back.
+  // GESTURE / TAP ACTION: Uncheck today. Daily habit_logs drop; momentum_events logs an append-only
+  // reversal record if completion was already committed, rolling back momentum and identity votes.
   const handleResetToday = (habitId: string) => {
     if (!isViewingToday) return;
     const loggedDate = toISODate(calendarOrigin);
+    const existingCompletion = completionEvents.find(
+      (e) => e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate
+    );
+    const wasFallback = existingCompletion?.type === 'fallback_micro';
     const rolledBackMomentum = cancelGraceMomentum(habitId);
+
     setCompletionEvents((prev) =>
       prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
     );
     void deleteHabitLog(session?.id, habitId, loggedDate, todayDayIndex).catch(() => {});
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
     setEvidenceList((prev) => removeTodayEvidence(prev, habitId, loggedDate, calendarOrigin));
+
     if (rolledBackMomentum) {
       setMomentumPulse((n) => n + 1);
+    } else {
+      // Habit completion was already committed/flushed to momentum_events ledger.
+      // Append an immutable 'reversal' event to roll back the score and ledger vote.
+      const targetHabit = habits.find((h) => h.id === habitId);
+      if (targetHabit) {
+        const baseWeight = habitWeight(targetHabit);
+        const reversalWeight = wasFallback ? baseWeight * 0.5 : baseWeight;
+        const reversalEvent = createMomentumEvent(
+          targetHabit,
+          'reversal',
+          loggedDate,
+          Date.now(),
+          reversalWeight
+        );
+        appendMomentumLog(reversalEvent);
+        setMomentumPulse((n) => n + 1);
+      }
     }
   };
 

@@ -55,7 +55,7 @@ export interface MomentumEventRecord {
 
 function parseMomentumEventType(raw: unknown): MomentumEventType | null {
   const value = String(raw || '').toLowerCase();
-  if (value === 'full' || value === 'fallback' || value === 'missed') return value;
+  if (value === 'full' || value === 'fallback' || value === 'missed' || value === 'reversal') return value;
   return null;
 }
 

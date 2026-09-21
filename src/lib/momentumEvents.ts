@@ -83,7 +83,8 @@ function enqueue(item: MomentumQueueItem): void {
 
 function parseEventType(raw: string | undefined): MomentumEventType | null {
   const value = String(raw || '').toLowerCase();
-  if (value === 'full' || value === 'fallback' || value === 'missed') return value;
+  if (value === 'full' || value === 'fallback' || value === 'missed' || value === 'reversal') return value;
+  if (value.includes('revers') || value.includes('undo') || value.includes('reset')) return 'reversal';
   if (value.includes('micro') || value.includes('fallback')) return 'fallback';
   if (value.includes('miss')) return 'missed';
   if (value === 'complete' || value === 'completed') return 'full';
