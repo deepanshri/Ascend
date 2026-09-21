@@ -13,35 +13,42 @@ const DROP_SPRING = { type: 'spring' as const, stiffness: 220, damping: 26, mass
 /** Spawn above the rim as a % of bowl height so drops scale with the container. */
 const SPAWN_Y_PCT = -36;
 const MAX_VISIBLE_PIECES = 28;
-/** Flat-plane disc diameter (px) — matches the 108×96 bowl frame. */
-const PIECE_SIZE = 14;
+/** Flat-plane disc diameter (px) — sized so ~10–14 pieces pack on the floor. */
+const PIECE_SIZE = 10;
 const BOWL_W = 108;
 const BOWL_H = 96;
 const PIECE_R = PIECE_SIZE / 2;
 
 /**
- * Visible interior ellipse of the bowl art (percent of the 108×96 frame).
- * Tuned to the glass cavity — NOT the full image bbox — so pieces never sit
- * in the empty corners or below the foot.
+ * Flat floor of the glass cavity (percent of the 108×96 frame).
  *
- * Centers are packed inside this ellipse shrunk by the piece radius so the
- * full disc stays inside the rim. Clip-path below mirrors the same oval.
+ * Root cause of “pieces below the bowl”: the previous packing used a tall
+ * volume ellipse (cy≈55, ry≈24 → bottoms near ~79%), which placed discs in
+ * the stem/foot and empty padding under the art — not the visible interior.
+ * Celebrating also shoved every piece +22% downward past the foot.
+ *
+ * This layout is a single shallow floor ellipse (looking into the bowl).
+ * Centers are inset by PIECE_R so disc edges stay inside the rim. Clip-path
+ * mirrors the floor; rimCy/rimRx define spill landings over the lip.
  */
 const THEME_CAVITY = {
   light: {
-    cy: 55,
-    rx: 38,
-    ry: 24,
-    /** Outer clip (piece edges) — slightly larger than center ellipse. */
-    clip: 'ellipse(44% 30% at 50% 55%)',
-    rimMask: 'radial-gradient(ellipse 44% 40% at 50% 52%, transparent 52%, #000 64%)',
+    cy: 49,
+    rx: 35,
+    ry: 18,
+    rimCy: 26,
+    rimRx: 41,
+    clip: 'ellipse(41% 24% at 50% 49%)',
+    rimMask: 'radial-gradient(ellipse 42% 36% at 50% 47%, transparent 48%, #000 62%)',
   },
   dark: {
-    cy: 56,
-    rx: 37,
-    ry: 23,
-    clip: 'ellipse(43% 29% at 50% 56%)',
-    rimMask: 'radial-gradient(ellipse 42% 38% at 50% 53%, transparent 50%, #000 62%)',
+    cy: 51,
+    rx: 34,
+    ry: 17,
+    rimCy: 28,
+    rimRx: 40,
+    clip: 'ellipse(40% 23% at 50% 51%)',
+    rimMask: 'radial-gradient(ellipse 40% 34% at 50% 48%, transparent 46%, #000 60%)',
   },
 } as const;
 
@@ -76,6 +83,10 @@ interface AccumulationBowlProps {
   onCycleDaysChange?: (days: CycleDays) => void;
   celebrating?: boolean;
   onCelebrationDone?: () => void;
+  /** Piece ids currently flying card→bowl — omit from cavity until they land. */
+  deferredPieceIds?: ReadonlySet<string>;
+  /** Piece ids that just landed — short settle instead of full spawn drop. */
+  settlePieceIds?: ReadonlySet<string>;
 }
 
 interface ParticleCoords {
@@ -137,66 +148,97 @@ function pxToPct(x: number, y: number): { xPct: number; yPct: number } {
   };
 }
 
-/**
- * Flat hex lattice of non-overlapping discs whose centers lie inside the
- * cavity ellipse (shrunk by piece radius). Edges touch (sep = diameter).
- * No stacking / z-piling — single plane only.
- */
-function buildFlatSlots(layout: CavityLayout): { xPct: number; yPct: number }[] {
-  const cx = BOWL_W / 2;
-  const cy = (layout.cy / 100) * BOWL_H;
-  const rx = Math.max(1, (layout.rx / 100) * BOWL_W - PIECE_R);
-  const ry = Math.max(1, (layout.ry / 100) * BOWL_H - PIECE_R);
-  const sep = PIECE_SIZE; // edge-to-edge contact
-  const rowH = sep * (Math.sqrt(3) / 2);
-
-  const centers: { x: number; y: number }[] = [];
-  let row = 0;
-  // Bottom → top so the bowl fills from the floor upward.
-  for (let y = cy + ry; y >= cy - ry - 0.01; y -= rowH) {
-    const dy = (y - cy) / ry;
-    const halfW = rx * Math.sqrt(Math.max(0, 1 - dy * dy));
-    const nest = (row % 2) * (sep / 2);
-    const xMin = cx - halfW;
-    const xMax = cx + halfW;
-    for (let x = xMin + nest; x <= xMax + 0.01; x += sep) {
-      const nx = (x - cx) / rx;
-      const ny = (y - cy) / ry;
-      if (nx * nx + ny * ny <= 1.002) {
-        centers.push({ x, y });
-      }
-    }
-    row += 1;
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
   }
-
-  centers.sort((a, b) => b.y - a.y || Math.abs(a.x - cx) - Math.abs(b.x - cx));
-  return centers.map((c) => pxToPct(c.x, c.y));
+  return hash;
 }
 
 /**
- * Spill landing spots just outside / over the rim — used when fill ≥ 80%
- * (`isOverflowing`) for pieces that no longer fit in the flat cavity.
+ * Procedural organic slot generation inside the bowl floor ellipse.
+ * Un-aligned, casually packed with procedural jitter while strictly
+ * bounded within the inner perimeter.
+ */
+function buildOrganicSlots(layout: CavityLayout, count: number = 60): { xPct: number; yPct: number }[] {
+  const cx = BOWL_W / 2;
+  const cy = (layout.cy / 100) * BOWL_H;
+  const rx = Math.max(1, (layout.rx / 100) * BOWL_W - PIECE_R * 0.9);
+  const ry = Math.max(1, (layout.ry / 100) * BOWL_H - PIECE_R * 0.9);
+
+  const slots: { x: number; y: number }[] = [];
+  const minDistSq = (PIECE_SIZE * 0.78) * (PIECE_SIZE * 0.78);
+
+  // Center cluster first, then spiral outwards organically with phyllotaxis + jitter
+  slots.push({ x: cx, y: cy });
+
+  for (let i = 1; slots.length < count && i < 220; i++) {
+    // Golden angle spiral (~137.5 degrees) for natural organic packing
+    const phi = i * 2.3999632;
+    const rNorm = Math.sqrt((i + 0.5) / 130);
+    if (rNorm > 0.92) continue;
+
+    const jitterX = hashUnit(i * 17 + 3) * (PIECE_R * 0.45);
+    const jitterY = hashUnit(i * 29 + 11) * (PIECE_R * 0.35);
+
+    const x = cx + Math.cos(phi) * rx * rNorm + jitterX;
+    const y = cy + Math.sin(phi) * ry * rNorm + jitterY;
+
+    // Strict ellipse containment check
+    const nx = (x - cx) / rx;
+    const ny = (y - cy) / ry;
+    if (nx * nx + ny * ny > 0.92) continue;
+
+    // Avoid unnatural overlapping
+    let ok = true;
+    for (let j = 0; j < slots.length; j++) {
+      const dx = x - slots[j].x;
+      const dy = y - slots[j].y;
+      if (dx * dx + dy * dy < minDistSq) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      slots.push({ x, y });
+    }
+  }
+
+  // Fill order: bottom of the cavity first (physical gravity stacking)
+  slots.sort((a, b) => b.y - a.y || Math.abs(a.x - cx) - Math.abs(b.x - cx));
+  return slots.map((c) => pxToPct(c.x, c.y));
+}
+
+/**
+ * Spill landings over / outside the rim — never into the foot or under the bowl.
+ * Hooked from the same `isOverflowing` (≥80% of C) flag as the old glow.
  */
 function buildSpillSlots(layout: CavityLayout, count: number): { xPct: number; yPct: number }[] {
   const cx = BOWL_W / 2;
-  const cy = (layout.cy / 100) * BOWL_H;
-  const rx = (layout.rx / 100) * BOWL_W;
-  const ry = (layout.ry / 100) * BOWL_H;
+  const rimCy = (layout.rimCy / 100) * BOWL_H;
+  const rimRx = (layout.rimRx / 100) * BOWL_W;
   const slots: { xPct: number; yPct: number }[] = [];
 
   for (let i = 0; i < count; i++) {
-    const ring = Math.floor(i / 6);
-    const slot = i % 6;
-    // Fan across the top rim, then cascade slightly outward/down the shoulders.
-    const t = (slot - 2.5) / 2.5; // -1 … +1
-    const rimY = cy - ry - PIECE_R - 2 - ring * (PIECE_SIZE * 0.72);
-    const rimX = cx + t * (rx + PIECE_R + 2 + ring * 3) + hashUnit(i * 3) * 2;
-    // A few pieces tumble past the outer lip (below rim sides).
-    const tumble = slot === 0 || slot === 5;
-    const y = tumble ? cy + ry * 0.15 + ring * (PIECE_SIZE * 0.55) : rimY;
-    const x = tumble
-      ? cx + Math.sign(t || 1) * (rx + PIECE_R + 6 + ring * 4)
-      : rimX;
+    const ring = Math.floor(i / 7);
+    const slot = i % 7;
+    const t = (slot - 3) / 3; // -1 … +1 across the lip
+    const jitter = hashUnit(i * 5 + 2) * 1.6;
+
+    if (ring === 0) {
+      // Rest on / just outside the rim crest.
+      const x = cx + t * (rimRx + PIECE_R * 0.4) + jitter;
+      const y = rimCy - PIECE_R * 0.35 + Math.abs(t) * 1.5 + hashUnit(i) * 1.2;
+      slots.push(pxToPct(x, y));
+      continue;
+    }
+
+    // Later rings cascade down the OUTER shoulders (clear of the stem).
+    const side = t === 0 ? (i % 2 === 0 ? -1 : 1) : Math.sign(t);
+    const x = cx + side * (rimRx + PIECE_R + 3 + (ring - 1) * (PIECE_SIZE * 0.65) + Math.abs(t) * 2) + jitter;
+    const y = rimCy + ring * (PIECE_SIZE * 0.7) + Math.abs(t) * 2;
     slots.push(pxToPct(x, y));
   }
   return slots;
@@ -211,16 +253,18 @@ function layoutPieces(
 ): LaidPiece[] {
   const layout = isDark ? THEME_CAVITY.dark : THEME_CAVITY.light;
   const visible = pieces.slice(-MAX_VISIBLE_PIECES);
-  const flatSlots = buildFlatSlots(layout);
-  const maxInside = flatSlots.length;
+  const organicSlots = buildOrganicSlots(layout, Math.max(MAX_VISIBLE_PIECES, visible.length + 10));
+  const maxInside = organicSlots.length;
 
   // Soft cap mirrors reportService OVERFLOW_FILL_RATIO (80% of C = habits × cycleDays).
-  // When overflowing, pieces past that count spill over the rim even if the cavity
-  // still has empty hex slots — so spill is the ≥80% signal (glow removed).
+  // Spill replaces the old overflow glow: at ≥80%, pieces past softCap tumble
+  // over the rim even if hex slots remain. Floor-full also spills (physical cap).
   const softCap = Math.max(0, Math.floor(Math.max(0, capacity) * OVERFLOW_FILL_RATIO));
   let insideBudget: number;
   if (celebrating) {
-    insideBudget = Math.min(maxInside, visible.length);
+    // Cycle complete → keep a small floor cluster; rest spill over the rim
+    // (never the old +22% shove that dumped pieces under the foot).
+    insideBudget = Math.min(maxInside, Math.max(0, Math.floor(visible.length * 0.35)));
   } else if (isOverflowing) {
     insideBudget = Math.min(maxInside, softCap, visible.length);
   } else {
@@ -229,29 +273,30 @@ function layoutPieces(
 
   const spillCount = Math.max(0, visible.length - insideBudget);
   const spillSlots = buildSpillSlots(layout, spillCount);
+  const spillFallback = { xPct: 0, yPct: layout.rimCy - 8 };
 
   return visible.map((piece, index) => {
     const spills = index >= insideBudget;
     const slot = spills
-      ? spillSlots[index - insideBudget] ?? { xPct: 0, yPct: layout.cy - layout.ry - 12 }
-      : flatSlots[index] ?? { xPct: 0, yPct: layout.cy };
+      ? spillSlots[index - insideBudget] ?? spillFallback
+      : organicSlots[index] ?? { xPct: 0, yPct: layout.cy };
 
-    let { xPct, yPct } = slot;
-    if (celebrating) {
-      yPct = yPct + 22 + Math.abs(hashUnit(index + 8)) * 10;
-      xPct = xPct + hashUnit(index * 5) * 14;
-    }
+    const pieceSeed = hashString(piece.id || `${piece.habitId}-${index}`);
+    // Random rotation across full 360 degrees (unaligned, casual)
+    const rotation = Math.abs((pieceSeed * 179) % 360);
+    // Natural scale variance: 0.95 - 1.05
+    const scale = 0.95 + Math.abs(hashUnit(index * 23 + 7)) * 0.1;
 
     return {
       piece,
       index,
       coords: {
-        xPct,
-        yPct,
-        rotation: hashUnit(index * 7 + 11) * (spills || celebrating ? 48 : 14),
-        scale: 1,
+        xPct: slot.xPct,
+        yPct: slot.yPct,
+        rotation,
+        scale,
         entryXPct: hashUnit(index * 17 + 9) * 8,
-        spills: spills || celebrating,
+        spills,
       },
     };
   });
@@ -275,6 +320,7 @@ const pieceBoxStyle = (): React.CSSProperties => ({
 const MarblePiece: React.FC<{
   item: LaidPiece;
   isDark: boolean;
+  settle?: boolean;
 }> = ({ item, isDark }) => {
   const isFallback = item.piece.kind === 'fallback';
   const src = getPieceAsset(isDark, isFallback);
@@ -293,65 +339,47 @@ const MarblePiece: React.FC<{
       ? 'bg-blue-500'
       : 'bg-emerald-500';
 
-  const motionProps = {
-    initial: {
-      left: `calc(50% + ${coords.xPct + coords.entryXPct * 0.35}%)`,
-      top: `${Math.min(SPAWN_Y_PCT, coords.yPct - 30)}%`,
-      rotate: coords.rotation * 0.15,
-      opacity: 0,
-      scale: 0.86,
-    },
-    animate: {
-      left: `calc(50% + ${coords.xPct}%)`,
-      top: `${coords.yPct}%`,
-      rotate: coords.rotation,
-      opacity: 1,
-      scale: coords.scale,
-    },
-    exit: {
-      scale: 0,
-      opacity: 0,
-    },
-    transition: {
-      left: { ...DROP_SPRING, stiffness: coords.spills ? 180 : 260, damping: 28 },
-      top: { ...DROP_SPRING, stiffness: coords.spills ? 160 : 220, damping: coords.spills ? 22 : 26 },
-      rotate: { ...DROP_SPRING, stiffness: 180, damping: 24 },
-      opacity: { duration: 0.22, ease: 'easeOut' as const },
-      scale: { type: 'spring' as const, stiffness: 280, damping: 24 },
-    },
-  };
+  const xPct = Number.isFinite(coords?.xPct) ? coords.xPct : 0;
+  const yPct = Number.isFinite(coords?.yPct) ? coords.yPct : 0;
+  const rotation = Number.isFinite(coords?.rotation) ? coords.rotation : 0;
+  const scale = Number.isFinite(coords?.scale) ? coords.scale : 1;
 
   const box = pieceBoxStyle();
-
-  if (broken || !src) {
-    return (
-      <motion.div
-        key={item.piece.id}
-        aria-hidden="true"
-        className="pointer-events-none absolute block shrink-0 rounded-full"
-        style={box}
-        {...motionProps}
-      >
-        <span className={`absolute inset-0 rounded-full ${fallbackTone}`} />
-      </motion.div>
-    );
-  }
 
   return (
     <motion.div
       key={item.piece.id}
+      initial={{ scale: 0, opacity: 0, y: -22, rotate: -25 }}
+      animate={{ scale: scale, opacity: 1, y: 0, rotate: rotation }}
+      exit={{ scale: 0, opacity: 0, transition: { duration: 0.2, ease: 'easeOut' } }}
+      transition={{
+        type: 'spring',
+        stiffness: 220,
+        damping: 14,
+        mass: 0.6,
+      }}
+      style={{
+        ...box,
+        left: `calc(50% + ${xPct}%)`,
+        top: `${yPct}%`,
+      }}
+      className="pointer-events-none"
       aria-hidden="true"
-      className="pointer-events-none absolute block shrink-0"
-      style={box}
-      {...motionProps}
     >
-      <img
-        src={src}
-        alt=""
-        draggable={false}
-        onError={() => setBroken(true)}
-        className="pointer-events-none absolute inset-0 h-full w-full rounded-full object-contain object-center"
-      />
+      {broken || !src ? (
+        <div
+          className={`h-full w-full rounded-full shadow-inner ${fallbackTone}`}
+          aria-hidden="true"
+        />
+      ) : (
+        <img
+          src={src}
+          alt=""
+          draggable={false}
+          onError={() => setBroken(true)}
+          className="pointer-events-none h-full w-full rounded-full object-contain"
+        />
+      )}
     </motion.div>
   );
 };
@@ -359,10 +387,15 @@ const MarblePiece: React.FC<{
 const PieceLayer: React.FC<{
   items: LaidPiece[];
   isDark: boolean;
+  settlePieceIds?: ReadonlySet<string>;
 }> = ({ items, isDark }) => (
-  <AnimatePresence initial={false}>
-    {items.map((item) => (
-      <MarblePiece key={item.piece.id} item={item} isDark={isDark} />
+  <AnimatePresence>
+    {(items || []).map((item) => (
+      <MarblePiece
+        key={item.piece.id}
+        item={item}
+        isDark={isDark}
+      />
     ))}
   </AnimatePresence>
 );
@@ -389,6 +422,8 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
   onCycleDaysChange,
   celebrating = false,
   onCelebrationDone,
+  deferredPieceIds,
+  settlePieceIds,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [bowlBroken, setBowlBroken] = useState(false);
@@ -417,8 +452,13 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
     [pieces, isOverflowing, darkMode, celebrating, capacity]
   );
 
-  const insidePieces = laid.filter((item) => !item.coords.spills);
-  const spillPieces = laid.filter((item) => item.coords.spills);
+  const visibleLaid = useMemo(() => {
+    if (!deferredPieceIds || deferredPieceIds.size === 0) return laid;
+    return laid.filter((item) => !deferredPieceIds.has(item.piece.id));
+  }, [laid, deferredPieceIds]);
+
+  const insidePieces = visibleLaid.filter((item) => !item.coords.spills);
+  const spillPieces = visibleLaid.filter((item) => item.coords.spills);
   const roundedFill = Math.round(fillPercent);
 
   useEffect(() => {
@@ -469,7 +509,13 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
         )}
       </AnimatePresence>
 
-      <div className="relative mx-auto h-24 w-[108px] overflow-visible">
+      <div id="accumulation-bowl-frame" className="relative mx-auto h-24 w-[108px] overflow-visible">
+        {/* Landing target for card→bowl flights (cavity center). */}
+        <div
+          id="accumulation-bowl-target"
+          className="pointer-events-none absolute left-1/2 top-[50%] h-0 w-0 -translate-x-1/2"
+          aria-hidden="true"
+        />
         {/* Layer 1 — back glass */}
         {bowlBroken || !bowlSrc ? (
           <BowlShellFallback isDark={darkMode} />
@@ -493,7 +539,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
           }}
         >
           <div className="relative h-full w-full">
-            <PieceLayer items={insidePieces} isDark={darkMode} />
+            <PieceLayer items={insidePieces} isDark={darkMode} settlePieceIds={settlePieceIds} />
           </div>
         </div>
 
@@ -525,11 +571,12 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
           aria-hidden="true"
         />
 
-        {/* Spill layer — above the rim; hooks the same isOverflowing (≥80%) flag */}
+        {/* Spill layer — above the rim; same isOverflowing (≥80%) trigger; replaces overflow glow */}
         <div className="pointer-events-none absolute inset-0 z-[4] overflow-visible">
-          <PieceLayer items={spillPieces} isDark={darkMode} />
+          <PieceLayer items={spillPieces} isDark={darkMode} settlePieceIds={settlePieceIds} />
         </div>
 
+        {/* Cycle-complete flash only — overflow feedback is the spill, not a persistent glow */}
         {celebrating && (
           <motion.div
             className={`pointer-events-none absolute inset-x-4 bottom-2 z-[5] h-8 rounded-full blur-md ${

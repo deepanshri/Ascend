@@ -61,6 +61,7 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const copiedTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
+  const instanceIdRef = useRef(Math.random().toString(36).slice(2, 9));
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -112,15 +113,27 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   }, [refresh]);
 
   useEffect(() => {
-    if (!signedIn || !supabase || !isSupabaseConfigured) return;
-    const channel = supabase
-      .channel(`friends-feed-${userId}-${mode}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: FRIENDSHIPS_TABLE }, () => {
-        void refresh();
-      })
-      .subscribe();
+    if (!signedIn || !userId || !supabase || !isSupabaseConfigured) return;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      const channelName = `friends-feed-${userId}-${mode}-${instanceIdRef.current}`;
+      channel = supabase
+        .channel(channelName)
+        .on('postgres_changes', { event: '*', schema: 'public', table: FRIENDSHIPS_TABLE }, () => {
+          void refresh();
+        })
+        .subscribe();
+    } catch (err) {
+      console.warn('[FriendsFeed] Realtime channel setup failed:', err);
+    }
     return () => {
-      void supabase.removeChannel(channel);
+      if (channel && supabase) {
+        try {
+          void supabase.removeChannel(channel);
+        } catch {
+          /* ignore */
+        }
+      }
     };
   }, [signedIn, userId, mode, refresh]);
 

@@ -157,7 +157,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
     <div
       id="reminders-screen"
       onScroll={onScroll}
-      className={`absolute inset-0 w-full px-4 ${SCREEN_INSET_CLASS} pb-28 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none`}
+      className={`absolute inset-0 w-full px-4 ${SCREEN_INSET_CLASS} pb-28 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none gpu-accelerated`}
     >
       <ScreenHeader
         title="Tasks"
@@ -191,7 +191,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
 
       <section className="space-y-2.5">
         <AnimatePresence initial={false}>
-          {activeTasks.map((rem) => (
+          {(activeTasks || []).map((rem) => (
             <motion.div
               key={rem.id}
               initial={{ opacity: 0, y: 6 }}
@@ -254,7 +254,7 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
               >
                 <div className="space-y-2 pt-2.5">
                   <AnimatePresence initial={false}>
-                    {completedTasks.map((rem) => (
+                    {(completedTasks || []).map((rem) => (
                       <motion.div
                         key={rem.id}
                         initial={{ opacity: 0, y: 4 }}

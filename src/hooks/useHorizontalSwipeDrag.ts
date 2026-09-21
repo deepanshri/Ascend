@@ -2,13 +2,15 @@ import { useCallback, useRef } from 'react';
 import { animate as motionAnimate, useMotionValue, type PanInfo } from 'motion/react';
 
 /** Horizontal clamp for Framer `dragConstraints`. */
-export const SWIPE_MAX_PX = 100;
+export const SWIPE_MAX_PX = 135;
 /** Commit threshold for complete / secondary swipe actions. */
-export const SWIPE_COMMIT_PX = 80;
+export const SWIPE_COMMIT_PX = 50;
+/** Velocity threshold (px/s) for quick flick-to-commit actions. */
+export const SWIPE_COMMIT_VELOCITY = 280;
 /** Shared drag constraints — hoist so cards don't allocate a new object per render. */
 export const SWIPE_DRAG_CONSTRAINTS = { left: -SWIPE_MAX_PX, right: SWIPE_MAX_PX } as const;
 
-const SPRING_TRANSITION = { type: 'spring' as const, stiffness: 420, damping: 26, mass: 0.7 };
+export const SPRING_TRANSITION = { type: 'spring' as const, stiffness: 260, damping: 24, mass: 0.7 };
 
 type SwipeCommitHandler = (offsetX: number) => void;
 
@@ -54,9 +56,15 @@ export function useHorizontalSwipeDrag(options: {
     (_: unknown, info: PanInfo) => {
       isDraggingRef.current = false;
       const offsetX = info.offset.x;
+      const velocityX = info.velocity.x;
+      const shouldCommit =
+        Math.abs(offsetX) > SWIPE_COMMIT_PX ||
+        (Math.abs(velocityX) > SWIPE_COMMIT_VELOCITY && Math.abs(offsetX) > 20 && Math.sign(velocityX) === Math.sign(offsetX));
       // Defer commit so Motion can finish pointer teardown before App setState.
       requestAnimationFrame(() => {
-        onCommitRef.current(offsetX);
+        if (shouldCommit) {
+          onCommitRef.current(offsetX);
+        }
       });
       void motionAnimate(x, 0, SPRING_TRANSITION);
     },
@@ -80,7 +88,7 @@ export function useHorizontalSwipeDrag(options: {
     dragProps: {
       drag: enabled ? ('x' as const) : false,
       dragConstraints: SWIPE_DRAG_CONSTRAINTS,
-      dragElastic: 0.2,
+      dragElastic: 0.38,
       dragMomentum: false,
       dragPropagation: false,
       onDragStart: handleDragStart,

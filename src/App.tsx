@@ -138,6 +138,19 @@ import { RemindersView } from './components/RemindersView';
 import { ReportView } from './components/ReportView';
 import { PersonalView } from './components/PersonalView';
 import { SettingsView } from './components/SettingsView';
+import {
+  FlyingPieceOverlay,
+  measureCompletionFlight,
+  type PieceFlight,
+} from './components/FlyingPieceOverlay';
+import {
+  isCompletionSoundEnabled,
+  isHapticVibrationEnabled,
+  playCompletionReward,
+  pulseCompletionHaptic,
+  setCompletionSoundEnabled,
+  setHapticVibrationEnabled,
+} from './lib/completionFeedback';
 
 const APP_TABS: readonly ActiveTab[] = ['home', 'reminders', 'report', 'personal', 'settings'];
 
@@ -145,9 +158,9 @@ function resolveActiveTab(tab: ActiveTab | string | null | undefined): ActiveTab
   return APP_TABS.includes(tab as ActiveTab) ? (tab as ActiveTab) : 'home';
 }
 
-/** Keep visited tabs mounted; hide inactive panes via CSS (0ms switch). */
+/** Tab pane visibility classes — maintains active tab DOM instances in memory for 0ms switching. */
 function tabPaneClassName(isActive: boolean, extra = ''): string {
-  return `absolute inset-0 tab-pane gpu-layer ${isActive ? 'tab-pane-active' : 'tab-pane-cached'}${extra ? ` ${extra}` : ''}`;
+  return `absolute inset-0 tab-pane gpu-smooth ${isActive ? 'tab-pane-active' : 'tab-pane-cached'}${extra ? ` ${extra}` : ''}`;
 }
 
 export default function App() {
@@ -260,7 +273,12 @@ export default function App() {
   const [selectedInterests, setSelectedInterests] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('ascend_personal_interests');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((item): item is string => typeof item === 'string');
+        }
+      }
     } catch {}
     return ['Movies', 'Books', 'Anime', 'Running'];
   });
@@ -297,14 +315,25 @@ export default function App() {
     try {
       const saved = localStorage.getItem('habit_tracker_habits');
       if (saved) {
-        const parsed = JSON.parse(saved) as Habit[];
+        const parsed = JSON.parse(saved);
+        if (!Array.isArray(parsed)) return [];
         return omitDeletedHabits(
           parsed
-            .filter((h) => !isSeedHabitId(h.id))
-            .map((h) => {
-            const category = normalizeHabitCategory(h.category);
-            return hydrateHabitTimeOfDay({ ...h, category, tags: [habitCategoryBadge(category)] });
-          }),
+            .filter((h: Habit) => h && typeof h === 'object' && !isSeedHabitId(h.id))
+            .map((h: Habit) => {
+              const category = normalizeHabitCategory(h.category);
+              const days = Array.isArray(h.days) ? h.days : [false, false, false, false, false, false, false];
+              const microDays = Array.isArray(h.microDays)
+                ? h.microDays
+                : [false, false, false, false, false, false, false];
+              return hydrateHabitTimeOfDay({
+                ...h,
+                category,
+                days,
+                microDays,
+                tags: [habitCategoryBadge(category)],
+              });
+            }),
         );
       }
     } catch {}
@@ -421,6 +450,11 @@ export default function App() {
   const [bowlEpoch, setBowlEpoch] = useState(() => readBowlCycleEpoch(toISODate()));
   const [cycleHistory, setCycleHistory] = useState<CompletedCycleSummary[]>(() => readCycleHistory());
   const [bowlCelebrating, setBowlCelebrating] = useState(false);
+  const [pieceFlights, setPieceFlights] = useState<PieceFlight[]>([]);
+  const [settlePieceIds, setSettlePieceIds] = useState<string[]>([]);
+  const [completionSound, setCompletionSound] = useState(() => isCompletionSoundEnabled());
+  const [hapticVibration, setHapticVibration] = useState(() => isHapticVibrationEnabled());
+  const settleTimersRef = useRef<Map<string, number>>(new Map());
   const [celebrationPieces, setCelebrationPieces] = useState<AccumulationPiece[] | null>(null);
   const bowlCelebrateLockRef = useRef(false);
   const pendingCycleResetRef = useRef<{ endIso: string; resetAt: number } | null>(null);
@@ -469,15 +503,16 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [viewResetKey, setViewResetKey] = useState(0);
   const safeActiveTab = resolveActiveTab(activeTab);
-  /** Tabs stay mounted after first visit so switches are visibility flips, not remounts. */
-  const [warmedTabs, setWarmedTabs] = useState<ReadonlySet<ActiveTab>>(() => new Set<ActiveTab>(['home']));
 
   useEffect(() => {
     if (activeTab !== safeActiveTab) setActiveTab(safeActiveTab);
   }, [activeTab, safeActiveTab]);
 
+  const isTabActive = useCallback((tab: ActiveTab) => safeActiveTab === tab, [safeActiveTab]);
+  const [visitedTabs, setVisitedTabs] = useState<Set<ActiveTab>>(() => new Set(['home']));
+
   useEffect(() => {
-    setWarmedTabs((prev) => {
+    setVisitedTabs((prev) => {
       if (prev.has(safeActiveTab)) return prev;
       const next = new Set(prev);
       next.add(safeActiveTab);
@@ -485,8 +520,6 @@ export default function App() {
     });
   }, [safeActiveTab]);
 
-  const isTabWarmed = useCallback((tab: ActiveTab) => warmedTabs.has(tab), [warmedTabs]);
-  const isTabActive = useCallback((tab: ActiveTab) => safeActiveTab === tab, [safeActiveTab]);
   const [calendarOrigin, setCalendarOrigin] = useState<Date>(() => startOfDay(new Date()));
   const [currentSelectedDate, setCurrentSelectedDate] = useState<string>(() => toISODate());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -1091,7 +1124,7 @@ export default function App() {
   }, [session?.id, session?.isGuest]);
 
   const selectedDayCompletedCount = activeHabits.filter(
-    (h) => h.days[currentDayIndex]
+    (h) => Boolean(h.days?.[currentDayIndex])
   ).length;
 
   // Pending reminder count for bottom navigation badge
@@ -1223,7 +1256,37 @@ export default function App() {
       };
       setFrictionAudits((prevAudits) => [newAudit, ...prevAudits]);
     }
-    if (shouldNotifyHabitSwipe(targetHabit, todayDayIndex, calendarOrigin)) {
+
+    // Reward moment: haptic + optional chime immediately; piece flies card → bowl.
+    // Does not touch momentum_events beyond the append above.
+    if (!alreadyCompletedToday) {
+      const rewardKind = isMicro ? 'fallback' : 'full';
+      try {
+        void pulseCompletionHaptic(rewardKind);
+      } catch {
+        /* never block completion on feedback failure */
+      }
+      const pieceId = `${habitId}::${loggedDate}`;
+      // Measure after paint so optimistic card/bowl layout is ready.
+      requestAnimationFrame(() => {
+        try {
+          const swipeDir = isMicro ? 'left' : 'right';
+          const points = measureCompletionFlight(habitId, swipeDir);
+          if (!points) return;
+          const flight: PieceFlight = {
+            id: `fly-${pieceId}-${Date.now()}`,
+            pieceId,
+            kind: rewardKind,
+            from: points.from,
+            to: points.to,
+            isDark,
+            direction: swipeDir,
+          };
+          setPieceFlights((prev) => [...prev.slice(-4), flight]);
+        } catch {
+          /* ignore measurement failures */
+        }
+      });
     }
   };
 
@@ -1633,6 +1696,44 @@ export default function App() {
   handleToggleKeystoneRef.current = handleToggleKeystone;
   handleSetReminderCompletedRef.current = handleSetReminderCompleted;
 
+  const deferredPieceIds = useMemo(
+    () => new Set(pieceFlights.map((flight) => flight.pieceId)),
+    [pieceFlights]
+  );
+  const settlePieceIdSet = useMemo(() => new Set(settlePieceIds), [settlePieceIds]);
+
+  const handlePieceFlightComplete = useCallback((flightId: string, pieceId: string) => {
+    setPieceFlights((prev) => prev.filter((flight) => flight.id !== flightId));
+    setSettlePieceIds((prev) => (prev.includes(pieceId) ? prev : [...prev, pieceId]));
+    // Soft land tap — reinforces settle without competing with the open haptic.
+    void pulseCompletionHaptic('fallback');
+    const existing = settleTimersRef.current.get(pieceId);
+    if (existing) window.clearTimeout(existing);
+    const timer = window.setTimeout(() => {
+      settleTimersRef.current.delete(pieceId);
+      setSettlePieceIds((prev) => prev.filter((id) => id !== pieceId));
+    }, 520);
+    settleTimersRef.current.set(pieceId, timer);
+  }, []);
+
+  const handleCompletionSoundChange = useCallback((enabled: boolean) => {
+    setCompletionSoundEnabled(enabled);
+    setCompletionSound(enabled);
+  }, []);
+
+  const handleHapticVibrationChange = useCallback((enabled: boolean) => {
+    setHapticVibrationEnabled(enabled);
+    setHapticVibration(enabled);
+  }, []);
+
+  useEffect(
+    () => () => {
+      for (const timer of settleTimersRef.current.values()) window.clearTimeout(timer);
+      settleTimersRef.current.clear();
+    },
+    []
+  );
+
   const stableCompleteToday = useCallback((habitId: string, isFallback?: boolean) => {
     handleCompleteTodayRef.current(habitId, isFallback);
   }, []);
@@ -1810,44 +1911,59 @@ export default function App() {
     handleSnoozeReminderRef.current(id, minutes);
   }, []);
 
-  // Apple-style chrome: hide header/nav on scroll down, reveal on scroll up
-  const [isNavVisible, setIsNavVisible] = useState(true);
+  // Nav chrome: toggle via DOM class — never setState on scroll (that re-rendered every habit card).
+  const navScrollVisibleRef = useRef(true);
   const lastScrollYRef = useRef(0);
   const pendingScrollYRef = useRef(0);
   const scrollRafRef = useRef(0);
 
+  const syncNavChrome = useCallback(() => {
+    const el = document.getElementById('floating-bottom-nav');
+    if (!el) return;
+    const show = navScrollVisibleRef.current && !isKeyboardOpen && !isAnyModalOpen;
+    el.classList.toggle('nav-chrome-hidden', !show);
+    el.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }, [isKeyboardOpen, isAnyModalOpen]);
+
   useEffect(() => {
-    setIsNavVisible(true);
+    syncNavChrome();
+  }, [syncNavChrome]);
+
+  useEffect(() => {
+    navScrollVisibleRef.current = true;
     lastScrollYRef.current = 0;
+    syncNavChrome();
     if (activeTab === 'report') {
       setCurrentSelectedDate(toISODate());
     }
-    // Drop any in-flight scroll frame when leaving a tab (avoids stale nav toggles).
     if (scrollRafRef.current) {
       cancelAnimationFrame(scrollRafRef.current);
       scrollRafRef.current = 0;
     }
-  }, [activeTab]);
+  }, [activeTab, syncNavChrome]);
 
-  const handleMainScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    pendingScrollYRef.current = e.currentTarget.scrollTop;
-    if (scrollRafRef.current) return;
-    scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRafRef.current = 0;
-      const currentScrollY = pendingScrollYRef.current;
-      const delta = currentScrollY - lastScrollYRef.current;
+  const handleMainScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      pendingScrollYRef.current = e.currentTarget.scrollTop;
+      if (scrollRafRef.current) return;
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = 0;
+        const currentScrollY = pendingScrollYRef.current;
+        const delta = currentScrollY - lastScrollYRef.current;
+        let nextVisible = navScrollVisibleRef.current;
 
-      if (currentScrollY <= 8) {
-        setIsNavVisible(true);
-      } else if (delta > 8) {
-        setIsNavVisible(false);
-      } else if (delta < -8) {
-        setIsNavVisible(true);
-      }
+        if (currentScrollY <= 8) nextVisible = true;
+        else if (delta > 8) nextVisible = false;
+        else if (delta < -8) nextVisible = true;
 
-      lastScrollYRef.current = currentScrollY;
-    });
-  }, []);
+        lastScrollYRef.current = currentScrollY;
+        if (nextVisible === navScrollVisibleRef.current) return;
+        navScrollVisibleRef.current = nextVisible;
+        syncNavChrome();
+      });
+    },
+    [syncNavChrome]
+  );
 
   // Spotlight tutorial: only after onboarding, and only if the profile flag is false
   useEffect(() => {
@@ -1860,7 +1976,8 @@ export default function App() {
       return;
     }
 
-    setIsNavVisible(true);
+    navScrollVisibleRef.current = true;
+    syncNavChrome();
     const timer = window.setTimeout(() => {
       if (tutorialLockRef.current || hasCompletedTutorial !== false) return;
       tutorialLockRef.current = true;
@@ -1878,7 +1995,7 @@ export default function App() {
     }, 700);
 
     return () => window.clearTimeout(timer);
-  }, [session, isOnboarded, hasCompletedTutorial, activeTab, selectedInterests]);
+  }, [session, isOnboarded, hasCompletedTutorial, activeTab, selectedInterests, syncNavChrome]);
 
   useEffect(() => {
     if (!session || !isOnboarded) return;
@@ -1889,7 +2006,8 @@ export default function App() {
     }
     if (hasScreenTutorialCompleted(screen)) return;
 
-    setIsNavVisible(true);
+    navScrollVisibleRef.current = true;
+    syncNavChrome();
     const timer = window.setTimeout(() => {
       if (hasScreenTutorialCompleted(screen)) return;
       startScreenTutorial(screen, () => {
@@ -1901,7 +2019,7 @@ export default function App() {
       window.clearTimeout(timer);
       destroyAscendSpotlightTutorial();
     };
-  }, [session, isOnboarded, hasCompletedTutorial, activeTab]);
+  }, [session, isOnboarded, hasCompletedTutorial, activeTab, syncNavChrome]);
 
   // ROUTING: Unauthenticated users -> Auth Screen
   if (!session) {
@@ -1928,19 +2046,15 @@ export default function App() {
           resetKey={String(viewResetKey)}
           onReset={() => setViewResetKey((value) => value + 1)}
         >
-        <div className="absolute inset-0 z-10 tab-pane-host gpu-layer">
-        {/*
-          Warm tab cache: once visited, panes stay mounted and flip via CSS
-          visibility/opacity (no unmount / re-parse on switch).
-        */}
-        {isTabWarmed('home') ? (
+        <div className="absolute inset-0 z-10 tab-pane-host gpu-smooth">
+        {/* Active tabs maintain persistent DOM memory once visited for 0ms instant tab switching. */}
           <main
             id="app-main-content"
             onScroll={handleMainScroll}
             aria-hidden={!isTabActive('home')}
             className={tabPaneClassName(
               isTabActive('home'),
-              `px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col overflow-y-auto overscroll-y-contain no-scrollbar${longPressedHabitId && isTabActive('home') ? ' filter blur-[4px] pointer-events-none' : ''}`
+              `px-4 ${SCREEN_INSET_CLASS} pb-28 flex flex-col overflow-y-auto overscroll-y-contain no-scrollbar gpu-accelerated gpu-smooth${longPressedHabitId && isTabActive('home') ? ' opacity-40 pointer-events-none' : ''}`
             )}
           >
             <ScreenHeader
@@ -1980,10 +2094,12 @@ export default function App() {
               onCycleDaysChange={handleCycleDaysChange}
               celebrating={bowlCelebrating}
               onCelebrationDone={handleBowlCelebrationDone}
+              deferredPieceIds={deferredPieceIds}
+              settlePieceIds={settlePieceIdSet}
             >
               <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
 
-              <section id="habit-list" className="mt-0.5 flex flex-col gap-2.5">
+              <section id="habit-list" className="mt-0.5 flex flex-col gap-2.5 gpu-smooth">
               {(activeHabits ?? []).length === 0 ? (
                 <div className="bg-white/80 rounded-2xl p-6 text-center text-slate-400 text-[13px] border border-slate-200/80">
                   No habits active yet. Tap &quot;+&quot; in the header to create one!
@@ -2023,9 +2139,8 @@ export default function App() {
             </section>
             </HomeView>
           </main>
-        ) : null}
 
-        {isTabWarmed('reminders') ? (
+        {visitedTabs.has('reminders') ? (
           <div
             aria-hidden={!isTabActive('reminders')}
             className={tabPaneClassName(isTabActive('reminders'))}
@@ -2060,7 +2175,7 @@ export default function App() {
           </div>
         ) : null}
 
-        {isTabWarmed('report') ? (
+        {visitedTabs.has('report') ? (
           <div
             aria-hidden={!isTabActive('report')}
             className={tabPaneClassName(isTabActive('report'))}
@@ -2089,7 +2204,7 @@ export default function App() {
           </div>
         ) : null}
 
-        {isTabWarmed('personal') ? (
+        {visitedTabs.has('personal') ? (
           <div
             aria-hidden={!isTabActive('personal')}
             className={tabPaneClassName(isTabActive('personal'))}
@@ -2137,7 +2252,7 @@ export default function App() {
           </div>
         ) : null}
 
-        {isTabWarmed('settings') ? (
+        {visitedTabs.has('settings') ? (
           <div
             aria-hidden={!isTabActive('settings')}
             className={tabPaneClassName(isTabActive('settings'))}
@@ -2151,6 +2266,10 @@ export default function App() {
             onThemeChange={setTheme}
             notificationWindows={notificationWindows}
             onToggleNotificationWindow={handleToggleNotificationWindow}
+            completionSound={completionSound}
+            onCompletionSoundChange={handleCompletionSoundChange}
+            hapticVibration={hapticVibration}
+            onHapticVibrationChange={handleHapticVibrationChange}
             onResetData={handleResetData}
             onRestoreHabit={handleRestoreHabit}
             onDeleteHabit={handleDeleteHabit}
@@ -2163,6 +2282,8 @@ export default function App() {
           </div>
         ) : null}
         </div>
+
+        <FlyingPieceOverlay flights={pieceFlights} onFlightComplete={handlePieceFlightComplete} />
         </ErrorBoundary>
 
         {/* Floating Bottom Navigation: hide on scroll, keyboard, or modal */}
@@ -2170,7 +2291,6 @@ export default function App() {
           activeTab={safeActiveTab}
           onTabChange={(tab) => setActiveTab(resolveActiveTab(tab))}
           pendingRemindersCount={pendingRemindersCount}
-          isNavVisible={isNavVisible && !isKeyboardOpen && !isAnyModalOpen}
           isBlurred={Boolean(longPressedHabitId)}
         />
 

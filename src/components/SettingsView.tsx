@@ -17,6 +17,10 @@ interface SettingsViewProps {
   onThemeChange: (theme: ThemeMode) => void;
   notificationWindows: PsychologyNotificationWindows;
   onToggleNotificationWindow: (key: NotificationWindowKey) => void;
+  completionSound: boolean;
+  onCompletionSoundChange: (enabled: boolean) => void;
+  hapticVibration?: boolean;
+  onHapticVibrationChange?: (enabled: boolean) => void;
   onResetData: () => void;
   onRestoreHabit?: (habitId: string) => void;
   onDeleteHabit?: (habitId: string) => void;
@@ -41,6 +45,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onThemeChange,
   notificationWindows,
   onToggleNotificationWindow,
+  completionSound,
+  onCompletionSoundChange,
+  hapticVibration = true,
+  onHapticVibrationChange,
   onResetData,
   onRestoreHabit,
   onDeleteHabit,
@@ -275,6 +283,52 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             windows={notificationWindows}
             onToggle={onToggleNotificationWindow}
           />
+        </div>
+
+        {/* Sound Effects */}
+        <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-2.5">
+          <div className="flex flex-col">
+            <span className="text-[12.5px] font-medium text-slate-900 dark:text-white">Sound Effects</span>
+            <span className="text-[10.5px] text-slate-400">Procedural chime when habits and tasks complete</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={completionSound}
+            onClick={() => onCompletionSoundChange(!completionSound)}
+            className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition duration-200 cursor-pointer ${
+              completionSound ? 'bg-emerald-600 dark:bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+            }`}
+          >
+            <div
+              className={`bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition duration-200 ${
+                completionSound ? 'translate-x-4.5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Haptic Vibration */}
+        <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-2.5">
+          <div className="flex flex-col">
+            <span className="text-[12.5px] font-medium text-slate-900 dark:text-white">Haptic Vibration</span>
+            <span className="text-[10.5px] text-slate-400">Tactile pulse on swipe gesture and completion</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={hapticVibration}
+            onClick={() => onHapticVibrationChange?.(!hapticVibration)}
+            className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition duration-200 cursor-pointer ${
+              hapticVibration ? 'bg-emerald-600 dark:bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+            }`}
+          >
+            <div
+              className={`bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition duration-200 ${
+                hapticVibration ? 'translate-x-4.5' : 'translate-x-0'
+              }`}
+            />
+          </button>
         </div>
 
         {/* Start day of week */}

@@ -28,7 +28,8 @@ export default defineConfig(() => {
               id.includes('react-dom') ||
               id.includes('/react/') ||
               id.includes('\\react\\') ||
-              id.includes('/scheduler/')
+              id.includes('/scheduler/') ||
+              id.includes('@capacitor')
             ) {
               return 'app-runtime';
             }

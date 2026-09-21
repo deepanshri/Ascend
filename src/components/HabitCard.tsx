@@ -1,12 +1,18 @@
-import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo, startTransition } from 'react';
 import { motion, useMotionValue, useTransform, animate as motionAnimate } from 'motion/react';
 import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
-import { SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD, SWIPE_DRAG_CONSTRAINTS, SWIPE_MAX_PX } from '../hooks/useHorizontalSwipeDrag';
+import {
+  SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD,
+  SWIPE_COMMIT_VELOCITY,
+  SWIPE_DRAG_CONSTRAINTS,
+  SPRING_TRANSITION,
+} from '../hooks/useHorizontalSwipeDrag';
+import { acquireSwipeScrollLock, forceReleaseSwipeScrollLock, releaseSwipeScrollLock } from '../lib/swipeScrollLock';
+import { triggerCompletionHaptic } from '../utils/feedback';
 
-const SWIPE_AXIS_LOCK_PX = 6;
 const LONG_PRESS_MS = 550;
 const GHOST_MOUSE_MS = 700;
 const FLIP_DEBOUNCE_MS = 400;
@@ -15,9 +21,10 @@ const SWIPE_COMMIT_PX = SWIPE_COMMIT_THRESHOLD;
 /** Undo window after optimistic complete — marble/score already updated. */
 const COMPLETE_GRACE_MS = 3000;
 
-const SPRING_TRANSITION = { type: 'spring' as const, stiffness: 420, damping: 26, mass: 0.7 };
 /** Blocks re-entrant swipe commits while App state settles. */
-const SWIPE_COMMIT_LOCK_MS = 450;
+const SWIPE_COMMIT_LOCK_MS = 280;
+/** Defer App setState until next tick for pointer release. */
+const SWIPE_COMMIT_DEFER_MS = 16;
 const FULL_POP_ANIMATE = { scale: [1, 1.03, 1] };
 const IDLE_SCALE = { scale: 1 };
 const FULL_POP_TRANSITION = {
@@ -79,6 +86,10 @@ function HabitCardInner({
   const x = useMotionValue(0);
   const revealRightOpacity = useTransform(x, [8, 36], [0, 1]);
   const revealLeftOpacity = useTransform(x, [-8, -36], [0, 1]);
+  const cardRotateZ = useTransform(x, [-130, 130], [-3.2, 3.2]);
+  const cardScale = useTransform(x, [-130, 0, 130], [0.972, 1, 0.972]);
+  const revealRightScale = useTransform(x, [8, SWIPE_COMMIT_PX, 120], [0.8, 1.12, 1.2]);
+  const revealLeftScale = useTransform(x, [-8, -SWIPE_COMMIT_PX, -120], [0.8, 1.12, 1.2]);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const swipeSurfaceRef = useRef<HTMLElement>(null);
@@ -167,6 +178,7 @@ function HabitCardInner({
     (isFallback: boolean) => {
       clearPendingComplete();
       setOptimisticDone(true);
+      void triggerCompletionHaptic();
       // Instant local complete (marble + island); grace only covers undo.
       onCompleteTodayRef.current(habitRef.current.id, isFallback);
       pendingCompleteRef.current = {
@@ -199,16 +211,39 @@ function HabitCardInner({
 
   const setTouchAction = useCallback((mode: 'pan-y' | 'none') => {
     const el = swipeSurfaceRef.current;
-    if (el) el.style.touchAction = mode;
+    if (!el) return;
+    el.style.touchAction = mode;
+    el.classList.toggle('is-swiping', mode === 'none');
   }, []);
+
+  const beginSwipeSession = useCallback(() => {
+    clearLongPressTimer();
+    hasMovedRef.current = true;
+    ignoreClickRef.current = true;
+    gestureAxisRef.current = 'horizontal';
+    isDraggingRef.current = true;
+    setTouchAction('none');
+    acquireSwipeScrollLock();
+  }, [clearLongPressTimer, setTouchAction]);
+
+  const endSwipeSession = useCallback(() => {
+    isDraggingRef.current = false;
+    gestureAxisRef.current = 'none';
+    setTouchAction('pan-y');
+    releaseSwipeScrollLock();
+  }, [setTouchAction]);
 
   // Abort drag when long-press menu opens — refs only (no setState mid-gesture).
   useEffect(() => {
     if (!isLongPressed) return;
+    try {
+      x.stop();
+    } catch {
+      /* ignore */
+    }
     x.set(0);
-    isDraggingRef.current = false;
-    setTouchAction('pan-y');
-  }, [isLongPressed, setTouchAction, x]);
+    endSwipeSession();
+  }, [isLongPressed, endSwipeSession, x]);
 
   const requestFlip = useCallback(() => {
     const now = Date.now();
@@ -222,10 +257,13 @@ function HabitCardInner({
     clearLongPressTimer();
     longPressTimerRef.current = window.setTimeout(() => {
       wasLongPressRef.current = true;
-      gestureAxisRef.current = 'none';
-      isDraggingRef.current = false;
+      try {
+        x.stop();
+      } catch {
+        /* ignore */
+      }
       x.set(0);
-      setTouchAction('pan-y');
+      endSwipeSession();
       try {
         if (navigator.vibrate) navigator.vibrate(40);
       } catch {
@@ -234,146 +272,120 @@ function HabitCardInner({
       const rect = cardRef.current?.getBoundingClientRect();
       onLongPressRef.current(habitRef.current, rect);
     }, LONG_PRESS_MS);
-  }, [clearLongPressTimer, setTouchAction, x]);
+  }, [clearLongPressTimer, endSwipeSession, x]);
 
-  const applySwipeOffset = useCallback(
-    (deltaX: number) => {
-      if (gesturesLockedRef.current) {
-        x.set(0);
+  const finishSwipe = useCallback(
+    (endOffset?: number, endVelocityX = 0) => {
+      const springHome = () => {
+        dragStartXRef.current = null;
+        try {
+          x.stop();
+        } catch {
+          /* ignore */
+        }
+        void motionAnimate(x, 0, SPRING_TRANSITION);
+        endSwipeSession();
+      };
+
+      if (gesturesLockedRef.current || commitLockRef.current) {
+        springHome();
         return;
       }
-      const clamped = Math.max(-SWIPE_MAX_PX, Math.min(SWIPE_MAX_PX, deltaX));
-      x.set(clamped);
+
+      const axis = gestureAxisRef.current;
+      const offset = endOffset !== undefined ? endOffset : x.get();
+      const velocityX = endVelocityX;
+      const habitId = habitRef.current.id;
+      let pendingAction: (() => void) | null = null;
+
+      const commitsRight =
+        axis !== 'vertical' &&
+        (offset > SWIPE_COMMIT_PX || (velocityX > SWIPE_COMMIT_VELOCITY && offset > 20));
+      const commitsLeft =
+        axis !== 'vertical' &&
+        (offset < -SWIPE_COMMIT_PX || (velocityX < -SWIPE_COMMIT_VELOCITY && offset < -20));
+
+      if (commitsRight) {
+        if (isTodayDoneRef.current) {
+          // Intentional "Reset to normal" — undo today's ledger row (momentum votes stay permanent outside grace).
+          pendingAction = () => undoOrResetToday();
+        } else if (!isScheduledTodayRef.current) {
+          // Off day: settle silently — no complete / momentum.
+        } else if (isFallbackActiveRef.current) {
+          pendingAction = () => {
+            setCelebration('fallback');
+            void triggerCompletionHaptic();
+            scheduleComplete(true);
+          };
+        } else {
+          pendingAction = () => {
+            setCelebration('full');
+            setFullPopSeq((seq) => seq + 1);
+            void triggerCompletionHaptic();
+            scheduleComplete(false);
+          };
+        }
+      } else if (commitsLeft) {
+        if (isTodayDoneRef.current) {
+          pendingAction = () => undoOrResetToday();
+        } else if (isFallbackActiveRef.current) {
+          pendingAction = () => onToggleFallbackModeRef.current(habitId);
+        } else if (!isScheduledTodayRef.current) {
+          // Off day: settle silently.
+        } else {
+          pendingAction = () => {
+            setCelebration('fallback');
+            onToggleFallbackModeRef.current(habitId);
+          };
+        }
+      }
+
+      springHome();
+
+      if (!pendingAction) return;
+
+      commitLockRef.current = true;
+      const run = pendingAction;
+      window.setTimeout(() => {
+        startTransition(() => {
+          try {
+            run();
+          } finally {
+            window.setTimeout(() => {
+              commitLockRef.current = false;
+            }, SWIPE_COMMIT_LOCK_MS);
+          }
+        });
+      }, SWIPE_COMMIT_DEFER_MS);
     },
-    [x]
+    [endSwipeSession, scheduleComplete, undoOrResetToday, x]
   );
 
-  const resolveGestureAxis = useCallback((deltaX: number, deltaY: number) => {
-    if (gestureAxisRef.current !== 'none') return gestureAxisRef.current;
-    const absX = Math.abs(deltaX);
-    const absY = Math.abs(deltaY);
-    if (absX > absY && absX > SWIPE_AXIS_LOCK_PX) {
+  const handleDragStart = useCallback(() => {
+    beginSwipeSession();
+  }, [beginSwipeSession]);
+
+  const handleDrag = useCallback(
+    (_e: unknown, info: { offset: { x: number; y: number } }) => {
+      if (Math.hypot(info.offset.x, info.offset.y) > 8) {
+        clearLongPressTimer();
+        hasMovedRef.current = true;
+      }
       gestureAxisRef.current = 'horizontal';
-      setTouchAction('none');
-    } else if (absY > absX && absY > SWIPE_AXIS_LOCK_PX) {
-      gestureAxisRef.current = 'vertical';
-      x.set(0);
-      setTouchAction('pan-y');
-    }
-    return gestureAxisRef.current;
-  }, [setTouchAction, x]);
+    },
+    [clearLongPressTimer]
+  );
 
-  const resetGesture = useCallback(() => {
-    x.set(0);
-    isDraggingRef.current = false;
-    gestureAxisRef.current = 'none';
-    setTouchAction('pan-y');
-  }, [setTouchAction, x]);
+  const handleDragEnd = useCallback(
+    (_e: unknown, info: { offset: { x: number }; velocity?: { x: number } }) => {
+      isDraggingRef.current = true;
+      x.set(info.offset.x);
+      gestureAxisRef.current = 'horizontal';
+      finishSwipe(info.offset.x, info.velocity?.x || 0);
+    },
+    [finishSwipe, x]
+  );
 
-  const finishSwipe = useCallback(() => {
-    const springHome = () => {
-      dragStartXRef.current = null;
-      gestureAxisRef.current = 'none';
-      isDraggingRef.current = false;
-      setTouchAction('pan-y');
-      void motionAnimate(x, 0, SPRING_TRANSITION);
-    };
-
-    if (gesturesLockedRef.current || commitLockRef.current) {
-      springHome();
-      return;
-    }
-
-    const axis = gestureAxisRef.current;
-    const offset = x.get();
-    const habitId = habitRef.current.id;
-    let pendingAction: (() => void) | null = null;
-
-    if (axis !== 'vertical' && offset > SWIPE_COMMIT_PX) {
-      if (isTodayDoneRef.current) {
-        pendingAction = () => undoOrResetToday();
-      } else if (!isScheduledTodayRef.current) {
-        // Off day: settle silently — no complete / momentum.
-      } else if (isFallbackActiveRef.current) {
-        pendingAction = () => {
-          setCelebration('fallback');
-          scheduleComplete(true);
-        };
-      } else {
-        pendingAction = () => {
-          setCelebration('full');
-          setFullPopSeq((seq) => seq + 1);
-          scheduleComplete(false);
-        };
-      }
-    } else if (axis !== 'vertical' && offset < -SWIPE_COMMIT_PX) {
-      if (isTodayDoneRef.current) {
-        pendingAction = () => undoOrResetToday();
-      } else if (isFallbackActiveRef.current) {
-        pendingAction = () => onToggleFallbackModeRef.current(habitId);
-      } else if (!isScheduledTodayRef.current) {
-        // Off day: settle silently.
-      } else {
-        pendingAction = () => {
-          setCelebration('fallback');
-          onToggleFallbackModeRef.current(habitId);
-        };
-      }
-    }
-
-    springHome();
-
-    if (!pendingAction) return;
-
-    // Defer App setState until after Motion releases the pointer frame —
-    // sync parent updates mid-dragEnd were freezing Capacitor WebViews.
-    commitLockRef.current = true;
-    const run = pendingAction;
-    requestAnimationFrame(() => {
-      try {
-        run();
-      } finally {
-        window.setTimeout(() => {
-          commitLockRef.current = false;
-        }, SWIPE_COMMIT_LOCK_MS);
-      }
-    });
-  }, [scheduleComplete, setTouchAction, undoOrResetToday, x]);
-
-  const endPointerGesture = useCallback(() => {
-    // Claim the gesture immediately so element + window end events cannot double-fire.
-    if (!isDraggingRef.current) return;
-    isDraggingRef.current = false;
-    clearLongPressTimer();
-    lastTouchAtRef.current = Date.now();
-
-    if (wasLongPressRef.current) {
-      wasLongPressRef.current = false;
-      resetGesture();
-      return;
-    }
-
-    const moved = hasMovedRef.current;
-    if (!moved) {
-      ignoreClickRef.current = true;
-      resetGesture();
-      requestFlip();
-      return;
-    }
-
-    ignoreClickRef.current = true;
-    if (isFlippedRef.current) {
-      resetGesture();
-      return;
-    }
-
-    finishSwipe();
-  }, [clearLongPressTimer, finishSwipe, requestFlip, resetGesture]);
-
-  const endPointerGestureRef = useRef(endPointerGesture);
-  endPointerGestureRef.current = endPointerGesture;
-
-  // Motion drag="x" owns horizontal movement; long-press is armed on pointer down.
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (isOtherLongPressedRef.current) return;
@@ -427,37 +439,6 @@ function HabitCardInner({
     [requestFlip]
   );
 
-  const handleDragStart = useCallback(() => {
-    clearLongPressTimer();
-    hasMovedRef.current = true;
-    ignoreClickRef.current = true;
-    gestureAxisRef.current = 'horizontal';
-    isDraggingRef.current = true;
-    // DOM-only — never setState here; React re-render mid-drag freezes WebView.
-    setTouchAction('none');
-  }, [clearLongPressTimer, setTouchAction]);
-
-  const handleDrag = useCallback(
-    (_e: unknown, info: { offset: { x: number; y: number } }) => {
-      if (Math.hypot(info.offset.x, info.offset.y) > 8) {
-        clearLongPressTimer();
-        hasMovedRef.current = true;
-      }
-      gestureAxisRef.current = 'horizontal';
-    },
-    [clearLongPressTimer]
-  );
-
-  const handleDragEnd = useCallback(
-    (_e: unknown, info: { offset: { x: number } }) => {
-      isDraggingRef.current = true;
-      x.set(info.offset.x);
-      gestureAxisRef.current = 'horizontal';
-      finishSwipe();
-    },
-    [finishSwipe, x]
-  );
-
   // Abort in-flight drag / long-press when the card unmounts (tab switch).
   useEffect(
     () => () => {
@@ -468,6 +449,7 @@ function HabitCardInner({
         /* ignore */
       }
       x.set(0);
+      forceReleaseSwipeScrollLock();
       isDraggingRef.current = false;
     },
     [clearLongPressTimer, x]
@@ -482,7 +464,7 @@ function HabitCardInner({
       ref={cardRef}
       data-tour={isTourTarget ? 'habit-card' : undefined}
       onContextMenu={handleContextMenu}
-      className={`relative select-none touch-pan-y transition-opacity duration-200 ${
+      className={`relative select-none touch-pan-y transition-opacity duration-200 gpu-smooth ${
         isLongPressed
           ? 'opacity-0 pointer-events-none'
           : isOtherLongPressed
@@ -501,28 +483,30 @@ function HabitCardInner({
           }`}
           style={{ opacity: revealRightOpacity }}
         >
-          {isTodayDone ? (
-            <div className="flex items-center space-x-2 text-xs">
-              <svg className="w-4 h-4 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
-              </svg>
-              <span>Reset to normal</span>
-            </div>
-          ) : isFallbackActive ? (
-            <div className="flex items-center space-x-2 text-xs">
-              <svg className="w-5 h-5 text-white stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-              <span>Complete Fallback (50%)</span>
-            </div>
-          ) : (
-            <div className="flex items-center space-x-2 text-xs">
-              <svg className="w-5 h-5 text-white stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-              <span>Complete (100%)</span>
-            </div>
-          )}
+          <motion.div style={{ scale: revealRightScale }} className="flex items-center space-x-2 text-xs">
+            {isTodayDone ? (
+              <>
+                <svg className="w-4 h-4 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                </svg>
+                <span>Reset to normal</span>
+              </>
+            ) : isFallbackActive ? (
+              <>
+                <svg className="w-5 h-5 text-white stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                <span>Complete Fallback (50%)</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5 text-white stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                <span>Complete (100%)</span>
+              </>
+            )}
+          </motion.div>
         </motion.div>
 
         <motion.div
@@ -535,26 +519,28 @@ function HabitCardInner({
           }`}
           style={{ opacity: revealLeftOpacity }}
         >
-          {isTodayDone ? (
-            <div className="flex items-center space-x-2 text-xs">
-              <span>Reset to normal</span>
-              <svg className="w-4 h-4 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
-              </svg>
-            </div>
-          ) : isFallbackActive ? (
-            <div className="flex items-center space-x-2 text-xs">
-              <span>Cancel Fallback</span>
-              <svg className="w-4 h-4 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </div>
-          ) : (
-            <div className="flex items-center space-x-2 text-xs">
-              <span>Switch to Fallback</span>
-              <span className="text-lg font-black font-mono ml-1">~</span>
-            </div>
-          )}
+          <motion.div style={{ scale: revealLeftScale }} className="flex items-center space-x-2 text-xs">
+            {isTodayDone ? (
+              <>
+                <span>Reset to normal</span>
+                <svg className="w-4 h-4 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                </svg>
+              </>
+            ) : isFallbackActive ? (
+              <>
+                <span>Cancel Fallback</span>
+                <svg className="w-4 h-4 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </>
+            ) : (
+              <>
+                <span>Switch to Fallback</span>
+                <span className="text-lg font-black font-mono ml-1">~</span>
+              </>
+            )}
+          </motion.div>
         </motion.div>
 
         <motion.article
@@ -571,15 +557,15 @@ function HabitCardInner({
           onPointerCancel={handlePointerUp}
           drag={!gesturesLocked && !isLongPressed && !isOtherLongPressed && !isFlipped ? 'x' : false}
           dragConstraints={SWIPE_DRAG_CONSTRAINTS}
-          dragElastic={0.2}
+          dragElastic={0.38}
           dragMomentum={false}
           dragPropagation={false}
           layout={false}
           onDragStart={handleDragStart}
           onDrag={handleDrag}
           onDragEnd={handleDragEnd}
-          style={{ perspective: 1000, x }}
-          className="swipe-card-surface gpu-layer relative w-full cursor-pointer select-none"
+          style={{ x, rotateZ: cardRotateZ, scale: cardScale }}
+          className="swipe-card-surface gpu-accelerated gpu-smooth relative w-full cursor-pointer select-none will-change-transform"
         >
           <motion.div
             key={celebration === 'full' ? `full-${fullPopSeq}` : 'idle'}
@@ -587,11 +573,13 @@ function HabitCardInner({
             animate={celebration === 'full' ? FULL_POP_ANIMATE : IDLE_SCALE}
             transition={FULL_POP_TRANSITION}
           >
+            {/* perspective lives here — never on the Motion drag node (x + 3D compositing deadlocks WebView). */}
             <div
               style={{
+                perspective: 1000,
                 transformStyle: 'preserve-3d',
                 transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
-                transition: 'transform 0.45s cubic-bezier(0.4, 0, 0.2, 1)',
+                transition: 'transform 0.45s cubic-bezier(0.32, 0.72, 0, 1)',
               }}
               className="relative w-full"
             >
@@ -600,7 +588,7 @@ function HabitCardInner({
                   backfaceVisibility: 'hidden',
                   WebkitBackfaceVisibility: 'hidden',
                 }}
-                className={`relative bg-surface text-ink rounded-2xl p-4 border flex flex-col justify-between transition-all duration-200 ${
+                className={`relative bg-surface text-ink rounded-2xl p-4 border flex flex-col justify-between transition-[border-color,background-color,box-shadow] duration-200 ease-out ${
                   isLongPressed
                     ? 'scale-[1.025] shadow-2xl ring-2 ring-accent border-accent'
                     : celebration === 'fallback'
@@ -653,7 +641,7 @@ function HabitCardInner({
                     </div>
 
                     <div className="flex items-center space-x-1.5 mt-2.5">
-                      {habit.days.map((isDone, dayIdx) => {
+                      {(habit.days ?? [false, false, false, false, false, false, false]).map((isDone, dayIdx) => {
                         const isPast = dayIdx < todayIndex;
                         const isToday = dayIdx === todayIndex;
                         const isViewed = dayIdx === activeIndex;
@@ -726,13 +714,21 @@ function HabitCardInner({
                         if (isToday) {
                           if (isTodayDone) {
                             return (
-                              <div
+                              <motion.button
+                                type="button"
                                 key={dayIdx}
                                 id={`habit-${habit.id}-day-${dayIdx + 1}`}
+                                data-today-button="true"
+                                whileTap={{ scale: 0.86 }}
+                                transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  undoOrResetToday();
+                                }}
                                 title={`Day ${dayIdx + 1} (Today): ${
                                   isTodayMicro ? 'Micro fallback completed' : 'Completed'
-                                }. Swipe to reset.`}
-                                className={`w-6 h-6 rounded-md flex items-center justify-center select-none ring-2 ring-emerald-500/20 dark:ring-blue-500/20 ${
+                                }. Tap or swipe to reset.`}
+                                className={`w-6 h-6 rounded-md flex items-center justify-center select-none cursor-pointer ring-2 ring-emerald-500/20 dark:ring-blue-500/20 ${
                                   isTodayMicro
                                     ? 'bg-emerald-300 dark:bg-blue-400 text-emerald-950 dark:text-slate-950 border border-emerald-400 dark:border-blue-500 shadow-2xs'
                                     : 'bg-emerald-600 dark:bg-blue-600 text-white shadow-2xs border border-emerald-700 dark:border-blue-500'
@@ -756,36 +752,55 @@ function HabitCardInner({
                                     />
                                   </svg>
                                 )}
-                              </div>
+                              </motion.button>
                             );
                           }
 
                           if (isFallbackActive) {
                             return (
-                              <div
+                              <motion.button
+                                type="button"
                                 key={dayIdx}
                                 id={`habit-${habit.id}-day-${dayIdx + 1}`}
-                                title="Fallback active: Swipe right to complete fallback"
-                                className="w-6 h-6 rounded-md flex items-center justify-center select-none bg-emerald-50 dark:bg-blue-950 border-2 border-emerald-500 dark:border-blue-500 text-emerald-700 dark:text-blue-300 shadow-xs"
+                                data-today-button="true"
+                                whileTap={{ scale: 0.86 }}
+                                transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCelebration('fallback');
+                                  scheduleComplete(true);
+                                }}
+                                title="Fallback active: Tap or swipe right to complete fallback"
+                                className="w-6 h-6 rounded-md flex items-center justify-center select-none cursor-pointer bg-emerald-50 dark:bg-blue-950 border-2 border-emerald-500 dark:border-blue-500 text-emerald-700 dark:text-blue-300 shadow-xs"
                               >
                                 <span className="text-[12px] font-black text-emerald-700 dark:text-blue-300 font-mono leading-none">
                                   ~
                                 </span>
-                              </div>
+                              </motion.button>
                             );
                           }
 
                           return (
-                            <div
+                            <motion.button
+                              type="button"
                               key={dayIdx}
                               id={`habit-${habit.id}-day-${dayIdx + 1}`}
-                              title="Today: Swipe right to complete, swipe left for fallback"
-                              className="w-6 h-6 rounded-md flex items-center justify-center select-none bg-emerald-50/90 dark:bg-blue-950/90 border-2 border-emerald-500 dark:border-blue-500 text-emerald-700 dark:text-blue-300 shadow-xs"
+                              data-today-button="true"
+                              whileTap={{ scale: 0.86 }}
+                              transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCelebration('full');
+                                setFullPopSeq((seq) => seq + 1);
+                                scheduleComplete(false);
+                              }}
+                              title="Today: Tap or swipe right to complete, swipe left for fallback"
+                              className="w-6 h-6 rounded-md flex items-center justify-center select-none cursor-pointer bg-emerald-50/90 dark:bg-blue-950/90 border-2 border-emerald-500 dark:border-blue-500 text-emerald-700 dark:text-blue-300 shadow-xs"
                             >
                               <span className="text-[9px] font-black text-emerald-700 dark:text-blue-300">
                                 {getWeekDateNumber(todayIndex)}
                               </span>
-                            </div>
+                            </motion.button>
                           );
                         }
 

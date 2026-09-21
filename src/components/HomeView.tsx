@@ -13,6 +13,8 @@ interface HomeViewProps {
   onCycleDaysChange: (days: CycleDays) => void;
   celebrating?: boolean;
   onCelebrationDone?: () => void;
+  deferredPieceIds?: ReadonlySet<string>;
+  settlePieceIds?: ReadonlySet<string>;
   children: React.ReactNode;
 }
 
@@ -25,6 +27,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onCycleDaysChange,
   celebrating = false,
   onCelebrationDone,
+  deferredPieceIds,
+  settlePieceIds,
   children,
 }) => {
   const darkMode = Boolean(isDark);
@@ -35,9 +39,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const cycleDays = Number.isFinite(bowlFill?.cycleDays) ? bowlFill.cycleDays : 7;
 
   return (
-    <div className="mt-0 flex w-full flex-col items-center pt-1 gpu-layer">
-      {/* Momentum → Bowl: compact stack so habit cards clear the fold. */}
-      <div className="relative z-10 mb-1 flex w-full justify-center gpu-layer">
+    <div className="mt-0 flex w-full flex-col items-center pt-1">
+      <div className="relative z-10 mb-1 flex w-full justify-center">
         <MomentumPill
           momentumScore={momentumScore}
           momentumPulse={momentumPulse}
@@ -45,7 +48,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         />
       </div>
 
-      <div className="mx-auto mt-0 flex w-full flex-col items-center justify-center gpu-layer">
+      <div className="mx-auto mt-0 flex w-full flex-col items-center justify-center">
         <AccumulationBowl
           pieces={safePieces}
           fillPercent={fillPercent}
@@ -57,6 +60,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
           onCycleDaysChange={onCycleDaysChange}
           celebrating={celebrating}
           onCelebrationDone={onCelebrationDone}
+          deferredPieceIds={deferredPieceIds}
+          settlePieceIds={settlePieceIds}
         />
       </div>
 

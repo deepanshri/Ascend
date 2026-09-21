@@ -1,15 +1,20 @@
-import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo, startTransition } from 'react';
 import { motion, useMotionValue, useTransform, animate as motionAnimate } from 'motion/react';
 import { StandaloneReminder } from '../types';
 import { ASCEND_STATUS_CHIP_CLASS } from '../utils/categories';
-import { SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD, SWIPE_DRAG_CONSTRAINTS, SWIPE_MAX_PX } from '../hooks/useHorizontalSwipeDrag';
+import {
+  SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD,
+  SWIPE_COMMIT_VELOCITY,
+  SWIPE_DRAG_CONSTRAINTS,
+  SPRING_TRANSITION,
+} from '../hooks/useHorizontalSwipeDrag';
+import { acquireSwipeScrollLock, forceReleaseSwipeScrollLock, releaseSwipeScrollLock } from '../lib/swipeScrollLock';
 
-const SWIPE_AXIS_LOCK_PX = 6;
 const SWIPE_COMMIT_PX = SWIPE_COMMIT_THRESHOLD;
 const LONG_PRESS_MS = 400;
 const GHOST_MOUSE_MS = 700;
-const SPRING_TRANSITION = { type: 'spring' as const, stiffness: 420, damping: 26, mass: 0.7 };
-const SWIPE_COMMIT_LOCK_MS = 450;
+const SWIPE_COMMIT_LOCK_MS = 280;
+const SWIPE_COMMIT_DEFER_MS = 16;
 
 interface ReminderCardProps {
   reminder: StandaloneReminder;
@@ -41,9 +46,13 @@ function ReminderCardInner({
   const x = useMotionValue(0);
   const revealRightOpacity = useTransform(x, [8, 36], [0, 1]);
   const revealLeftOpacity = useTransform(x, [-8, -36], [0, 1]);
+  const cardRotateZ = useTransform(x, [-125, 125], [-1.8, 1.8]);
+  const cardScale = useTransform(x, [-125, 0, 125], [0.985, 1, 0.985]);
+  const revealRightScale = useTransform(x, [10, SWIPE_COMMIT_PX], [0.85, 1.06]);
+  const revealLeftScale = useTransform(x, [-10, -SWIPE_COMMIT_PX], [0.85, 1.06]);
 
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const swipeSurfaceRef = useRef<HTMLElement | null>(null);
+  const swipeSurfaceRef = useRef<HTMLDivElement | null>(null);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -96,133 +105,116 @@ function ReminderCardInner({
 
   const setTouchAction = useCallback((mode: 'pan-y' | 'none') => {
     const el = swipeSurfaceRef.current;
-    if (el) el.style.touchAction = mode;
+    if (!el) return;
+    el.style.touchAction = mode;
+    el.classList.toggle('is-swiping', mode === 'none');
   }, []);
 
-  const applySwipeOffset = useCallback(
-    (deltaX: number) => {
-      const clamped = Math.max(-SWIPE_MAX_PX, Math.min(SWIPE_MAX_PX, deltaX));
-      x.set(clamped);
-    },
-    [x]
-  );
+  const beginSwipeSession = useCallback(() => {
+    clearLongPressTimer();
+    hasMovedRef.current = true;
+    gestureAxisRef.current = 'horizontal';
+    isDraggingRef.current = true;
+    setTouchAction('none');
+    acquireSwipeScrollLock();
+  }, [clearLongPressTimer, setTouchAction]);
 
-  const resolveGestureAxis = useCallback(
-    (deltaX: number, deltaY: number) => {
-      if (gestureAxisRef.current !== 'none') return gestureAxisRef.current;
-      const absX = Math.abs(deltaX);
-      const absY = Math.abs(deltaY);
-      if (absX > absY && absX > SWIPE_AXIS_LOCK_PX) {
-        gestureAxisRef.current = 'horizontal';
-        setTouchAction('none');
-      } else if (absY > absX && absY > SWIPE_AXIS_LOCK_PX) {
-        gestureAxisRef.current = 'vertical';
-        x.set(0);
-        setTouchAction('pan-y');
-      }
-      return gestureAxisRef.current;
-    },
-    [setTouchAction, x]
-  );
-
-  const resetGesture = useCallback(() => {
-    x.set(0);
+  const endSwipeSession = useCallback(() => {
     isDraggingRef.current = false;
     gestureAxisRef.current = 'none';
     setTouchAction('pan-y');
-  }, [setTouchAction, x]);
+    releaseSwipeScrollLock();
+  }, [setTouchAction]);
 
-  const finishSwipe = useCallback(() => {
-    const springHome = () => {
-      dragStartXRef.current = null;
-      gestureAxisRef.current = 'none';
-      isDraggingRef.current = false;
-      setTouchAction('pan-y');
-      void motionAnimate(x, 0, SPRING_TRANSITION);
-    };
+  const finishSwipe = useCallback(
+    (endOffset?: number, endVelocityX = 0) => {
+      const springHome = () => {
+        dragStartXRef.current = null;
+        try {
+          x.stop();
+        } catch {
+          /* ignore */
+        }
+        void motionAnimate(x, 0, SPRING_TRANSITION);
+        endSwipeSession();
+      };
 
-    if (commitLockRef.current) {
+      if (commitLockRef.current) {
+        springHome();
+        return;
+      }
+
+      const axis = gestureAxisRef.current;
+      const offset = endOffset !== undefined ? endOffset : x.get();
+      const velocityX = endVelocityX;
+      let pendingAction: (() => void) | null = null;
+
+      const commitsRight =
+        !isArchived &&
+        axis !== 'vertical' &&
+        (offset > SWIPE_COMMIT_PX || (velocityX > SWIPE_COMMIT_VELOCITY && offset > 20));
+      const commitsLeft =
+        !isArchived &&
+        axis !== 'vertical' &&
+        (offset < -SWIPE_COMMIT_PX || (velocityX < -SWIPE_COMMIT_VELOCITY && offset < -20));
+
+      if (commitsRight) {
+        if (!localCompletedRef.current) {
+          pendingAction = () => {
+            requestCompleted(true);
+            try {
+              if (navigator.vibrate) navigator.vibrate(40);
+            } catch {
+              /* ignore */
+            }
+          };
+        }
+      } else if (commitsLeft) {
+        if (localCompletedRef.current) {
+          pendingAction = () => {
+            if (onUndoGraceRef.current) onUndoGraceRef.current(reminderRef.current.id);
+            else requestCompleted(false);
+            try {
+              if (navigator.vibrate) navigator.vibrate(30);
+            } catch {
+              /* ignore */
+            }
+          };
+        }
+      }
+
       springHome();
-      return;
-    }
 
-    const axis = gestureAxisRef.current;
-    const offset = x.get();
-    let pendingAction: (() => void) | null = null;
+      if (!pendingAction) return;
 
-    if (!isArchived && axis !== 'vertical' && offset > SWIPE_COMMIT_PX) {
-      if (!localCompletedRef.current) {
-        pendingAction = () => {
-          requestCompleted(true);
+      commitLockRef.current = true;
+      const run = pendingAction;
+      window.setTimeout(() => {
+        startTransition(() => {
           try {
-            if (navigator.vibrate) navigator.vibrate(40);
-          } catch {
-            /* ignore */
+            run();
+          } finally {
+            window.setTimeout(() => {
+              commitLockRef.current = false;
+            }, SWIPE_COMMIT_LOCK_MS);
           }
-        };
-      }
-    } else if (!isArchived && axis !== 'vertical' && offset < -SWIPE_COMMIT_PX) {
-      if (localCompletedRef.current) {
-        pendingAction = () => {
-          if (onUndoGraceRef.current) onUndoGraceRef.current(reminderRef.current.id);
-          else requestCompleted(false);
-          try {
-            if (navigator.vibrate) navigator.vibrate(30);
-          } catch {
-            /* ignore */
-          }
-        };
-      }
-    }
-
-    springHome();
-
-    if (!pendingAction) return;
-
-    commitLockRef.current = true;
-    const run = pendingAction;
-    requestAnimationFrame(() => {
-      try {
-        run();
-      } finally {
-        window.setTimeout(() => {
-          commitLockRef.current = false;
-        }, SWIPE_COMMIT_LOCK_MS);
-      }
-    });
-  }, [isArchived, requestCompleted, setTouchAction, x]);
-
-  const endPointerGesture = useCallback(() => {
-    if (!isDraggingRef.current) return;
-    isDraggingRef.current = false;
-    clearLongPressTimer();
-    lastTouchAtRef.current = Date.now();
-
-    if (wasLongPressRef.current) {
-      wasLongPressRef.current = false;
-      resetGesture();
-      return;
-    }
-
-    if (!hasMovedRef.current) {
-      resetGesture();
-      return;
-    }
-
-    finishSwipe();
-  }, [clearLongPressTimer, finishSwipe, resetGesture]);
-
-  const endPointerGestureRef = useRef(endPointerGesture);
-  endPointerGestureRef.current = endPointerGesture;
+        });
+      }, SWIPE_COMMIT_DEFER_MS);
+    },
+    [endSwipeSession, isArchived, requestCompleted, x]
+  );
 
   const armLongPress = useCallback(() => {
     clearLongPressTimer();
     longPressTimerRef.current = window.setTimeout(() => {
       wasLongPressRef.current = true;
-      gestureAxisRef.current = 'none';
-      isDraggingRef.current = false;
+      try {
+        x.stop();
+      } catch {
+        /* ignore */
+      }
       x.set(0);
-      setTouchAction('pan-y');
+      endSwipeSession();
       try {
         if (navigator.vibrate) navigator.vibrate(40);
       } catch {
@@ -231,16 +223,11 @@ function ReminderCardInner({
       const rect = cardRef.current?.getBoundingClientRect() || null;
       onLongPressRef.current?.(reminderRef.current, rect);
     }, LONG_PRESS_MS);
-  }, [clearLongPressTimer, setTouchAction, x]);
+  }, [clearLongPressTimer, endSwipeSession, x]);
 
   const handleDragStart = useCallback(() => {
-    clearLongPressTimer();
-    hasMovedRef.current = true;
-    gestureAxisRef.current = 'horizontal';
-    isDraggingRef.current = true;
-    // DOM-only — never setState here; React re-render mid-drag freezes WebView.
-    setTouchAction('none');
-  }, [clearLongPressTimer, setTouchAction]);
+    beginSwipeSession();
+  }, [beginSwipeSession]);
 
   const handleDrag = useCallback(
     (_e: unknown, info: { offset: { x: number; y: number } }) => {
@@ -254,11 +241,11 @@ function ReminderCardInner({
   );
 
   const handleDragEnd = useCallback(
-    (_e: unknown, info: { offset: { x: number } }) => {
+    (_e: unknown, info: { offset: { x: number }; velocity?: { x: number } }) => {
       isDraggingRef.current = true;
       x.set(info.offset.x);
       gestureAxisRef.current = 'horizontal';
-      finishSwipe();
+      finishSwipe(info.offset.x, info.velocity?.x || 0);
     },
     [finishSwipe, x]
   );
@@ -272,6 +259,7 @@ function ReminderCardInner({
         /* ignore */
       }
       x.set(0);
+      forceReleaseSwipeScrollLock();
       isDraggingRef.current = false;
     },
     [clearLongPressTimer, x]
@@ -410,24 +398,24 @@ function ReminderCardInner({
             className="absolute inset-0 text-white flex items-center justify-start px-5 font-bold rounded-2xl bg-[#23C15D] dark:bg-blue-600"
             style={{ opacity: revealRightOpacity }}
           >
-            <div className="flex items-center space-x-2 text-xs">
+            <motion.div style={{ scale: revealRightScale }} className="flex items-center space-x-2 text-xs">
               <svg className="w-5 h-5 text-white stroke-[3.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
               </svg>
               <span>Complete</span>
-            </div>
+            </motion.div>
           </motion.div>
 
           <motion.div
             className="absolute inset-0 text-white flex items-center justify-end px-5 font-bold rounded-2xl bg-slate-700 dark:bg-slate-700"
             style={{ opacity: revealLeftOpacity }}
           >
-            <div className="flex items-center space-x-2 text-xs">
+            <motion.div style={{ scale: revealLeftScale }} className="flex items-center space-x-2 text-xs">
               <span>Undo</span>
               <svg className="w-4.5 h-4.5 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
               </svg>
-            </div>
+            </motion.div>
           </motion.div>
         </>
       ) : null}
@@ -443,15 +431,15 @@ function ReminderCardInner({
         onContextMenu={handleContextMenu}
         drag={isArchived ? false : 'x'}
         dragConstraints={SWIPE_DRAG_CONSTRAINTS}
-        dragElastic={0.2}
+        dragElastic={0.34}
         dragMomentum={false}
         dragPropagation={false}
         layout={false}
         onDragStart={handleDragStart}
         onDrag={handleDrag}
         onDragEnd={handleDragEnd}
-        style={{ x }}
-        className={`swipe-card-surface gpu-layer relative z-10 rounded-2xl p-3.5 border flex items-start space-x-3.5 cursor-grab active:cursor-grabbing ${
+        style={{ x, rotateZ: cardRotateZ, scale: cardScale }}
+        className={`swipe-card-surface will-change-transform relative z-10 rounded-2xl p-3.5 border flex items-start space-x-3.5 cursor-grab active:cursor-grabbing ${
           isArchived
             ? 'bg-slate-50 dark:bg-slate-900/70 border-slate-200/80 dark:border-slate-800'
             : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'

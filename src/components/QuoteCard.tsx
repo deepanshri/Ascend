@@ -340,16 +340,18 @@ function normalizeCategory(value: string): string {
 }
 
 function matchesCategories(quote: Quote, categories: string[]): boolean {
-  const needles = categories.map(normalizeCategory);
+  const list = Array.isArray(categories) ? categories : [];
+  const needles = list.map(normalizeCategory);
   const haystacks = [quote.category, quote.source].map(normalizeCategory);
   return needles.some((needle) => haystacks.some((hay) => hay.includes(needle) || needle.includes(hay)));
 }
 
 function localQuotesFor(interests: string[], isGuest: boolean): Quote[] {
-  if (isGuest || interests.length === 0) {
+  const list = Array.isArray(interests) ? interests : [];
+  if (isGuest || list.length === 0) {
     return DEFAULT_HABIT_QUOTES;
   }
-  const matched = INTEREST_QUOTES.filter((quote) => matchesCategories(quote, interests));
+  const matched = INTEREST_QUOTES.filter((quote) => matchesCategories(quote, list));
   return matched.length > 0 ? matched : DEFAULT_HABIT_QUOTES;
 }
 
