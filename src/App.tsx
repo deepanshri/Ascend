@@ -672,6 +672,17 @@ export default function App() {
   const [longPressedRect, setLongPressedRect] = useState<DOMRect | null>(null);
   const [deleteConfirmHabit, setDeleteConfirmHabit] = useState<Habit | null>(null);
   const [momentumPulse, setMomentumPulse] = useState(0);
+
+  useEffect(() => {
+    const handleSyncComplete = () => {
+      setMomentumPulse((n) => n + 1);
+    };
+    window.addEventListener('ascend_offline_sync_completed', handleSyncComplete);
+    return () => {
+      window.removeEventListener('ascend_offline_sync_completed', handleSyncComplete);
+    };
+  }, []);
+
   const tutorialLockRef = useRef(false);
   const [hasCompletedTutorial, setHasCompletedTutorial] = useState<boolean | null>(() => {
     try {

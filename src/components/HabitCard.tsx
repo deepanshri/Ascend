@@ -107,6 +107,9 @@ function HabitCardInner({
   const isDraggingRef = useRef(false);
   /** Prevents double-commit / re-entrant App updates while a swipe settles. */
   const commitLockRef = useRef(false);
+  /** Optimistic tap mutex: blocks rapid repeated day-pill clicks within 300ms. */
+  const tapLockRef = useRef(false);
+  const TAP_DEBOUNCE_MS = 300;
   const isFlippedRef = useRef(isFlipped);
   isFlippedRef.current = isFlipped;
   const isOtherLongPressedRef = useRef(isOtherLongPressed);
@@ -197,6 +200,26 @@ function HabitCardInner({
     setCelebration('none');
     onResetTodayRef.current(habitRef.current.id);
   }, [clearPendingComplete]);
+
+  const handlePillClick = useCallback(
+    (e: React.MouseEvent, action: () => void) => {
+      e.stopPropagation();
+      if (tapLockRef.current || commitLockRef.current || gesturesLockedRef.current) {
+        return;
+      }
+      tapLockRef.current = true;
+      commitLockRef.current = true;
+      try {
+        action();
+      } finally {
+        window.setTimeout(() => {
+          tapLockRef.current = false;
+          commitLockRef.current = false;
+        }, TAP_DEBOUNCE_MS);
+      }
+    },
+    []
+  );
 
   const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current !== null) {
@@ -722,8 +745,9 @@ function HabitCardInner({
                                 whileTap={{ scale: 0.86 }}
                                 transition={{ type: 'spring', stiffness: 500, damping: 15 }}
                                 onClick={(e) => {
-                                  e.stopPropagation();
-                                  undoOrResetToday();
+                                  handlePillClick(e, () => {
+                                    undoOrResetToday();
+                                  });
                                 }}
                                 title={`Day ${dayIdx + 1} (Today): ${
                                   isTodayMicro ? 'Micro fallback completed' : 'Completed'
@@ -766,9 +790,10 @@ function HabitCardInner({
                                 whileTap={{ scale: 0.86 }}
                                 transition={{ type: 'spring', stiffness: 500, damping: 15 }}
                                 onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCelebration('fallback');
-                                  scheduleComplete(true);
+                                  handlePillClick(e, () => {
+                                    setCelebration('fallback');
+                                    scheduleComplete(true);
+                                  });
                                 }}
                                 title="Fallback active: Tap or swipe right to complete fallback"
                                 className="w-6 h-6 rounded-lg flex items-center justify-center select-none cursor-pointer bg-emerald-50 dark:bg-blue-950 border-2 border-emerald-500 dark:border-blue-500 text-emerald-700 dark:text-blue-300 shadow-xs"
@@ -789,10 +814,11 @@ function HabitCardInner({
                               whileTap={{ scale: 0.86 }}
                               transition={{ type: 'spring', stiffness: 500, damping: 15 }}
                               onClick={(e) => {
-                                e.stopPropagation();
-                                setCelebration('full');
-                                setFullPopSeq((seq) => seq + 1);
-                                scheduleComplete(false);
+                                handlePillClick(e, () => {
+                                  setCelebration('full');
+                                  setFullPopSeq((seq) => seq + 1);
+                                  scheduleComplete(false);
+                                });
                               }}
                               title="Today: Tap or swipe right to complete, swipe left for fallback"
                               className="w-6 h-6 rounded-lg flex items-center justify-center select-none cursor-pointer bg-emerald-50/90 dark:bg-blue-950/90 border-2 border-emerald-500 dark:border-blue-500 text-emerald-700 dark:text-blue-300 shadow-xs"

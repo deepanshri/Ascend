@@ -69,7 +69,24 @@ export function readCachedProfile(userId: string): UserProfile | null {
   return readJson<UserProfile | null>(`${PROFILE_CACHE_KEY}:${userId}`, null);
 }
 
-function readLogQueue(): HabitLogQueueItem[] {
+export function resolveQueueItemKey(item: HabitLogQueueItem): { habitId: string; loggedDate: string } {
+  if (item.kind === 'upsert') {
+    const loggedDate =
+      item.event.date && isIsoDate(item.event.date)
+        ? item.event.date
+        : isoDateForDayIndex(item.event.dayIndex, new Date(item.event.timestamp || Date.now()));
+    return { habitId: item.event.habitId, loggedDate };
+  }
+  const loggedDate =
+    isIsoDate(item.loggedDate)
+      ? item.loggedDate
+      : typeof item.dayIndex === 'number'
+        ? isoDateForDayIndex(item.dayIndex, new Date())
+        : item.loggedDate;
+  return { habitId: item.habitId, loggedDate };
+}
+
+export function readLogQueue(): HabitLogQueueItem[] {
   return readJson<HabitLogQueueItem[]>(LOG_QUEUE_KEY, []);
 }
 
@@ -79,23 +96,50 @@ function writeLogQueue(items: HabitLogQueueItem[]): void {
 
 function enqueueLog(item: HabitLogQueueItem): void {
   const next = readLogQueue();
-  if (item.kind === 'upsert') {
-    const filtered = next.filter(
-      (entry) =>
-        !(
-          entry.kind === 'upsert' &&
-          entry.event.habitId === item.event.habitId &&
-          entry.event.dayIndex === item.event.dayIndex
-        )
-    );
+  const { habitId, loggedDate } = resolveQueueItemKey(item);
+
+  if (item.kind === 'delete') {
+    const hadPendingUpsert = next.some((entry) => {
+      if (entry.kind !== 'upsert') return false;
+      const key = resolveQueueItemKey(entry);
+      return key.habitId === habitId && key.loggedDate === loggedDate;
+    });
+
+    const filtered = next.filter((entry) => {
+      const key = resolveQueueItemKey(entry);
+      return !(key.habitId === habitId && key.loggedDate === loggedDate);
+    });
+
+    if (hadPendingUpsert) {
+      // Offline complete + un-complete cancel each other out symmetrically:
+      // The pending upsert never reached the remote, so no remote deletion is required.
+      writeLogQueue(filtered);
+      return;
+    }
+
+    // No pending upsert found: this was previously synced to remote, so keep the delete.
     writeLogQueue([...filtered, item]);
     return;
   }
-  const loggedDate = item.loggedDate;
-  const filtered = next.filter(
-    (entry) =>
-      !(entry.kind === 'delete' && entry.habitId === item.habitId && entry.loggedDate === loggedDate)
-  );
+
+  // item.kind === 'upsert'
+  const hadPendingDelete = next.some((entry) => {
+    if (entry.kind !== 'delete') return false;
+    const key = resolveQueueItemKey(entry);
+    return key.habitId === habitId && key.loggedDate === loggedDate;
+  });
+
+  const filtered = next.filter((entry) => {
+    const key = resolveQueueItemKey(entry);
+    return !(key.habitId === habitId && key.loggedDate === loggedDate);
+  });
+
+  if (hadPendingDelete && item.event.type !== 'fallback_micro') {
+    // Offline delete + re-complete to normal cancels out the deletion without redundant network traffic.
+    writeLogQueue(filtered);
+    return;
+  }
+
   writeLogQueue([...filtered, item]);
 }
 
@@ -282,6 +326,10 @@ export async function flushOfflineQueue(): Promise<void> {
     await flushMomentumEventQueue();
   } catch {
     // momentum_events table may not exist yet on older projects.
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ascend_offline_sync_completed'));
   }
 }
 
