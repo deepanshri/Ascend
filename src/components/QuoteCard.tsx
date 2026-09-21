@@ -418,7 +418,7 @@ interface QuoteCardProps {
   isGuest?: boolean;
 }
 
-export const QuoteCard: React.FC<QuoteCardProps> = ({
+const QuoteCardInner: React.FC<QuoteCardProps> = ({
   selectedInterests = [],
   isGuest = false,
 }) => {
@@ -511,3 +511,15 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
     </motion.button>
   );
 };
+
+export const QuoteCard = React.memo(QuoteCardInner, (prev, next) => {
+  if (prev.isGuest !== next.isGuest) return false;
+  const pList = prev.selectedInterests || [];
+  const nList = next.selectedInterests || [];
+  if (pList.length !== nList.length) return false;
+  for (let i = 0; i < pList.length; i++) {
+    if (pList[i] !== nList[i]) return false;
+  }
+  return true;
+});
+

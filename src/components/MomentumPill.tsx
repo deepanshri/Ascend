@@ -24,7 +24,7 @@ export interface MomentumPillProps {
  * Count digits update via DOM textContent (not React setState) to avoid
  * re-rendering Home during the 0.8s count animation.
  */
-export const MomentumPill: React.FC<MomentumPillProps> = ({
+const MomentumPillInner: React.FC<MomentumPillProps> = ({
   momentumScore,
   momentumPulse = 0,
   isDark = false,
@@ -202,8 +202,9 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
       style={{
         width: pillWidth,
         minWidth: pillWidth,
+        contain: 'layout style',
       }}
-      className={`inline-flex items-center justify-center rounded-full border text-[11px] font-bold tabular-nums overflow-hidden px-3.5 py-1 gap-1.5 ${
+      className={`inline-flex items-center justify-center rounded-full border text-[11px] font-bold tabular-nums overflow-hidden px-3.5 py-1 gap-1.5 will-change-[width] ${
         darkMode
           ? 'bg-slate-900/95 border-blue-500/50 text-blue-200'
           : 'bg-white/95 border-emerald-200 text-emerald-800 shadow-sm'
@@ -234,3 +235,6 @@ export const MomentumPill: React.FC<MomentumPillProps> = ({
     </motion.div>
   );
 };
+
+export const MomentumPill = React.memo(MomentumPillInner);
+

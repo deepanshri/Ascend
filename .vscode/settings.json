@@ -6,7 +6,19 @@
   "files.watcherExclude": {
     "**/android/app/build/**": true,
     "**/android/.gradle/**": true,
+    "**/android/app/capacitor.build.gradle": true,
+    "**/android/capacitor-cordova-android-plugins/**": true,
     "**/dist/**": true,
     "**/node_modules/**": true
-  }
+  },
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.errors.incompleteClasspath.severity": "ignore",
+  "java.import.gradle.enabled": false,
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/.metadata/**",
+    "**/archetype/**",
+    "**/META-INF/maven/**",
+    "**/android/**"
+  ]
 }

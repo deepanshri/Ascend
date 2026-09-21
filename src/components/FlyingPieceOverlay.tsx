@@ -7,13 +7,13 @@ import pieceBlueLight from '../assets/bowl/piece-blue-light.webp';
 import { playCompletionSound } from '../utils/feedback';
 
 /** Organic self-scaling emergence duration on the habit bar. */
-const EMERGENCE_MS = 320;
+const EMERGENCE_MS = 240;
 /** Kinetic pre-launch anticipation duration. */
-const ANTICIPATION_MS = 170;
-/** Total wait time reduced by 30% (from 700ms down to 490ms). */
-const TOTAL_HOLD_MS = EMERGENCE_MS + ANTICIPATION_MS; // 490ms
-/** Natural physical gravity flight arc into the bowl cavity. */
-const FLIGHT_MS = 620;
+const ANTICIPATION_MS = 120;
+/** Total wait time (360ms) before the throw begins. */
+const TOTAL_HOLD_MS = EMERGENCE_MS + ANTICIPATION_MS; // 360ms
+/** Natural physical gravity flight arc into the bowl cavity (+0.5s slower, majestic & smooth). */
+const FLIGHT_MS = 1120;
 const PIECE_PX = 24;
 const MAX_FLIGHTS = 4;
 
@@ -48,12 +48,6 @@ function pieceSrc(isDark: boolean, isFallback: boolean): string {
     return asAssetUrl(isFallback ? pieceBlueLight : pieceBlueDark) || asAssetUrl(pieceBlueDark);
   }
   return asAssetUrl(isFallback ? pieceGreenLight : pieceGreenDark) || asAssetUrl(pieceGreenDark);
-}
-
-/** Cubic Bézier for authentic top-down parabolic free-fall trajectory. */
-function cubic(t: number, a: number, b: number, c: number, d: number): number {
-  const u = 1 - t;
-  return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
 }
 
 const FlightMarble: React.FC<{
@@ -125,27 +119,24 @@ const FlightMarble: React.FC<{
 
     window.addEventListener('scroll', updateCardAnchor, { passive: true });
 
-    // --- PHASE 1: ORGANIC SELF-SCALING EMERGENCE (0 to 320ms) ---
-    // Smoothly expands and scales itself up from 0 to 1.28 with elastic blossom curve
+    // --- PHASE 1: ORGANIC SELF-SCALING EMERGENCE ---
     try {
       emergenceControls = animate(0, 1, {
         duration: EMERGENCE_MS / 1000,
         ease: [0.34, 1.56, 0.64, 1], // Organic elastic scale-up curve
         onUpdate: (v) => {
-          // Self-scaling curve: elastic swell to 1.28 then settle to 1.05
-          scale.set(v * 1.28);
+          scale.set(v * 1.25);
           opacity.set(Math.min(1, v * 2.8));
-          rotate.set(v * 220);
+          rotate.set(v * 180);
         },
         onComplete: () => {
           scale.set(1.05);
           opacity.set(1);
-          rotate.set(220);
+          rotate.set(180);
 
-          // --- PHASE 2: KINETIC ANTICIPATION & COIL (320ms to 490ms) ---
-          // Pre-launch compression that coils energy right before liftoff
+          // --- PHASE 2: KINETIC ANTICIPATION & COIL ---
           try {
-            anticipationControls = animate(1.05, 0.94, {
+            anticipationControls = animate(1.05, 0.95, {
               duration: ANTICIPATION_MS / 1000,
               ease: 'easeInOut',
               onUpdate: (s) => {
@@ -158,10 +149,10 @@ const FlightMarble: React.FC<{
     } catch {
       scale.set(1);
       opacity.set(1);
-      rotate.set(220);
+      rotate.set(180);
     }
 
-    // --- PHASE 3: PARABOLIC LAUNCH (AFTER 490ms HOLD - REDUCED BY 30%) ---
+    // --- PHASE 3: PARABOLIC THROW LAUNCH (+0.5s SLOWER, ORGANIC GRAVITY) ---
     holdTimer = window.setTimeout(() => {
       window.removeEventListener('scroll', updateCardAnchor);
       emergenceControls?.stop();
@@ -181,35 +172,53 @@ const FlightMarble: React.FC<{
       const targetTo = livePoints ? livePoints.to : flight.to;
 
       const bowlFrame = document.getElementById('accumulation-bowl-frame');
-      const bowlTop = bowlFrame ? bowlFrame.getBoundingClientRect().top : targetTo.y - 45;
+      const bowlTop = bowlFrame ? bowlFrame.getBoundingClientRect().top : targetTo.y - 48;
 
-      // Force Y_apex at least 65px ABOVE the top rim of the bowl container
-      const yApex = Math.min(bowlTop - 65, targetTo.y - 90, startFrom.y - 120);
-
-      // Trajectory control points:
-      const c1X = startFrom.x + (targetTo.x - startFrom.x) * 0.25;
-      const c1Y = yApex;
-      const c2X = targetTo.x;
-      const c2Y = yApex;
+      // Force Y_apex at least 55px ABOVE the top rim of the bowl for an organic, majestic arc
+      const yApex = Math.max(16, Math.min(bowlTop - 55, targetTo.y - 95, startFrom.y - 120));
+      const apexT = 0.44; // Peak of the throw at 44% of the flight
+      const landingScale = 10 / 24; // 0.4167, exactly 10px diameter matching resting bowl pieces
 
       try {
         launchControls = animate(0, 1, {
           duration: FLIGHT_MS / 1000,
-          ease: [0.22, 0.88, 0.36, 1], // Natural physical gravity curve
+          ease: 'linear', // Pure normalized time; physical gravity curves below
           onUpdate: (t) => {
-            x.set(cubic(t, startFrom.x, c1X, c2X, targetTo.x));
-            y.set(cubic(t, startFrom.y, c1Y, c2Y, targetTo.y));
+            // Horizontal travel: smooth energetic start, easing gently over the bowl
+            const xProgress = Math.sin(t * Math.PI * 0.5);
+            x.set(startFrom.x + (targetTo.x - startFrom.x) * xProgress);
 
-            // Dynamic 3D scale pop at apex then smooth scale taper to match resting bowl pieces
-            scale.set(1.15 + Math.sin(t * Math.PI) * 0.38 - t * 0.22);
+            // Vertical travel: parabolic physical gravity arc
+            let currentY: number;
+            if (t <= apexT) {
+              const u = t / apexT;
+              // Smooth upward deceleration to zero velocity at apex
+              currentY = yApex + (startFrom.y - yApex) * Math.pow(1 - u, 2.2);
+            } else {
+              const p = (t - apexT) / (1 - apexT);
+              // Downward gravity acceleration straight into the cavity floor
+              currentY = yApex + (targetTo.y - yApex) * Math.pow(p, 1.85);
+            }
+            y.set(currentY);
 
-            // Continuous rapid multi-turn 3D tumbling rotation
-            rotate.set(220 + t * 720);
-            rotateX.set(Math.sin(t * Math.PI) * 45);
+            // Perspective scale: swells in midair, then tapers down to exact 10px piece size
+            let currentScale: number;
+            if (t <= apexT) {
+              const u = t / apexT;
+              currentScale = 0.95 + Math.sin(u * Math.PI * 0.5) * 0.30;
+            } else {
+              const p = (t - apexT) / (1 - apexT);
+              currentScale = 1.25 - (1.25 - landingScale) * Math.sin(p * Math.PI * 0.5);
+            }
+            scale.set(currentScale);
 
-            // Handover opacity right as it drops through the rim into resting position
-            if (t > 0.94) {
-              opacity.set(1 - (t - 0.94) / 0.06);
+            // Organic tumbling rotation
+            rotate.set(180 + t * 450);
+            rotateX.set(Math.sin(t * Math.PI) * 28);
+
+            // Soft handover into resting piece as it plunges into the cavity floor
+            if (t > 0.90) {
+              opacity.set(Math.max(0, 1 - (t - 0.90) / 0.10));
             }
           },
           onComplete: finish,
@@ -329,10 +338,15 @@ export function measureCompletionFlight(
 
   return {
     from: { x: fromX, y: fromY },
-    // Target resting position inside bowl base
-    to: {
-      x: b.left + b.width * 0.5,
-      y: b.top + b.height * 0.48,
-    },
+    // Target resting position deep inside bowl cavity floor (56% down into the piece cluster)
+    to: bowlTarget
+      ? {
+          x: bowlTarget.getBoundingClientRect().left,
+          y: bowlTarget.getBoundingClientRect().top,
+        }
+      : {
+          x: b.left + b.width * 0.5,
+          y: b.top + b.height * 0.56,
+        },
   };
 }

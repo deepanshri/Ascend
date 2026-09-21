@@ -50,7 +50,7 @@ function sortTasks(list: StandaloneReminder[]) {
   });
 }
 
-export const RemindersView: React.FC<RemindersViewProps> = ({
+const RemindersViewInner: React.FC<RemindersViewProps> = ({
   reminders,
   focusReminderId = null,
   openCreate = false,
@@ -348,3 +348,5 @@ export const RemindersView: React.FC<RemindersViewProps> = ({
     </div>
   );
 };
+
+export const RemindersView = React.memo(RemindersViewInner);

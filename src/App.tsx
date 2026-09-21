@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
@@ -125,19 +125,21 @@ import { HabitCard } from './components/HabitCard';
 import { QuoteCard } from './components/QuoteCard';
 import { FriendsFeed } from './components/FriendsFeed';
 import { ScreenHeader, SCREEN_INSET_CLASS, HEADER_ICON_BTN_CLASS } from './components/ScreenHeader';
-import { AddHabitModal } from './components/AddHabitModal';
-import { HabitDetailModal } from './components/HabitDetailModal';
-import { DeleteHabitConfirmModal } from './components/DeleteHabitConfirmModal';
-import { IdentityLedgerModal } from './components/IdentityLedgerModal';
-import { HabitLongPressOverlay } from './components/HabitLongPressOverlay';
-import { FrictionAuditModal } from './components/FrictionAuditModal';
-import { AuthView } from './components/AuthView';
-import { OnboardingView } from './components/OnboardingView';
+import { TabLoadingFallback } from './components/TabLoadingFallback';
+
+const AddHabitModal = React.lazy(() => import('./components/AddHabitModal').then((m) => ({ default: m.AddHabitModal })));
+const HabitDetailModal = React.lazy(() => import('./components/HabitDetailModal').then((m) => ({ default: m.HabitDetailModal })));
+const DeleteHabitConfirmModal = React.lazy(() => import('./components/DeleteHabitConfirmModal').then((m) => ({ default: m.DeleteHabitConfirmModal })));
+const IdentityLedgerModal = React.lazy(() => import('./components/IdentityLedgerModal').then((m) => ({ default: m.IdentityLedgerModal })));
+const FrictionAuditModal = React.lazy(() => import('./components/FrictionAuditModal').then((m) => ({ default: m.FrictionAuditModal })));
+const AuthView = React.lazy(() => import('./components/AuthView').then((m) => ({ default: m.AuthView })));
+const OnboardingView = React.lazy(() => import('./components/OnboardingView').then((m) => ({ default: m.OnboardingView })));
+const RemindersView = React.lazy(() => import('./components/RemindersView').then((m) => ({ default: m.RemindersView })));
+const ReportView = React.lazy(() => import('./components/ReportView').then((m) => ({ default: m.ReportView })));
+const PersonalView = React.lazy(() => import('./components/PersonalView').then((m) => ({ default: m.PersonalView })));
+const SettingsView = React.lazy(() => import('./components/SettingsView').then((m) => ({ default: m.SettingsView })));
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { RemindersView } from './components/RemindersView';
-import { ReportView } from './components/ReportView';
-import { PersonalView } from './components/PersonalView';
-import { SettingsView } from './components/SettingsView';
+import { HabitLongPressOverlay } from './components/HabitLongPressOverlay';
 import {
   FlyingPieceOverlay,
   measureCompletionFlight,
@@ -1703,17 +1705,20 @@ export default function App() {
   const settlePieceIdSet = useMemo(() => new Set(settlePieceIds), [settlePieceIds]);
 
   const handlePieceFlightComplete = useCallback((flightId: string, pieceId: string) => {
-    setPieceFlights((prev) => prev.filter((flight) => flight.id !== flightId));
-    setSettlePieceIds((prev) => (prev.includes(pieceId) ? prev : [...prev, pieceId]));
-    // Soft land tap — reinforces settle without competing with the open haptic.
+    // Delay making the piece visible in the bowl by 80ms so the flying marble
+    // fully fades out before the resting piece fades in — prevents the double-piece flash.
     void pulseCompletionHaptic('fallback');
-    const existing = settleTimersRef.current.get(pieceId);
-    if (existing) window.clearTimeout(existing);
-    const timer = window.setTimeout(() => {
-      settleTimersRef.current.delete(pieceId);
-      setSettlePieceIds((prev) => prev.filter((id) => id !== pieceId));
-    }, 520);
-    settleTimersRef.current.set(pieceId, timer);
+    window.setTimeout(() => {
+      setPieceFlights((prev) => prev.filter((flight) => flight.id !== flightId));
+      setSettlePieceIds((prev) => (prev.includes(pieceId) ? prev : [...prev, pieceId]));
+      const existing = settleTimersRef.current.get(pieceId);
+      if (existing) window.clearTimeout(existing);
+      const timer = window.setTimeout(() => {
+        settleTimersRef.current.delete(pieceId);
+        setSettlePieceIds((prev) => prev.filter((id) => id !== pieceId));
+      }, 600);
+      settleTimersRef.current.set(pieceId, timer);
+    }, 80);
   }, []);
 
   const handleCompletionSoundChange = useCallback((enabled: boolean) => {
@@ -1764,6 +1769,16 @@ export default function App() {
     setLongPressedRect(null);
     setDeleteConfirmHabit(h);
   }, []);
+
+  const handleOpenSettingsTab = useCallback(() => setActiveTab('settings'), []);
+  const handleOpenHomeTab = useCallback(() => setActiveTab('home'), []);
+  const handleOpenLedgerModal = useCallback(() => setIsLedgerModalOpen(true), []);
+  const handleCloseLedgerModal = useCallback(() => setIsLedgerModalOpen(false), []);
+  const handleOpenUpgradeModal = useCallback(() => setIsUpgradeModalOpen(true), []);
+  const handleCloseUpgradeModal = useCallback(() => setIsUpgradeModalOpen(false), []);
+  const handleOpenPasswordModal = useCallback(() => setIsPasswordModalOpen(true), []);
+  const handleClosePasswordModal = useCallback(() => setIsPasswordModalOpen(false), []);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -2023,12 +2038,20 @@ export default function App() {
 
   // ROUTING: Unauthenticated users -> Auth Screen
   if (!session) {
-    return <AuthView onAuthSuccess={handleAuthSuccess} />;
+    return (
+      <Suspense fallback={<TabLoadingFallback />}>
+        <AuthView onAuthSuccess={handleAuthSuccess} />
+      </Suspense>
+    );
   }
 
   // ROUTING: Authenticated users who haven't finished onboarding -> Onboarding Flow
   if (!isOnboarded) {
-    return <OnboardingView onComplete={handleOnboardingComplete} />;
+    return (
+      <Suspense fallback={<TabLoadingFallback />}>
+        <OnboardingView onComplete={handleOnboardingComplete} />
+      </Suspense>
+    );
   }
 
   const themeBgClass = isDark ? 'dark bg-canvas text-ink' : 'bg-canvas text-ink';
@@ -2059,7 +2082,7 @@ export default function App() {
           >
             <ScreenHeader
               title="Home"
-              onOpenSettings={() => setActiveTab('settings')}
+              onOpenSettings={handleOpenSettingsTab}
               actions={
                 <>
                   <FriendsFeed
@@ -2145,33 +2168,35 @@ export default function App() {
             aria-hidden={!isTabActive('reminders')}
             className={tabPaneClassName(isTabActive('reminders'))}
           >
-          <RemindersView
-            reminders={reminders ?? []}
-            focusReminderId={widgetFocusReminderId}
-            openCreate={widgetOpenCreateTask}
-            onOpenCreateConsumed={() => setWidgetOpenCreateTask(false)}
-            onAddReminder={handleAddReminder}
-            onUpdateReminder={handleUpdateReminder}
-            onToggleComplete={stableToggleReminder}
-            onSetReminderCompleted={stableSetReminderCompleted}
-            onDeleteReminder={stableDeleteReminder}
-            onSnoozeReminder={stableSnoozeReminder}
-            userSession={session}
-            onRemindersHydrated={(remote) => {
-              const next = Array.isArray(remote) ? remote : [];
-              setReminders((prev) => mergeRemindersByUpdatedAt(prev, next));
-              notificationScheduler.bootReschedulePendingAlerts(next);
-            }}
-            onSyncReminders={() => {
-              const seq = ++reminderSyncSeqRef.current;
-              remindersSyncService.syncReminders(reminders ?? [], session).then((res) => {
-                if (seq !== reminderSyncSeqRef.current) return;
-                setReminders((prev) => mergeRemindersByUpdatedAt(prev, Array.isArray(res.reminders) ? res.reminders : []));
-              });
-            }}
-            onScroll={handleMainScroll}
-            onOpenSettings={() => setActiveTab('settings')}
-          />
+          <Suspense fallback={<TabLoadingFallback />}>
+            <RemindersView
+              reminders={reminders ?? []}
+              focusReminderId={widgetFocusReminderId}
+              openCreate={widgetOpenCreateTask}
+              onOpenCreateConsumed={() => setWidgetOpenCreateTask(false)}
+              onAddReminder={handleAddReminder}
+              onUpdateReminder={handleUpdateReminder}
+              onToggleComplete={stableToggleReminder}
+              onSetReminderCompleted={stableSetReminderCompleted}
+              onDeleteReminder={stableDeleteReminder}
+              onSnoozeReminder={stableSnoozeReminder}
+              userSession={session}
+              onRemindersHydrated={(remote) => {
+                const next = Array.isArray(remote) ? remote : [];
+                setReminders((prev) => mergeRemindersByUpdatedAt(prev, next));
+                notificationScheduler.bootReschedulePendingAlerts(next);
+              }}
+              onSyncReminders={() => {
+                const seq = ++reminderSyncSeqRef.current;
+                remindersSyncService.syncReminders(reminders ?? [], session).then((res) => {
+                  if (seq !== reminderSyncSeqRef.current) return;
+                  setReminders((prev) => mergeRemindersByUpdatedAt(prev, Array.isArray(res.reminders) ? res.reminders : []));
+                });
+              }}
+              onScroll={handleMainScroll}
+              onOpenSettings={handleOpenSettingsTab}
+            />
+          </Suspense>
           </div>
         ) : null}
 
@@ -2180,27 +2205,30 @@ export default function App() {
             aria-hidden={!isTabActive('report')}
             className={tabPaneClassName(isTabActive('report'))}
           >
-          <ReportView
-            habits={activeHabits ?? []}
-            evidenceList={ledgerEvidence}
-            identityVoteCount={displayedIdentityVotes}
-            userId={session.id}
-            isGuest={session.isGuest}
-            userEmail={session.email}
-            userName={session.name}
-            onOpenLedger={() => setIsLedgerModalOpen(true)}
-            onOpenSettings={() => setActiveTab('settings')}
-            frictionAudits={frictionAudits ?? []}
-            onScroll={handleMainScroll}
-            isDark={isDark}
-            momentumScore={todayMomentumScore}
-            momentumEvents={momentumEvents ?? []}
-            completionEvents={completionEvents ?? []}
-            selectedDayIso={currentSelectedDate}
-            onSelectDayIso={setCurrentSelectedDate}
-            cycleDays={cycleDays}
-            cycleStartIso={bowlEpoch.startIso}
-          />
+          <Suspense fallback={<TabLoadingFallback />}>
+            <ReportView
+              isActive={isTabActive('report')}
+              habits={activeHabits ?? []}
+              evidenceList={ledgerEvidence}
+              identityVoteCount={displayedIdentityVotes}
+              userId={session.id}
+              isGuest={session.isGuest}
+              userEmail={session.email}
+              userName={session.name}
+              onOpenLedger={handleOpenLedgerModal}
+              onOpenSettings={handleOpenSettingsTab}
+              frictionAudits={frictionAudits ?? []}
+              onScroll={handleMainScroll}
+              isDark={isDark}
+              momentumScore={todayMomentumScore}
+              momentumEvents={momentumEvents ?? []}
+              completionEvents={completionEvents ?? []}
+              selectedDayIso={currentSelectedDate}
+              onSelectDayIso={setCurrentSelectedDate}
+              cycleDays={cycleDays}
+              cycleStartIso={bowlEpoch.startIso}
+            />
+          </Suspense>
           </div>
         ) : null}
 
@@ -2209,46 +2237,48 @@ export default function App() {
             aria-hidden={!isTabActive('personal')}
             className={tabPaneClassName(isTabActive('personal'))}
           >
-          <PersonalView
-            userSession={session}
-            evidenceList={ledgerEvidence}
-            identityVoteCount={displayedIdentityVotes}
-            selectedInterests={selectedInterests ?? []}
-            onToggleInterest={handleToggleInterest}
-            examShieldActive={examShieldActive}
-            examShieldStatus={examShieldStatus}
-            onToggleExamShield={handleToggleExamShield}
-            vacationModeActive={vacationModeActive}
-            vacationStatus={vacationStatus}
-            onToggleVacationMode={handleToggleVacationMode}
-            momentumScore={momentumScore}
-            onOpenSettings={() => setActiveTab('settings')}
-            onOpenLedger={() => setIsLedgerModalOpen(true)}
-            onUpgradeGuest={() => setIsUpgradeModalOpen(true)}
-            onSyncNow={async () => {
-              if (!session || session.isGuest) {
-                throw new Error('Guest sessions stay local');
-              }
-              const result = await runAuthenticatedSync(session);
-              if (!result.ok) {
-                throw new Error(result.error || 'Sync failed');
-              }
-            }}
-            onChangePassword={() => setIsPasswordModalOpen(true)}
-            onUpdateAvatar={(avatarUrl) => {
-              setSession((prev) => {
-                if (!prev) return prev;
-                const next = { ...prev, avatarUrl };
-                setStoredSession(next);
-                return next;
-              });
-            }}
-            onLogout={handleDeleteAccount}
-            onUpdateName={(newName) => {
-              setSession((prev) => (prev ? { ...prev, name: newName } : prev));
-            }}
-            onScroll={handleMainScroll}
-          />
+          <Suspense fallback={<TabLoadingFallback />}>
+            <PersonalView
+              userSession={session}
+              evidenceList={ledgerEvidence}
+              identityVoteCount={displayedIdentityVotes}
+              selectedInterests={selectedInterests ?? []}
+              onToggleInterest={handleToggleInterest}
+              examShieldActive={examShieldActive}
+              examShieldStatus={examShieldStatus}
+              onToggleExamShield={handleToggleExamShield}
+              vacationModeActive={vacationModeActive}
+              vacationStatus={vacationStatus}
+              onToggleVacationMode={handleToggleVacationMode}
+              momentumScore={momentumScore}
+              onOpenSettings={handleOpenSettingsTab}
+              onOpenLedger={handleOpenLedgerModal}
+              onUpgradeGuest={handleOpenUpgradeModal}
+              onSyncNow={async () => {
+                if (!session || session.isGuest) {
+                  throw new Error('Guest sessions stay local');
+                }
+                const result = await runAuthenticatedSync(session);
+                if (!result.ok) {
+                  throw new Error(result.error || 'Sync failed');
+                }
+              }}
+              onChangePassword={handleOpenPasswordModal}
+              onUpdateAvatar={(avatarUrl) => {
+                setSession((prev) => {
+                  if (!prev) return prev;
+                  const next = { ...prev, avatarUrl };
+                  setStoredSession(next);
+                  return next;
+                });
+              }}
+              onLogout={handleDeleteAccount}
+              onUpdateName={(newName) => {
+                setSession((prev) => (prev ? { ...prev, name: newName } : prev));
+              }}
+              onScroll={handleMainScroll}
+            />
+          </Suspense>
           </div>
         ) : null}
 
@@ -2257,31 +2287,34 @@ export default function App() {
             aria-hidden={!isTabActive('settings')}
             className={tabPaneClassName(isTabActive('settings'))}
           >
-          <SettingsView
-            habits={habits ?? []}
-            evidenceList={ledgerEvidence}
-            completionEvents={completionEvents ?? []}
-            momentumEvents={momentumEvents ?? []}
-            theme={theme}
-            onThemeChange={setTheme}
-            notificationWindows={notificationWindows}
-            onToggleNotificationWindow={handleToggleNotificationWindow}
-            completionSound={completionSound}
-            onCompletionSoundChange={handleCompletionSoundChange}
-            hapticVibration={hapticVibration}
-            onHapticVibrationChange={handleHapticVibrationChange}
-            onResetData={handleResetData}
-            onRestoreHabit={handleRestoreHabit}
-            onDeleteHabit={handleDeleteHabit}
-            onImportJSON={handleImportJSON}
-            onDeleteAccount={handleDeleteAccount}
-            onClearCache={handleClearCache}
-            onScroll={handleMainScroll}
-            onOpenSettings={() => setActiveTab('home')}
-          />
+          <Suspense fallback={<TabLoadingFallback />}>
+            <SettingsView
+              habits={habits ?? []}
+              evidenceList={ledgerEvidence}
+              completionEvents={completionEvents ?? []}
+              momentumEvents={momentumEvents ?? []}
+              theme={theme}
+              onThemeChange={setTheme}
+              notificationWindows={notificationWindows}
+              onToggleNotificationWindow={handleToggleNotificationWindow}
+              completionSound={completionSound}
+              onCompletionSoundChange={handleCompletionSoundChange}
+              hapticVibration={hapticVibration}
+              onHapticVibrationChange={handleHapticVibrationChange}
+              onResetData={handleResetData}
+              onRestoreHabit={handleRestoreHabit}
+              onDeleteHabit={handleDeleteHabit}
+              onImportJSON={handleImportJSON}
+              onDeleteAccount={handleDeleteAccount}
+              onClearCache={handleClearCache}
+              onScroll={handleMainScroll}
+              onOpenSettings={handleOpenHomeTab}
+            />
+          </Suspense>
           </div>
         ) : null}
         </div>
+
 
         <FlyingPieceOverlay flights={pieceFlights} onFlightComplete={handlePieceFlightComplete} />
         </ErrorBoundary>
@@ -2325,82 +2358,103 @@ export default function App() {
         <HomeIndicator />
 
         {/* MODALS */}
-        <AddHabitModal
-          isOpen={isAddModalOpen}
-          onClose={() => setIsAddModalOpen(false)}
-          onAddHabit={handleAddHabit}
-          userId={session.id}
-          isGuest={session.isGuest}
-          activeHabitCount={countActiveHabits(habits)}
-          activeKeystoneCount={countActiveKeystones(habits)}
-        />
+        {isAddModalOpen && (
+          <Suspense fallback={null}>
+            <AddHabitModal
+              isOpen={isAddModalOpen}
+              onClose={() => setIsAddModalOpen(false)}
+              onAddHabit={handleAddHabit}
+              userId={session.id}
+              isGuest={session.isGuest}
+              activeHabitCount={countActiveHabits(habits)}
+              activeKeystoneCount={countActiveKeystones(habits)}
+            />
+          </Suspense>
+        )}
 
-        <HabitDetailModal
-          habit={detailHabit}
-          isOpen={Boolean(detailHabit)}
-          onClose={() => setDetailHabit(null)}
-          onDeleteHabit={(habitId) => {
-            const target = habits.find((item) => item.id === habitId) || detailHabit;
-            setDetailHabit(null);
-            if (target) setDeleteConfirmHabit(target);
-          }}
-          onUpdateHabit={handleUpdateHabit}
-          onArchiveHabit={handleArchiveHabit}
-          todayIndex={todayDayIndex}
-          activeKeystoneCount={countActiveKeystones(habits)}
-        />
+        {Boolean(detailHabit) && (
+          <Suspense fallback={null}>
+            <HabitDetailModal
+              habit={detailHabit}
+              isOpen={Boolean(detailHabit)}
+              onClose={() => setDetailHabit(null)}
+              onDeleteHabit={(habitId) => {
+                const target = habits.find((item) => item.id === habitId) || detailHabit;
+                setDetailHabit(null);
+                if (target) setDeleteConfirmHabit(target);
+              }}
+              onUpdateHabit={handleUpdateHabit}
+              onArchiveHabit={handleArchiveHabit}
+              todayIndex={todayDayIndex}
+              activeKeystoneCount={countActiveKeystones(habits)}
+            />
+          </Suspense>
+        )}
 
-        <DeleteHabitConfirmModal
-          habit={deleteConfirmHabit}
-          isOpen={Boolean(deleteConfirmHabit)}
-          onClose={() => setDeleteConfirmHabit(null)}
-          onConfirm={() => {
-            if (deleteConfirmHabit) {
-              handleDeleteHabit(deleteConfirmHabit.id);
-              setDeleteConfirmHabit(null);
-            }
-          }}
-        />
+        {Boolean(deleteConfirmHabit) && (
+          <Suspense fallback={null}>
+            <DeleteHabitConfirmModal
+              habit={deleteConfirmHabit}
+              isOpen={Boolean(deleteConfirmHabit)}
+              onClose={() => setDeleteConfirmHabit(null)}
+              onConfirm={() => {
+                if (deleteConfirmHabit) {
+                  handleDeleteHabit(deleteConfirmHabit.id);
+                  setDeleteConfirmHabit(null);
+                }
+              }}
+            />
+          </Suspense>
+        )}
 
-        <FrictionAuditModal
-          isOpen={Boolean(activeFrictionPrompt)}
-          habitName={activeFrictionPrompt?.habitName || ''}
-          loggedDate={activeFrictionPrompt?.loggedDate}
-          onSubmit={handleFrictionSubmit}
-          onSkip={handleFrictionSkip}
-        />
+        {Boolean(activeFrictionPrompt) && (
+          <Suspense fallback={null}>
+            <FrictionAuditModal
+              isOpen={Boolean(activeFrictionPrompt)}
+              habitName={activeFrictionPrompt?.habitName || ''}
+              loggedDate={activeFrictionPrompt?.loggedDate}
+              onSubmit={handleFrictionSubmit}
+              onSkip={handleFrictionSkip}
+            />
+          </Suspense>
+        )}
 
-        <IdentityLedgerModal
-          isOpen={isLedgerModalOpen}
-          onClose={() => setIsLedgerModalOpen(false)}
-          evidenceList={ledgerEvidence}
-          identityVoteCount={displayedIdentityVotes}
-          onAddVote={(name, statement, cat) => {
-            const newEv: IdentityEvidence = {
-              id: 'ev-manual-' + Date.now(),
-              habitId: 'manual',
-              habitName: name,
-              identityStatement: statement,
-              category: cat,
-              date: new Date().toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              }),
-              dayNumber: selectedDay,
-              loggedDate: toISODate(),
-            };
-            setEvidenceList((prev) => [newEv, ...prev]);
-            appendMomentumLog(
-              createMomentumEvent(
-                { id: newMomentumEventId(), category: cat },
-                'full',
-                toISODate(),
-                Date.now()
-              )
-            );
-          }}
-        />
+        {isLedgerModalOpen && (
+          <Suspense fallback={null}>
+            <IdentityLedgerModal
+              isOpen={isLedgerModalOpen}
+              onClose={handleCloseLedgerModal}
+              evidenceList={ledgerEvidence}
+              identityVoteCount={displayedIdentityVotes}
+              onAddVote={(name, statement, cat) => {
+                const newEv: IdentityEvidence = {
+                  id: 'ev-manual-' + Date.now(),
+                  habitId: 'manual',
+                  habitName: name,
+                  identityStatement: statement,
+                  category: cat,
+                  date: new Date().toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  }),
+                  dayNumber: selectedDay,
+                  loggedDate: toISODate(),
+                };
+                setEvidenceList((prev) => [newEv, ...prev]);
+                appendMomentumLog(
+                  createMomentumEvent(
+                    { id: newMomentumEventId(), category: cat },
+                    'full',
+                    toISODate(),
+                    Date.now()
+                  )
+                );
+              }}
+            />
+          </Suspense>
+        )}
+
 
         {/* Upgrade Guest Modal */}
         <MotionModal

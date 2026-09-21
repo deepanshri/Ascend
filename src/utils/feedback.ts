@@ -93,11 +93,10 @@ function getAudioContext(): AudioContext | null {
 }
 
 /**
- * Triumphant high-register Web Audio victory chime (< 1 second).
- * Sequence: C6 (1046.50 Hz) -> E6 (1318.51 Hz) -> G6 (1567.98 Hz)
- * Rapid 120ms step spacing with smooth exponential decay.
- * Boosted master gain (0.80) ensures a rich, crisp level-up arpeggio
- * that finishes in ~420ms (strictly < 600ms) with zero distortion or overlap clipping.
+ * Triumphant victory fanfare — ascending C5→E5→G5→C6 major arpeggio with
+ * layered triangle + sine oscillators for richness, a bright shimmer overtone,
+ * a warm low-register thud on landing, and exponential decay tails.
+ * Total duration ≈ 850ms. Plays on first user-gesture-unblocked AudioContext.
  */
 export function playCompletionSound(): void {
   if (!isCompletionSoundEnabled()) return;
@@ -108,37 +107,74 @@ export function playCompletionSound(): void {
   try {
     const t0 = ctx.currentTime;
 
-    // Master gain node with ceiling protection (0.80 gain)
-    const masterGain = ctx.createGain();
-    masterGain.gain.setValueAtTime(0.80, t0);
-    masterGain.connect(ctx.destination);
+    // ── Master bus ─────────────────────────────────────────────────────────
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0, t0);
+    master.gain.linearRampToValueAtTime(0.88, t0 + 0.008);
+    master.connect(ctx.destination);
 
-    const notes = [
-      { freq: 1046.50, start: 0, peakGain: 0.78, dur: 0.16 },       // C6
-      { freq: 1318.51, start: 0.12, peakGain: 0.80, dur: 0.16 },    // E6
-      { freq: 1567.98, start: 0.24, peakGain: 0.82, dur: 0.18 },    // G6
-    ];
+    // ── Helper: play one rich note ──────────────────────────────────────────
+    function note(
+      freq: number,
+      startT: number,
+      sustain: number,
+      peakGain: number,
+      waveform: OscillatorType = 'triangle'
+    ) {
+      // Primary oscillator (triangle = warm, bell-like)
+      const osc1 = ctx.createOscillator();
+      const g1 = ctx.createGain();
+      osc1.type = waveform;
+      osc1.frequency.setValueAtTime(freq, startT);
+      g1.gain.setValueAtTime(0.0001, startT);
+      g1.gain.exponentialRampToValueAtTime(peakGain, startT + 0.015);
+      g1.gain.exponentialRampToValueAtTime(0.0001, startT + sustain);
+      osc1.connect(g1); g1.connect(master);
+      osc1.start(startT); osc1.stop(startT + sustain + 0.05);
 
-    for (const note of notes) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const noteStart = t0 + note.start;
-      const noteEnd = noteStart + note.dur;
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(note.freq, noteStart);
-
-      // Smooth exponential envelope: rapid 12ms attack -> decay to 0.0001
-      gain.gain.setValueAtTime(0.0001, noteStart);
-      gain.gain.exponentialRampToValueAtTime(note.peakGain, noteStart + 0.012);
-      gain.gain.exponentialRampToValueAtTime(0.0001, noteEnd);
-
-      osc.connect(gain);
-      gain.connect(masterGain);
-
-      osc.start(noteStart);
-      osc.stop(noteEnd + 0.02);
+      // Sine harmonic an octave up — adds sparkle
+      const osc2 = ctx.createOscillator();
+      const g2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(freq * 2, startT);
+      g2.gain.setValueAtTime(0.0001, startT);
+      g2.gain.exponentialRampToValueAtTime(peakGain * 0.22, startT + 0.018);
+      g2.gain.exponentialRampToValueAtTime(0.0001, startT + sustain * 0.7);
+      osc2.connect(g2); g2.connect(master);
+      osc2.start(startT); osc2.stop(startT + sustain);
     }
+
+    // ── Ascending major arpeggio: C5 → E5 → G5 → C6 ───────────────────────
+    const spacing = 0.11;
+    note(523.25,  t0,                  0.42, 0.55);  // C5
+    note(659.25,  t0 + spacing,        0.38, 0.60);  // E5
+    note(783.99,  t0 + spacing * 2,    0.35, 0.65);  // G5
+    note(1046.50, t0 + spacing * 3,    0.60, 0.75);  // C6 — triumphant peak
+
+    // ── High shimmer sparkle (sine, very brief) on the peak note ───────────
+    const shimmer = ctx.createOscillator();
+    const shimGain = ctx.createGain();
+    shimmer.type = 'sine';
+    shimmer.frequency.setValueAtTime(2093, t0 + spacing * 3);       // C7
+    shimGain.gain.setValueAtTime(0.0001, t0 + spacing * 3);
+    shimGain.gain.exponentialRampToValueAtTime(0.18, t0 + spacing * 3 + 0.012);
+    shimGain.gain.exponentialRampToValueAtTime(0.0001, t0 + spacing * 3 + 0.18);
+    shimmer.connect(shimGain); shimGain.connect(master);
+    shimmer.start(t0 + spacing * 3); shimmer.stop(t0 + spacing * 3 + 0.22);
+
+    // ── Warm bass thud at the moment of landing (victory punch) ────────────
+    const thud = ctx.createOscillator();
+    const thudGain = ctx.createGain();
+    const thudStart = t0 + spacing * 3 + 0.04;
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(130, thudStart);
+    thud.frequency.exponentialRampToValueAtTime(55, thudStart + 0.14);
+    thudGain.gain.setValueAtTime(0.0001, thudStart);
+    thudGain.gain.exponentialRampToValueAtTime(0.70, thudStart + 0.010);
+    thudGain.gain.exponentialRampToValueAtTime(0.0001, thudStart + 0.28);
+    thud.connect(thudGain); thudGain.connect(master);
+    thud.start(thudStart); thud.stop(thudStart + 0.32);
+
   } catch {
     /* AudioContext might be blocked before first user gesture — silently ignore */
   }

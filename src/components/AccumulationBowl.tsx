@@ -33,22 +33,24 @@ const PIECE_R = PIECE_SIZE / 2;
  */
 const THEME_CAVITY = {
   light: {
-    cy: 49,
-    rx: 35,
-    ry: 18,
+    cy: 52,
+    rx: 33,
+    ry: 16,
     rimCy: 26,
     rimRx: 41,
-    clip: 'ellipse(41% 24% at 50% 49%)',
-    rimMask: 'radial-gradient(ellipse 42% 36% at 50% 47%, transparent 48%, #000 62%)',
+    // Clip tight to the actual bowl interior floor (not the front glass rim)
+    clip: 'ellipse(38% 21% at 50% 52%)',
+    // Strong rim mask — covers the front glass overlay aggressively so pieces stay BEHIND it
+    rimMask: 'radial-gradient(ellipse 44% 40% at 50% 48%, transparent 44%, rgba(0,0,0,0.5) 55%, #000 65%)',
   },
   dark: {
-    cy: 51,
-    rx: 34,
-    ry: 17,
+    cy: 54,
+    rx: 32,
+    ry: 15,
     rimCy: 28,
     rimRx: 40,
-    clip: 'ellipse(40% 23% at 50% 51%)',
-    rimMask: 'radial-gradient(ellipse 40% 34% at 50% 48%, transparent 46%, #000 60%)',
+    clip: 'ellipse(36% 20% at 50% 54%)',
+    rimMask: 'radial-gradient(ellipse 42% 38% at 50% 49%, transparent 42%, rgba(0,0,0,0.5) 53%, #000 63%)',
   },
 } as const;
 
@@ -244,6 +246,11 @@ function buildSpillSlots(layout: CavityLayout, count: number): { xPct: number; y
   return slots;
 }
 
+const STATIC_SLOTS_LIGHT = buildOrganicSlots(THEME_CAVITY.light, 60);
+const STATIC_SLOTS_DARK = buildOrganicSlots(THEME_CAVITY.dark, 60);
+const STATIC_SPILLS_LIGHT = buildSpillSlots(THEME_CAVITY.light, 35);
+const STATIC_SPILLS_DARK = buildSpillSlots(THEME_CAVITY.dark, 35);
+
 function layoutPieces(
   pieces: AccumulationPiece[],
   isOverflowing: boolean,
@@ -253,7 +260,7 @@ function layoutPieces(
 ): LaidPiece[] {
   const layout = isDark ? THEME_CAVITY.dark : THEME_CAVITY.light;
   const visible = pieces.slice(-MAX_VISIBLE_PIECES);
-  const organicSlots = buildOrganicSlots(layout, Math.max(MAX_VISIBLE_PIECES, visible.length + 10));
+  const organicSlots = isDark ? STATIC_SLOTS_DARK : STATIC_SLOTS_LIGHT;
   const maxInside = organicSlots.length;
 
   // Soft cap mirrors reportService OVERFLOW_FILL_RATIO (80% of C = habits × cycleDays).
@@ -271,8 +278,7 @@ function layoutPieces(
     insideBudget = Math.min(maxInside, visible.length);
   }
 
-  const spillCount = Math.max(0, visible.length - insideBudget);
-  const spillSlots = buildSpillSlots(layout, spillCount);
+  const spillSlots = isDark ? STATIC_SPILLS_DARK : STATIC_SPILLS_LIGHT;
   const spillFallback = { xPct: 0, yPct: layout.rimCy - 8 };
 
   return visible.map((piece, index) => {
@@ -321,80 +327,97 @@ const MarblePiece: React.FC<{
   item: LaidPiece;
   isDark: boolean;
   settle?: boolean;
-}> = ({ item, isDark }) => {
-  const isFallback = item.piece.kind === 'fallback';
-  const src = getPieceAsset(isDark, isFallback);
-  const [broken, setBroken] = useState(false);
-  const { coords } = item;
+}> = React.memo(
+  ({ item, isDark, settle }) => {
+    const isFallback = item.piece.kind === 'fallback';
+    const src = getPieceAsset(isDark, isFallback);
+    const [broken, setBroken] = useState(false);
+    const { coords } = item;
 
-  useEffect(() => {
-    setBroken(false);
-  }, [src, isDark]);
+    const fallbackTone = isFallback
+      ? isDark
+        ? 'bg-blue-300'
+        : 'bg-emerald-300'
+      : isDark
+        ? 'bg-blue-500'
+        : 'bg-emerald-500';
 
-  const fallbackTone = isFallback
-    ? isDark
-      ? 'bg-blue-300'
-      : 'bg-emerald-300'
-    : isDark
-      ? 'bg-blue-500'
-      : 'bg-emerald-500';
+    const xPct = Number.isFinite(coords?.xPct) ? coords.xPct : 0;
+    const yPct = Number.isFinite(coords?.yPct) ? coords.yPct : 0;
+    const rotation = Number.isFinite(coords?.rotation) ? coords.rotation : 0;
+    const scale = Number.isFinite(coords?.scale) ? coords.scale : 1;
 
-  const xPct = Number.isFinite(coords?.xPct) ? coords.xPct : 0;
-  const yPct = Number.isFinite(coords?.yPct) ? coords.yPct : 0;
-  const rotation = Number.isFinite(coords?.rotation) ? coords.rotation : 0;
-  const scale = Number.isFinite(coords?.scale) ? coords.scale : 1;
+    const box = pieceBoxStyle();
 
-  const box = pieceBoxStyle();
-
-  return (
-    <motion.div
-      key={item.piece.id}
-      initial={{ scale: 0, opacity: 0, y: -22, rotate: -25 }}
-      animate={{ scale: scale, opacity: 1, y: 0, rotate: rotation }}
-      exit={{ scale: 0, opacity: 0, transition: { duration: 0.2, ease: 'easeOut' } }}
-      transition={{
-        type: 'spring',
-        stiffness: 220,
-        damping: 14,
-        mass: 0.6,
-      }}
-      style={{
-        ...box,
-        left: `calc(50% + ${xPct}%)`,
-        top: `${yPct}%`,
-      }}
-      className="pointer-events-none"
-      aria-hidden="true"
-    >
-      {broken || !src ? (
-        <div
-          className={`h-full w-full rounded-full shadow-inner ${fallbackTone}`}
-          aria-hidden="true"
-        />
-      ) : (
-        <img
-          src={src}
-          alt=""
-          draggable={false}
-          onError={() => setBroken(true)}
-          className="pointer-events-none h-full w-full rounded-full object-contain"
-        />
-      )}
-    </motion.div>
-  );
-};
+    return (
+      <motion.div
+        key={item.piece.id}
+        initial={
+          settle
+            ? { scale: scale, opacity: 0, y: 0, rotate: rotation }
+            : { scale: 0, opacity: 0, y: -10, rotate: -20 }
+        }
+        animate={{ scale: scale, opacity: 1, y: 0, rotate: rotation }}
+        exit={{ scale: 0, opacity: 0, transition: { duration: 0.2, ease: 'easeOut' } }}
+        transition={
+          settle
+            ? { type: 'spring', stiffness: 320, damping: 28, mass: 0.3 }
+            : {
+                type: 'spring',
+                stiffness: 220,
+                damping: 14,
+                mass: 0.6,
+              }
+        }
+        style={{
+          ...box,
+          left: `calc(50% + ${xPct}%)`,
+          top: `${yPct}%`,
+        }}
+        className="pointer-events-none will-change-transform"
+        aria-hidden="true"
+      >
+        {broken || !src ? (
+          <div
+            className={`h-full w-full rounded-full shadow-inner ${fallbackTone}`}
+            aria-hidden="true"
+          />
+        ) : (
+          <img
+            src={src}
+            alt=""
+            draggable={false}
+            onError={() => setBroken(true)}
+            className="pointer-events-none h-full w-full rounded-full object-contain"
+          />
+        )}
+      </motion.div>
+    );
+  },
+  (prev, next) =>
+    prev.isDark === next.isDark &&
+    prev.settle === next.settle &&
+    prev.item.piece.id === next.item.piece.id &&
+    prev.item.piece.kind === next.item.piece.kind &&
+    prev.item.coords.xPct === next.item.coords.xPct &&
+    prev.item.coords.yPct === next.item.coords.yPct &&
+    prev.item.coords.scale === next.item.coords.scale &&
+    prev.item.coords.rotation === next.item.coords.rotation &&
+    prev.item.coords.spills === next.item.coords.spills
+);
 
 const PieceLayer: React.FC<{
   items: LaidPiece[];
   isDark: boolean;
   settlePieceIds?: ReadonlySet<string>;
-}> = ({ items, isDark }) => (
+}> = ({ items, isDark, settlePieceIds }) => (
   <AnimatePresence>
     {(items || []).map((item) => (
       <MarblePiece
         key={item.piece.id}
         item={item}
         isDark={isDark}
+        settle={settlePieceIds ? settlePieceIds.has(item.piece.id) : false}
       />
     ))}
   </AnimatePresence>
@@ -510,10 +533,10 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
       </AnimatePresence>
 
       <div id="accumulation-bowl-frame" className="relative mx-auto h-24 w-[108px] overflow-visible">
-        {/* Landing target for card→bowl flights (cavity center). */}
+        {/* Landing target for card→bowl flights (cavity floor). */}
         <div
           id="accumulation-bowl-target"
-          className="pointer-events-none absolute left-1/2 top-[50%] h-0 w-0 -translate-x-1/2"
+          className="pointer-events-none absolute left-1/2 top-[56%] h-0 w-0 -translate-x-1/2"
           aria-hidden="true"
         />
         {/* Layer 1 — back glass */}
@@ -543,7 +566,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
           </div>
         </div>
 
-        {/* Layer 3 — front rim overlay */}
+        {/* Layer 3 — front rim overlay: opacity boosted + stronger mask to visually place pieces INSIDE */}
         {!bowlBroken && bowlSrc ? (
           <img
             key={`bowl-rim-${darkMode ? 'night' : 'morning'}`}
@@ -555,7 +578,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
             style={{
               WebkitMaskImage: cavity.rimMask,
               maskImage: cavity.rimMask,
-              opacity: 0.97,
+              opacity: 1,
             }}
           />
         ) : null}
@@ -564,7 +587,7 @@ export const AccumulationBowl: React.FC<AccumulationBowlProps> = React.memo(func
           className="pointer-events-none absolute inset-0 z-[3] mix-blend-overlay"
           style={{
             background:
-              'linear-gradient(180deg, transparent 38%, rgba(255,255,255,0.14) 52%, transparent 68%)',
+              'linear-gradient(180deg, transparent 30%, rgba(255,255,255,0.18) 48%, transparent 62%)',
             WebkitMaskImage: cavity.rimMask,
             maskImage: cavity.rimMask,
           }}

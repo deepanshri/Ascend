@@ -36,7 +36,7 @@ interface SettingsViewProps {
   onOpenSettings?: () => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({
+const SettingsViewInner: React.FC<SettingsViewProps> = ({
   habits,
   evidenceList = [],
   completionEvents = [],
@@ -565,3 +565,5 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     </div>
   );
 };
+
+export const SettingsView = React.memo(SettingsViewInner);

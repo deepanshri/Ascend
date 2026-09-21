@@ -54,7 +54,7 @@ interface PersonalViewProps {
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }
 
-export const PersonalView: React.FC<PersonalViewProps> = ({
+const PersonalViewInner: React.FC<PersonalViewProps> = ({
   userSession,
   evidenceList,
   identityVoteCount,
@@ -917,3 +917,5 @@ export const PersonalView: React.FC<PersonalViewProps> = ({
     </div>
   );
 };
+
+export const PersonalView = React.memo(PersonalViewInner);

@@ -18,7 +18,7 @@ interface HomeViewProps {
   children: React.ReactNode;
 }
 
-export const HomeView: React.FC<HomeViewProps> = ({
+const HomeViewInner: React.FC<HomeViewProps> = ({
   pieces,
   bowlFill,
   isDark = false,
@@ -69,3 +69,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
     </div>
   );
 };
+
+export const HomeView = React.memo(HomeViewInner);
+

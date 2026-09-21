@@ -110,14 +110,14 @@ html, body, #root {
 .gpu-layer {
   transform: translateZ(0);
   backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .gpu-accelerated,
 .gpu-smooth {
   transform: translateZ(0);
   backface-visibility: hidden;
-  perspective: 1000px;
-  will-change: transform, opacity;
+  -webkit-backface-visibility: hidden;
 }
 
 .tab-pane-host {
@@ -126,6 +126,7 @@ html, body, #root {
 
 .tab-pane {
   contain: layout style paint;
+  -webkit-overflow-scrolling: touch;
 }
 
 .tab-pane-active {
@@ -190,8 +191,10 @@ html.ascend-swiping #settings-screen {
   touch-action: pan-y;
 }
 
-.swipe-card-surface.is-swiping {
+.swipe-card-surface.is-swiping,
+.swipe-card-surface.is-swiping * {
   touch-action: none;
+  transition: none !important;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -381,25 +384,35 @@ html.ascend-swiping #settings-screen {
   animation: habitCompleteGlow 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Keystone boost glow — locked accent only (light green / dark blue via --ascend-accent). */
-@keyframes keystoneBoostBreathe {
-  0%, 100% {
-    box-shadow:
-      0 0 0 2px color-mix(in srgb, var(--ascend-accent) 42%, transparent),
-      0 0 16px color-mix(in srgb, var(--ascend-accent) 28%, transparent);
-  }
-  50% {
-    box-shadow:
-      0 0 0 3px color-mix(in srgb, var(--ascend-accent) 72%, transparent),
-      0 0 30px color-mix(in srgb, var(--ascend-accent) 50%, transparent);
-  }
-}
-
+/* Keystone boost glow — locked accent only (light green / dark blue via --ascend-accent).
+   GPU-composited via ::after opacity animation (0 repaints/frame instead of box-shadow reflows). */
 .keystone-boost-glow {
-  animation: keystoneBoostBreathe 2.8s ease-in-out infinite;
+  position: relative;
   border-color: var(--ascend-accent) !important;
   overflow: visible;
   isolation: isolate;
+}
+
+.keystone-boost-glow::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 2.5px color-mix(in srgb, var(--ascend-accent) 65%, transparent),
+    0 0 24px color-mix(in srgb, var(--ascend-accent) 45%, transparent);
+  animation: keystoneBoostBreathe 2.8s ease-in-out infinite;
+  will-change: opacity;
+}
+
+@keyframes keystoneBoostBreathe {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.95;
+  }
 }
 
 .habit-fallback-ripple {
@@ -544,6 +557,6 @@ html.ascend-swiping #settings-screen {
 
 .driver-overlay,
 .driver-overlay-animated {
-  backdrop-filter: blur(7px);
-  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
 }

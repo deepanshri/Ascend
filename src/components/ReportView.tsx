@@ -46,6 +46,7 @@ interface ReportViewProps {
   onSelectDayIso?: (iso: string) => void;
   cycleDays?: number;
   cycleStartIso?: string;
+  isActive?: boolean;
 }
 
 type TimeFilter = 'today' | 'week' | 'month' | 'momentum';
@@ -365,7 +366,7 @@ const EMPTY_LINE_GRAPH = {
   momentumPath: '',
 };
 
-export const ReportView: React.FC<ReportViewProps> = ({
+const ReportViewInner: React.FC<ReportViewProps> = ({
   habits: habitsProp,
   evidenceList: evidenceProp,
   identityVoteCount,
@@ -385,6 +386,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
   onSelectDayIso,
   cycleDays = 7,
   cycleStartIso,
+  isActive = true,
 }) => {
   const habits = asArray(habitsProp);
   const activeHabitIds = useMemo(() => new Set(habits.map((habit) => habit.id)), [habits]);
@@ -1224,3 +1226,5 @@ export const ReportView: React.FC<ReportViewProps> = ({
     </div>
   );
 };
+
+export const ReportView = React.memo(ReportViewInner);
