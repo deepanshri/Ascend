@@ -177,6 +177,12 @@ export function getStoredSession(): UserSession | null {
     const raw = localStorage.getItem(SESSION_STORAGE_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw) as UserSession;
+    if (session?.isGuest || session?.id?.startsWith('guest_')) {
+      try {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      } catch {}
+      return null;
+    }
     session.avatarUrl = resolveAvatarId(session.avatarUrl);
     return session;
   } catch {}
@@ -185,7 +191,7 @@ export function getStoredSession(): UserSession | null {
 
 export function setStoredSession(session: UserSession | null) {
   try {
-    if (session) {
+    if (session && !session.isGuest && !session.id?.startsWith('guest_')) {
       const next = { ...session, avatarUrl: resolveAvatarId(session.avatarUrl) };
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(next));
     } else {
@@ -288,7 +294,13 @@ async function signInRemote(email: string, password: string): Promise<UserSessio
 export const authService = {
   async restoreExistingSession(): Promise<UserSession | 'pending' | null> {
     const stored = getStoredSession();
-    if (!isSupabaseConfigured || !supabase) return stored;
+    if (!isSupabaseConfigured || !supabase) {
+      if (stored?.isGuest || stored?.id?.startsWith('guest_')) {
+        setStoredSession(null);
+        return null;
+      }
+      return stored;
+    }
     try {
       const { data, error } = await supabase.auth.getSession();
       if (error) console.warn('Auth getSession failed:', error.message);
@@ -300,7 +312,7 @@ export const authService = {
         setStoredSession(session);
         return session;
       }
-      // Guest sessions are no longer accepted — force Auth screen.
+      // Guest sessions are purged — force Auth screen.
       if (stored?.isGuest || stored?.id?.startsWith('guest_')) {
         setStoredSession(null);
         return null;
@@ -313,7 +325,7 @@ export const authService = {
         setStoredSession(null);
         return null;
       }
-      return stored ? 'pending' : null;
+      return stored && !stored.isGuest ? 'pending' : null;
     }
   },
 
@@ -388,20 +400,8 @@ export const authService = {
     return session;
   },
 
-  async signInAsGuest(): Promise<UserSession> {
-    await new Promise((r) => setTimeout(r, 200));
-    const guestNumber = Math.floor(1000 + Math.random() * 9000);
-    const session: UserSession = {
-      id: `guest_${guestNumber}`,
-      email: `guest_${guestNumber}@ascend.local`,
-      name: `Guest Ascender #${guestNumber}`,
-      avatarUrl: generateAvatarUrl(`Guest${guestNumber}`),
-      isGuest: true,
-      memberSince: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-      syncStatus: 'local',
-    };
-    setStoredSession(session);
-    return session;
+  async signInAsGuest(): Promise<never> {
+    throw new Error('Guest mode has been retired. Please sign in or create an account.');
   },
 
   async resetPasswordForEmail(email: string): Promise<{ success: boolean; message: string }> {
@@ -744,7 +744,7 @@ export const remindersSyncService = {
     const now = Date.now();
     const hydratedLocal = localReminders.map(withReminderNotificationIds);
 
-    if (!isSupabaseConfigured || !supabase || !userSession || userSession.isGuest) {
+    if (!isSupabaseConfigured || !supabase || !userSession || userSession?.isGuest) {
       await persistMergedReminders(hydratedLocal.filter((item) => !item.deleted), now);
       await rescheduleAllReminderDualAlerts(hydratedLocal);
       return {

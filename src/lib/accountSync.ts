@@ -51,16 +51,14 @@ export async function persistMomentumHistory(
 ): Promise<void> {
   if (!isSupabaseConfigured || !supabase || !userId || userId.startsWith('guest_')) return;
   try {
-    const recordedOn = toISODate();
+    const recordedDate = toISODate();
     const { error } = await supabase.from('momentum_history').upsert(
       {
         user_id: userId,
         score: Math.round(score),
-        day_index: dayIndex,
-        recorded_on: recordedOn,
-        updated_at: new Date().toISOString(),
+        recorded_date: recordedDate,
       },
-      { onConflict: 'user_id,recorded_on' }
+      { onConflict: 'user_id,recorded_date' }
     );
     if (error) console.warn('momentum_history upsert failed:', error.message);
   } catch (err) {
@@ -77,7 +75,7 @@ export async function syncAuthenticatedAccount(
   input: AccountSyncInput
 ): Promise<AccountSyncResult> {
   const { session } = input;
-  if (!session || session.isGuest || session.id.startsWith('guest_')) {
+  if (!session || session?.isGuest || session?.id?.startsWith('guest_')) {
     return {
       habits: withoutSeedHabits(input.habits),
       completionEvents: input.completionEvents,

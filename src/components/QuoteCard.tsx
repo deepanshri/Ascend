@@ -346,7 +346,7 @@ function matchesCategories(quote: Quote, categories: string[]): boolean {
   return needles.some((needle) => haystacks.some((hay) => hay.includes(needle) || needle.includes(hay)));
 }
 
-function localQuotesFor(interests: string[], isGuest: boolean): Quote[] {
+function localQuotesFor(interests: string[], isGuest: boolean = false): Quote[] {
   const list = Array.isArray(interests) ? interests : [];
   if (isGuest || list.length === 0) {
     return DEFAULT_HABIT_QUOTES;
@@ -513,7 +513,7 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
 };
 
 export const QuoteCard = React.memo(QuoteCardInner, (prev, next) => {
-  if (prev.isGuest !== next.isGuest) return false;
+  if (Boolean(prev.isGuest) !== Boolean(next.isGuest)) return false;
   const pList = prev.selectedInterests || [];
   const nList = next.selectedInterests || [];
   if (pList.length !== nList.length) return false;

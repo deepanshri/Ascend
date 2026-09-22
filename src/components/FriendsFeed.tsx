@@ -40,7 +40,7 @@ export interface FriendsFeedProps {
 
 export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   userId = null,
-  isGuest = true,
+  isGuest = false,
   userEmail = '',
   userName = '',
   variant = 'full',

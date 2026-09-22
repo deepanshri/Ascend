@@ -62,7 +62,7 @@ export async function fetchUserProfile(
 ): Promise<UserProfile> {
   const fallback = localProfile(session, fallbackInterests);
   const cached = readCachedProfile(session.id);
-  if (!isSupabaseConfigured || !supabase || session.isGuest) {
+  if (!isSupabaseConfigured || !supabase || session?.isGuest) {
     return cached
       ? { ...fallback, ...cached, interests: cached.interests.length > 0 ? cached.interests : fallback.interests }
       : fallback;
@@ -147,7 +147,7 @@ export async function persistUserProfile(
         : cached?.avatar_url ?? readStoredAvatarId(session.avatarUrl),
   });
 
-  if (!isSupabaseConfigured || !supabase || session.isGuest) {
+  if (!isSupabaseConfigured || !supabase || session?.isGuest) {
     return;
   }
 

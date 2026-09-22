@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -252,7 +252,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
-          recorded_date?: string
+          recorded_date: string
           score: number
           user_id: string
         }
@@ -263,7 +263,15 @@ export type Database = {
           score?: number
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "momentum_history_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {

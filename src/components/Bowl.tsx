@@ -150,7 +150,7 @@ function MarbleScatter({ completedCount, pieces, deferredPieceIds, isDark }: Mar
   );
 }
 
-export const Bowl: React.FC<BowlProps> = React.memo(function Bowl({
+function BowlInner({
   completedCount,
   pieces,
   fillPercent = 0,
@@ -163,7 +163,8 @@ export const Bowl: React.FC<BowlProps> = React.memo(function Bowl({
   celebrating = false,
   onCelebrationDone,
   deferredPieceIds,
-}) {
+  settlePieceIds: _settlePieceIds,
+}: BowlProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const selectedCycle = clampCycleDays(cycleDays);
@@ -333,7 +334,27 @@ export const Bowl: React.FC<BowlProps> = React.memo(function Bowl({
       </div>
     </section>
   );
-});
+}
+
+function bowlPropsAreEqual(prev: BowlProps, next: BowlProps): boolean {
+  return (
+    prev.completedCount === next.completedCount &&
+    prev.pieces === next.pieces &&
+    prev.fillPercent === next.fillPercent &&
+    prev.isOverflowing === next.isOverflowing &&
+    prev.isDark === next.isDark &&
+    prev.votes === next.votes &&
+    prev.capacity === next.capacity &&
+    prev.cycleDays === next.cycleDays &&
+    prev.celebrating === next.celebrating &&
+    prev.deferredPieceIds === next.deferredPieceIds &&
+    prev.settlePieceIds === next.settlePieceIds &&
+    prev.onCycleDaysChange === next.onCycleDaysChange &&
+    prev.onCelebrationDone === next.onCelebrationDone
+  );
+}
+
+export const Bowl: React.FC<BowlProps> = React.memo(BowlInner, bowlPropsAreEqual);
 
 // Alias AccumulationBowl to Bowl for full backward compatibility
 export const AccumulationBowl = Bowl;

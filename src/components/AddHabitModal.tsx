@@ -25,7 +25,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   onClose,
   onAddHabit,
   userId = null,
-  isGuest = true,
+  isGuest = false,
   activeHabitCount = 0,
   activeKeystoneCount = 0,
 }) => {

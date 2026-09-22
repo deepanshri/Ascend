@@ -501,13 +501,75 @@ export interface RollingMomentumOptions {
 }
 
 /**
+ * Event-sourced reversal cancellation:
+ * Scans events chronologically and matches each 'reversal' event with its
+ * corresponding prior 'full' or 'fallback' completion event for the same habit.
+ * Matched completion-reversal pairs (and any unpaired reversal events) are
+ * omitted from the active calculation stream, eliminating tail-division mathematical drift.
+ */
+export function filterReversedMomentumEvents(events: MomentumEvent[]): MomentumEvent[] {
+  const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
+  const excludedIds = new Set<string>();
+
+  const completionsByKey = new Map<string, MomentumEvent[]>();
+  const completionsByHabit = new Map<string, MomentumEvent[]>();
+
+  for (const event of sorted) {
+    const isoDate = resolveMomentumEventDate(event);
+    const key = `${event.habitId}::${isoDate}`;
+
+    if (event.eventType === 'full' || event.eventType === 'fallback') {
+      const list = completionsByKey.get(key) || [];
+      list.push(event);
+      completionsByKey.set(key, list);
+
+      const habitList = completionsByHabit.get(event.habitId) || [];
+      habitList.push(event);
+      completionsByHabit.set(event.habitId, habitList);
+    } else if (event.eventType === 'reversal') {
+      excludedIds.add(event.id);
+
+      const list = completionsByKey.get(key);
+      let matched: MomentumEvent | undefined;
+      if (list && list.length > 0) {
+        matched = list.pop();
+        const habitList = completionsByHabit.get(event.habitId);
+        if (habitList) {
+          const idx = habitList.lastIndexOf(matched);
+          if (idx !== -1) habitList.splice(idx, 1);
+        }
+      } else {
+        const habitList = completionsByHabit.get(event.habitId);
+        if (habitList && habitList.length > 0) {
+          matched = habitList.pop();
+          if (matched) {
+            const mKey = `${matched.habitId}::${resolveMomentumEventDate(matched)}`;
+            const mList = completionsByKey.get(mKey);
+            if (mList) {
+              const idx = mList.lastIndexOf(matched);
+              if (idx !== -1) mList.splice(idx, 1);
+            }
+          }
+        }
+      }
+
+      if (matched) {
+        excludedIds.add(matched.id);
+      }
+    }
+  }
+
+  return sorted.filter((e) => !excludedIds.has(e.id));
+}
+
+/**
  * Rolling momentum from the append-only `momentum_events` log.
- * Each row is an EMA update:
- *   observation = (score * weight / 1.5) * 100
- *   next = clamp(prev * (1 - δ) + observation * δ, 0, 100)
- * then Math.round for display. δ defaults to 0.12.
- * Exam Shield / Vacation set decay factor δ to 0 for missed events so
- * missing habits does not decay momentum while a protection window is on.
+ * - Filters out reversed completions before the replay fold (zero drift).
+ * - Aggregates daily missed habit penalties into a single observation step per day:
+ *     Daily Observation = (∑ Completed Weights / ∑ Total Active Weights) * 100
+ *     S_next = clamp(S_prev * (1 - δ) + Daily Observation * δ, 0, 100)
+ * - Dates without missed events (e.g. today's live completion swiping) apply sequential rolling steps.
+ * - Score is strictly clamped between 0 and 100 and rounded for display.
  */
 export function calculateMomentumScore(
   events: MomentumEvent[],
@@ -517,24 +579,100 @@ export function calculateMomentumScore(
   const protectionActive = Boolean(options.examShield || options.vacationMode);
   const asOf = options.asOf;
   const habitById = options.habits ? new Map(options.habits.map((habit) => [habit.id, habit])) : null;
-  const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
+
+  const unexpiredEvents = asOf !== undefined
+    ? events.filter((e) => e.timestamp <= asOf)
+    : events;
+
+  const activeEvents = filterReversedMomentumEvents(unexpiredEvents);
+
+  // Group events by calendar date to identify dates that contain missed habit events
+  const eventsByDate = new Map<string, MomentumEvent[]>();
+  const datesWithMissed = new Set<string>();
+
+  for (const event of activeEvents) {
+    const date = resolveMomentumEventDate(event);
+    if (!eventsByDate.has(date)) {
+      eventsByDate.set(date, []);
+    }
+    eventsByDate.get(date)!.push(event);
+    if (event.eventType === 'missed') {
+      datesWithMissed.add(date);
+    }
+  }
+
+  type TimelineStep =
+    | { type: 'daily'; timestamp: number; dailyObservation: number; delta: number }
+    | { type: 'event'; timestamp: number; scoreVal: number; weight: number; delta: number };
+
+  const timelineSteps: TimelineStep[] = [];
+
+  for (const [date, dateEvents] of eventsByDate.entries()) {
+    if (datesWithMissed.has(date)) {
+      // Deduplicate by habitId: take latest event for each habit on this date
+      const habitEvents = new Map<string, MomentumEvent>();
+      let maxTimestamp = 0;
+      for (const event of dateEvents) {
+        if (event.timestamp > maxTimestamp) maxTimestamp = event.timestamp;
+        habitEvents.set(event.habitId, event);
+      }
+
+      let completedWeightSum = 0;
+      let activeWeightSum = 0;
+
+      for (const [habitId, event] of habitEvents.entries()) {
+        const habit = habitById?.get(habitId);
+        const unscheduledMiss =
+          event.eventType === 'missed' && habit ? !isHabitScheduledOnIso(habit, date) : false;
+
+        if (event.eventType === 'full' || event.eventType === 'fallback') {
+          const scoreVal = eventScore(event.eventType);
+          completedWeightSum += scoreVal * event.weight;
+          activeWeightSum += event.weight;
+        } else if (event.eventType === 'missed') {
+          if (!protectionActive && !unscheduledMiss) {
+            activeWeightSum += event.weight;
+          }
+        }
+      }
+
+      const dailyObservation = activeWeightSum > 0
+        ? (completedWeightSum / activeWeightSum) * 100
+        : 0;
+      const stepDelta = activeWeightSum > 0 ? decayFactor : 0;
+
+      timelineSteps.push({
+        type: 'daily',
+        timestamp: maxTimestamp,
+        dailyObservation,
+        delta: stepDelta,
+      });
+    } else {
+      // Individual completion steps for live / unmissed days
+      for (const event of dateEvents) {
+        timelineSteps.push({
+          type: 'event',
+          timestamp: event.timestamp,
+          scoreVal: eventScore(event.eventType),
+          weight: event.weight,
+          delta: decayFactor,
+        });
+      }
+    }
+  }
+
+  timelineSteps.sort((a, b) => a.timestamp - b.timestamp);
 
   let prevScore = 0;
-  for (const event of sorted) {
-    if (asOf !== undefined && event.timestamp > asOf) continue;
-    if (event.eventType === 'reversal') {
-      prevScore = applyReversalMomentumStep(prevScore, event.weight, decayFactor);
-      continue;
+  for (const step of timelineSteps) {
+    if (step.type === 'daily') {
+      prevScore = clampMomentum(prevScore * (1 - step.delta) + step.dailyObservation * step.delta);
+    } else {
+      prevScore = applyRollingMomentumStep(prevScore, step.scoreVal, step.weight, step.delta);
     }
-    const eventScoreValue = eventScore(event.eventType);
-    const eventWeight = event.weight;
-    const habit = habitById?.get(event.habitId);
-    const unscheduledMiss =
-      event.eventType === 'missed' && habit ? !isHabitScheduledOnIso(habit, resolveMomentumEventDate(event)) : false;
-    const delta = (protectionActive || unscheduledMiss) && event.eventType === 'missed' ? 0 : decayFactor;
-    prevScore = applyRollingMomentumStep(prevScore, eventScoreValue, eventWeight, delta);
   }
-  return Math.round(prevScore);
+
+  return Math.round(clampMomentum(prevScore));
 }
 
 export async function calculateMomentumScoreFromTable(

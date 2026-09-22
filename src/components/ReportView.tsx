@@ -371,7 +371,7 @@ const ReportViewInner: React.FC<ReportViewProps> = ({
   evidenceList: evidenceProp,
   identityVoteCount,
   userId,
-  isGuest = true,
+  isGuest = false,
   userEmail = '',
   userName = '',
   onOpenLedger,

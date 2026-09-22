@@ -78,7 +78,7 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
 }) => {
   // Personal Details state (persisted locally)
   const [name, setName] = useState<string>(() => {
-    return localStorage.getItem('ascend_user_name') || userSession.name || 'Alex';
+    return localStorage.getItem('ascend_user_name') || userSession?.name || 'Alex';
   });
   const [dob, setDob] = useState<string>(() => {
     return localStorage.getItem('ascend_dob') || '12 Mar 2004';
@@ -118,7 +118,7 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [isAvatarSheetOpen, setIsAvatarSheetOpen] = useState(false);
-  const [avatarId, setAvatarId] = useState(() => readStoredAvatarId(userSession.avatarUrl));
+  const [avatarId, setAvatarId] = useState(() => readStoredAvatarId(userSession?.avatarUrl));
 
   // Edit details form temp state
   const [tempName, setTempName] = useState(name);
@@ -186,8 +186,8 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
   };
 
   useEffect(() => {
-    if (userSession.avatarUrl) setAvatarId(resolveAvatarId(userSession.avatarUrl));
-  }, [userSession.avatarUrl]);
+    if (userSession?.avatarUrl) setAvatarId(resolveAvatarId(userSession.avatarUrl));
+  }, [userSession?.avatarUrl]);
 
   const toggleInterest = (tag: string) => {
     if (onToggleInterest) {
@@ -576,7 +576,7 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
           >
             <span>{isSyncing ? 'Syncing...' : '↻ Sync Data'}</span>
           </button>
-          {!userSession.isGuest && (
+          {!userSession?.isGuest && (
             <button
               type="button"
               onClick={onChangePassword}
@@ -748,10 +748,10 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
       </MotionModal>
 
       <FriendsFeed
-        userId={userSession.id}
-        isGuest={userSession.isGuest}
-        userEmail={userSession.email}
-        userName={name || userSession.name}
+        userId={userSession?.id}
+        isGuest={userSession?.isGuest}
+        userEmail={userSession?.email}
+        userName={name || userSession?.name}
         variant="modal"
         mode="invite"
         isOpen={isFriendModalOpen}

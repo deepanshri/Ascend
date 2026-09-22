@@ -75,7 +75,7 @@ const RemindersViewInner: React.FC<RemindersViewProps> = ({
   const { pendingArchiveIds, beginGrace, cancelGrace, isInGrace } = useTaskArchiveGrace();
 
   useEffect(() => {
-    if (!userSession || userSession.isGuest) return;
+    if (!userSession || userSession?.isGuest) return;
     let cancelled = false;
     void fetchPublicReminders(userSession.id)
       .then((remote) => {
@@ -167,7 +167,7 @@ const RemindersViewInner: React.FC<RemindersViewProps> = ({
             {userSession ? (
               <FriendsFeed
                 userId={userSession.id}
-                isGuest={userSession.isGuest}
+                isGuest={userSession?.isGuest}
                 userEmail={userSession.email}
                 userName={userSession.name}
                 variant="icon"

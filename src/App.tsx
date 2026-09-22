@@ -199,6 +199,10 @@ export default function App() {
     }
     return null;
   });
+  const [authLoading, setAuthLoading] = useState<boolean>(() => {
+    const stored = getStoredSession();
+    return !stored && isSupabaseConfigured;
+  });
   const sessionRef = useRef<UserSession | null>(session);
   sessionRef.current = session;
   const derivedHabitsRef = useRef<Habit[]>([]);
@@ -307,7 +311,7 @@ export default function App() {
   const handleToggleInterest = (interest: string) => {
     setSelectedInterests((prev) => {
       const next = prev.includes(interest) ? prev.filter((t) => t !== interest) : [...prev, interest];
-      if (session && !session.isGuest) {
+      if (session && !session?.isGuest) {
         void persistUserProfile(session, { interests: next }).catch(() => {});
       }
       return next;
@@ -474,11 +478,11 @@ export default function App() {
   const bowlCelebrateLockRef = useRef(false);
   const pendingCycleResetRef = useRef<{ endIso: string; resetAt: number } | null>(null);
 
-  const handleCycleDaysChange = (days: CycleDays) => {
+  const handleCycleDaysChange = useCallback((days: CycleDays) => {
     const next = clampCycleDays(days);
     persistCycleDays(next);
     setCycleDays(next);
-  };
+  }, []);
 
   const [evidenceList, setEvidenceList] = useState<IdentityEvidence[]>(() => {
     try {
@@ -755,18 +759,32 @@ export default function App() {
     };
 
     void authService.restoreExistingSession().then((result) => {
-      if (result === 'pending' || !result) return;
+      if (result === 'pending') {
+        setAuthLoading(false);
+        return;
+      }
+      if (!result) {
+        setSession(null);
+        setStoredSession(null);
+        setAuthLoading(false);
+        return;
+      }
       setSession(result);
-    }).catch((err) => console.warn('Auth restore offline:', err));
+      setAuthLoading(false);
+    }).catch((err) => {
+      console.warn('Auth restore offline:', err);
+      setAuthLoading(false);
+    });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, supabaseSession) => {
       if (supabaseSession?.user) {
         applyAuthUser(supabaseSession.user);
         return;
       }
-      if (event === 'SIGNED_OUT' && !sessionRef.current?.isGuest) {
+      if (event === 'SIGNED_OUT') {
         setSession(null);
         setStoredSession(null);
+        setAuthLoading(false);
       }
     });
 
@@ -952,7 +970,7 @@ export default function App() {
     dualBowlFill.night.votes,
   ]);
 
-  const handleBowlCelebrationDone = () => {
+  const handleBowlCelebrationDone = useCallback(() => {
     const pending = pendingCycleResetRef.current;
     if (pending) {
       setBowlEpoch(resetBowlCycleEpoch(pending.endIso, pending.resetAt));
@@ -965,7 +983,7 @@ export default function App() {
     window.setTimeout(() => {
       bowlCelebrateLockRef.current = false;
     }, 400);
-  };
+  }, [calendarOrigin]);
 
   const keystoneCompletedOnViewedDay = useMemo(
     () => activeHabits.filter((habit) => habit.isKeystone && habit.days?.[currentDayIndex]).map((habit) => habit.id),
@@ -1040,7 +1058,7 @@ export default function App() {
   };
 
   const runAuthenticatedSync = async (targetSession: UserSession) => {
-    if (targetSession.isGuest) {
+    if (targetSession?.isGuest) {
       return { ok: false, error: 'Guest sessions stay local' };
     }
     const result = await syncAuthenticatedAccount({
@@ -1068,7 +1086,7 @@ export default function App() {
 
   // Guest → auth: hydrate profiles, habits, habit_logs, and momentum_history
   useEffect(() => {
-    if (!session || session.isGuest) {
+    if (!session || session?.isGuest) {
       hydratedUserIdRef.current = null;
       return;
     }
@@ -1090,7 +1108,7 @@ export default function App() {
   }, [session?.id, session?.isGuest]);
 
   useEffect(() => {
-    if (!session || session.isGuest) return;
+    if (!session || session?.isGuest) return;
     if (hydratedUserIdRef.current !== session.id) return;
     void persistHabitsToTable(session.id, habits).then((ok) => {
       applySyncStatus(ok ? 'synced' : 'error');
@@ -1098,7 +1116,7 @@ export default function App() {
   }, [habits, session?.id, session?.isGuest]);
 
   useEffect(() => {
-    if (!session || session.isGuest) return;
+    if (!session || session?.isGuest) return;
     if (hydratedUserIdRef.current !== session.id) return;
     void persistMomentumHistory(session.id, todayMomentumScore, todayDayIndex).catch(() => {});
   }, [todayMomentumScore, todayDayIndex, session?.id, session?.isGuest]);
@@ -1143,7 +1161,7 @@ export default function App() {
   // Cycle-window habit_logs hydrate (Home + any tab once signed in).
   // Range query is read-only — never resets bowlEpoch (celebration/rollover only).
   useEffect(() => {
-    if (!session || session.isGuest) return;
+    if (!session || session?.isGuest) return;
     const startIso = bowlWindow.startIso;
     const endIso = bowlWindow.endIso;
     if (!startIso || !endIso || startIso > endIso) return;
@@ -1197,7 +1215,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (!session || session.isGuest) return;
+    if (!session || session?.isGuest) return;
     let cancelled = false;
     void fetchFrictionReasonsFromTable(session.id).then((rows) => {
       if (cancelled || rows.length === 0) return;
@@ -1610,24 +1628,32 @@ export default function App() {
     setDeleteAccountLoading(false);
   };
 
+  // Sign out / Log out handler
+  const handleLogout = async () => {
+    await authService.signOut();
+    setSession(null);
+    setStoredSession(null);
+    setActiveTab('home');
+  };
+
   // Auth Success handler
   const handleAuthSuccess = (newSession: UserSession, isNewUser?: boolean, interests?: string[]) => {
     setSession(newSession);
     setStoredSession(newSession);
     if (interests && interests.length > 0) {
       setSelectedInterests(interests);
-      if (!newSession.isGuest) {
+      if (newSession && !newSession?.isGuest) {
         void persistUserProfile(newSession, {
           interests,
           has_completed_tutorial: false,
         }).catch(() => {});
       }
     }
-    if (!newSession.isGuest) {
+    if (newSession && !newSession?.isGuest) {
       void purgeSeedHabitsFromTable(newSession.id).catch(() => {});
     }
     if (isNewUser) {
-      if (newSession.isGuest) {
+      if (newSession?.isGuest) {
         setHabits((prev) => prev.filter((habit) => !isSeedHabitId(habit.id)));
         setCompletionEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
         setMomentumEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
@@ -1692,7 +1718,7 @@ export default function App() {
 
   // Last-write-wins pull: apply the newest public.reminders row and re-schedule natives.
   useEffect(() => {
-    if (!session || session.isGuest) return;
+    if (!session || session?.isGuest) return;
     let cancelled = false;
     const seq = ++reminderSyncSeqRef.current;
     void remindersSyncService.syncReminders(reminders, session).then((res) => {
@@ -1707,6 +1733,7 @@ export default function App() {
 
   // Standalone Reminders Handlers with Supabase LWW sync and OS-level alerts
   const persistReminderSync = (updated: StandaloneReminder[]) => {
+    if (!session || session?.isGuest) return;
     const seq = ++reminderSyncSeqRef.current;
     void remindersSyncService.syncReminders(updated, session).then((res) => {
       if (seq !== reminderSyncSeqRef.current) return;
@@ -1879,6 +1906,62 @@ export default function App() {
   }, []);
 
   const handleOpenSettingsTab = useCallback(() => setActiveTab('settings'), []);
+
+  const renderHabit = useCallback(
+    (habit: Habit, habitIndex: number) => {
+      const keystoneAtCap =
+        !habit.isKeystone && activeKeystoneCount >= MAX_KEYSTONE_HABITS;
+      return (
+        <HabitCard
+          key={habit.id}
+          habit={habit}
+          todayIndex={todayDayIndex}
+          viewIndex={currentDayIndex}
+          gesturesLocked={!isViewingToday}
+          isLongPressed={longPressedHabitId === habit.id}
+          isOtherLongPressed={Boolean(longPressedHabitId && longPressedHabitId !== habit.id)}
+          isFallbackActive={isViewingToday && activeFallbackIdSet.has(habit.id)}
+          isTourTarget={habitIndex === 0}
+          onCompleteToday={stableCompleteToday}
+          onToggleFallbackMode={stableToggleFallbackMode}
+          onResetToday={stableResetToday}
+          onLongPress={stableLongPress}
+          onDismissLongPress={stableDismissLongPress}
+          onOpenEdit={stableOpenEdit}
+          onOpenDeleteConfirm={stableOpenDeleteConfirm}
+          onToggleKeystone={stableToggleKeystone}
+          keystoneAtCap={keystoneAtCap}
+          keystoneBoosted={
+            keystoneCompletedOnViewedDay.length > 0 && !keystoneCompletedOnViewedDay.includes(habit.id)
+          }
+          weekOrigin={calendarOrigin}
+        />
+      );
+    },
+    [
+      activeKeystoneCount,
+      todayDayIndex,
+      currentDayIndex,
+      isViewingToday,
+      longPressedHabitId,
+      activeFallbackIdSet,
+      stableCompleteToday,
+      stableToggleFallbackMode,
+      stableResetToday,
+      stableLongPress,
+      stableDismissLongPress,
+      stableOpenEdit,
+      stableOpenDeleteConfirm,
+      stableToggleKeystone,
+      keystoneCompletedOnViewedDay,
+      calendarOrigin,
+    ]
+  );
+
+  const quoteCardElement = useMemo(
+    () => <QuoteCard selectedInterests={selectedInterests} isGuest={Boolean(session?.isGuest)} />,
+    [selectedInterests, session?.isGuest]
+  );
   const handleOpenHomeTab = useCallback(() => setActiveTab('home'), []);
   const handleOpenLedgerModal = useCallback(() => setIsLedgerModalOpen(true), []);
   const handleCloseLedgerModal = useCallback(() => setIsLedgerModalOpen(false), []);
@@ -2108,7 +2191,7 @@ export default function App() {
         setHasCompletedTutorial(true);
         setLocalTutorialCompleted(true);
         markScreenTutorialCompleted('home');
-        if (!session.isGuest) {
+        if (session && !session?.isGuest) {
           void persistUserProfile(session, {
             has_completed_tutorial: true,
             interests: selectedInterests,
@@ -2143,6 +2226,11 @@ export default function App() {
       destroyAscendSpotlightTutorial();
     };
   }, [session, isOnboarded, hasCompletedTutorial, activeTab, syncNavChrome]);
+
+  // ROUTING GUARDS
+  if (authLoading) {
+    return <TabLoadingFallback />;
+  }
 
   // ROUTING: Unauthenticated users -> Auth Screen
   if (!session) {
@@ -2194,10 +2282,10 @@ export default function App() {
               actions={
                 <>
                   <FriendsFeed
-                    userId={session.id}
-                    isGuest={session.isGuest}
-                    userEmail={session.email}
-                    userName={session.name}
+                    userId={session?.id}
+                    isGuest={session?.isGuest}
+                    userEmail={session?.email}
+                    userName={session?.name}
                     variant="icon"
                     mode="invite"
                   />
@@ -2229,38 +2317,9 @@ export default function App() {
               settlePieceIds={settlePieceIdSet}
               habits={activeHabits}
               todayIndex={todayDayIndex}
-              renderHabit={(habit, habitIndex) => {
-                const keystoneAtCap =
-                  !habit.isKeystone && activeKeystoneCount >= MAX_KEYSTONE_HABITS;
-                return (
-                  <HabitCard
-                    key={habit.id}
-                    habit={habit}
-                    todayIndex={todayDayIndex}
-                    viewIndex={currentDayIndex}
-                    gesturesLocked={!isViewingToday}
-                    isLongPressed={longPressedHabitId === habit.id}
-                    isOtherLongPressed={Boolean(longPressedHabitId && longPressedHabitId !== habit.id)}
-                    isFallbackActive={isViewingToday && activeFallbackIdSet.has(habit.id)}
-                    isTourTarget={habitIndex === 0}
-                    onCompleteToday={stableCompleteToday}
-                    onToggleFallbackMode={stableToggleFallbackMode}
-                    onResetToday={stableResetToday}
-                    onLongPress={stableLongPress}
-                    onDismissLongPress={stableDismissLongPress}
-                    onOpenEdit={stableOpenEdit}
-                    onOpenDeleteConfirm={stableOpenDeleteConfirm}
-                    onToggleKeystone={stableToggleKeystone}
-                    keystoneAtCap={keystoneAtCap}
-                    keystoneBoosted={
-                      keystoneCompletedOnViewedDay.length > 0 && !keystoneCompletedOnViewedDay.includes(habit.id)
-                    }
-                    weekOrigin={calendarOrigin}
-                  />
-                );
-              }}
+              renderHabit={renderHabit}
             >
-              <QuoteCard selectedInterests={selectedInterests} isGuest={session.isGuest} />
+              {quoteCardElement}
             </HomeView>
           </main>
 
@@ -2312,10 +2371,10 @@ export default function App() {
               habits={activeHabits ?? []}
               evidenceList={ledgerEvidence}
               identityVoteCount={displayedIdentityVotes}
-              userId={session.id}
-              isGuest={session.isGuest}
-              userEmail={session.email}
-              userName={session.name}
+              userId={session?.id}
+              isGuest={session?.isGuest}
+              userEmail={session?.email}
+              userName={session?.name}
               onOpenLedger={handleOpenLedgerModal}
               onOpenSettings={handleOpenSettingsTab}
               frictionAudits={frictionAudits ?? []}
@@ -2356,8 +2415,8 @@ export default function App() {
               onOpenLedger={handleOpenLedgerModal}
               onUpgradeGuest={handleOpenUpgradeModal}
               onSyncNow={async () => {
-                if (!session || session.isGuest) {
-                  throw new Error('Guest sessions stay local');
+                if (!session || session?.isGuest) {
+                  throw new Error('Please sign in to sync');
                 }
                 const result = await runAuthenticatedSync(session);
                 if (!result.ok) {
@@ -2373,7 +2432,7 @@ export default function App() {
                   return next;
                 });
               }}
-              onLogout={handleDeleteAccount}
+              onLogout={handleLogout}
               onUpdateName={(newName) => {
                 setSession((prev) => (prev ? { ...prev, name: newName } : prev));
               }}
@@ -2465,8 +2524,8 @@ export default function App() {
               isOpen={isAddModalOpen}
               onClose={() => setIsAddModalOpen(false)}
               onAddHabit={handleAddHabit}
-              userId={session.id}
-              isGuest={session.isGuest}
+              userId={session?.id}
+              isGuest={session?.isGuest}
               activeHabitCount={countActiveHabits(habits)}
               activeKeystoneCount={countActiveKeystones(habits)}
             />

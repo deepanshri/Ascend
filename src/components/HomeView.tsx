@@ -23,6 +23,8 @@ interface HomeViewProps {
   children?: React.ReactNode;
 }
 
+const EMPTY_PIECES: AccumulationPiece[] = [];
+
 const HomeViewInner: React.FC<HomeViewProps> = ({
   pieces,
   bowlFill,
@@ -40,11 +42,12 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   children,
 }) => {
   const darkMode = Boolean(isDark);
-  const safePieces = Array.isArray(pieces) ? pieces : [];
+  const safePieces = Array.isArray(pieces) ? pieces : EMPTY_PIECES;
   const fillPercent = Number.isFinite(bowlFill?.fillPercent) ? bowlFill.fillPercent : 0;
   const votes = Number.isFinite(bowlFill?.votes) ? bowlFill.votes : 0;
   const capacity = Number.isFinite(bowlFill?.capacity) ? Math.max(0, bowlFill.capacity) : 0;
   const cycleDays = Number.isFinite(bowlFill?.cycleDays) ? bowlFill.cycleDays : 7;
+  const isOverflowing = Boolean(bowlFill?.isOverflowing);
 
   // Session-captured set of habit IDs that were ALREADY completed when the app opened
   const [initialCompletedIds, setInitialCompletedIds] = useState<Set<string> | null>(null);
@@ -96,9 +99,10 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
 
       <div className="mx-auto mt-0 flex w-full flex-col items-center justify-center">
         <Bowl
+          completedCount={safePieces.length}
           pieces={safePieces}
           fillPercent={fillPercent}
-          isOverflowing={Boolean(bowlFill?.isOverflowing)}
+          isOverflowing={isOverflowing}
           isDark={darkMode}
           votes={votes}
           capacity={capacity}

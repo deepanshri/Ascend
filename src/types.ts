@@ -109,7 +109,7 @@ export interface UserSession {
   email: string;
   name: string;
   avatarUrl?: string;
-  isGuest: boolean;
+  isGuest?: boolean;
   memberSince: string;
   syncStatus: 'local' | 'synced' | 'syncing' | 'error';
 }
