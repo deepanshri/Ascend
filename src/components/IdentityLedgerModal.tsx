@@ -24,7 +24,8 @@ export const IdentityLedgerModal: React.FC<IdentityLedgerModalProps> = ({
   const [newHabit, setNewHabit] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
-  const filteredEvidence = evidenceList.filter((item) => {
+  const safeEvidenceList = Array.isArray(evidenceList) ? evidenceList : [];
+  const filteredEvidence = safeEvidenceList.filter((item) => {
     if (selectedFilter === 'all') return true;
     return item.category === selectedFilter;
   });

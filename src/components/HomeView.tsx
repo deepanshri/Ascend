@@ -21,6 +21,8 @@ interface HomeViewProps {
   todayIndex?: number;
   renderHabit?: (habit: Habit, index: number) => React.ReactNode;
   children?: React.ReactNode;
+  examShieldActive?: boolean;
+  onOpenExamShield?: () => void;
 }
 
 const EMPTY_PIECES: AccumulationPiece[] = [];
@@ -40,6 +42,8 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   todayIndex,
   renderHabit,
   children,
+  examShieldActive = false,
+  onOpenExamShield,
 }) => {
   const darkMode = Boolean(isDark);
   const safePieces = Array.isArray(pieces) ? pieces : EMPTY_PIECES;
@@ -89,12 +93,22 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
 
   return (
     <div className="mt-0 flex w-full flex-col items-center pt-1">
-      <div className="relative z-10 mb-1 flex w-full justify-center">
+      <div className="relative z-10 mb-1 flex flex-col items-center justify-center">
         <MomentumPill
           momentumScore={momentumScore}
           momentumPulse={momentumPulse}
           isDark={darkMode}
         />
+        {examShieldActive && (
+          <div
+            id="home-exam-shield-banner"
+            onClick={onOpenExamShield}
+            className="mt-1.5 px-3 py-1 rounded-full bg-[#E8F8EE]/90 dark:bg-blue-950/80 border border-[#23C15D]/40 dark:border-blue-800 text-[11px] font-semibold text-[#165B33] dark:text-blue-300 flex items-center space-x-1.5 shadow-xs cursor-pointer select-none"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-[#23C15D] dark:bg-blue-400 animate-pulse" />
+            <span>Exam Shield Active · Momentum decay is frozen (δ = 0)</span>
+          </div>
+        )}
       </div>
 
       <div className="mx-auto mt-0 flex w-full flex-col items-center justify-center">

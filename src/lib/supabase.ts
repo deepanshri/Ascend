@@ -418,53 +418,7 @@ export const authService = {
     };
   },
 
-  async upgradeGuestAccount(
-    email: string,
-    password: string,
-    name: string,
-    currentSession: UserSession
-  ): Promise<UserSession> {
-    const updated: UserSession = {
-      ...currentSession,
-      email,
-      name: name || currentSession.name,
-      avatarUrl: resolveAvatarId(currentSession.avatarUrl || generateAvatarUrl(name || email)),
-      isGuest: false,
-      syncStatus: 'syncing',
-    };
 
-    if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { full_name: updated.name, avatar_url: updated.avatarUrl } },
-      });
-      const signedInUser = data.session?.user;
-      if (signedInUser?.id) {
-        updated.id = signedInUser.id;
-      } else if (data.user && !data.session) {
-        // Email confirmation required — do not pretend the guest is upgraded.
-        throw new Error(
-          'Check your email to verify this address, then sign in to finish upgrading.'
-        );
-      } else {
-        try {
-          const signed = await signInRemote(email, password);
-          updated.id = signed.id;
-          updated.name = signed.name || updated.name;
-          updated.avatarUrl = signed.avatarUrl || updated.avatarUrl;
-        } catch (signInErr) {
-          if (error) throw new Error(mapAuthError(error.message));
-          throw signInErr;
-        }
-      }
-    } else {
-      await new Promise((r) => setTimeout(r, 450));
-    }
-
-    setStoredSession(updated);
-    return updated;
-  },
 
   async signOut() {
     if (isSupabaseConfigured && supabase) {

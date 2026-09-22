@@ -45,7 +45,6 @@ interface PersonalViewProps {
   momentumScore?: number;
   onOpenSettings?: () => void;
   onOpenLedger: () => void;
-  onUpgradeGuest: () => void;
   onSyncNow: () => void;
   onChangePassword: () => void;
   onLogout: () => void;
@@ -68,7 +67,6 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
   onToggleVacationMode,
   onOpenSettings,
   onOpenLedger,
-  onUpgradeGuest,
   onSyncNow,
   onChangePassword,
   onLogout,
@@ -78,16 +76,32 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
 }) => {
   // Personal Details state (persisted locally)
   const [name, setName] = useState<string>(() => {
-    return localStorage.getItem('ascend_user_name') || userSession?.name || 'Alex';
+    try {
+      return localStorage.getItem('ascend_user_name') || userSession?.name || 'Alex';
+    } catch {
+      return userSession?.name || 'Alex';
+    }
   });
   const [dob, setDob] = useState<string>(() => {
-    return localStorage.getItem('ascend_dob') || '12 Mar 2004';
+    try {
+      return localStorage.getItem('ascend_dob') || '12 Mar 2004';
+    } catch {
+      return '12 Mar 2004';
+    }
   });
   const [university, setUniversity] = useState<string>(() => {
-    return localStorage.getItem('ascend_university') || 'SASTRA University';
+    try {
+      return localStorage.getItem('ascend_university') || 'SASTRA University';
+    } catch {
+      return 'SASTRA University';
+    }
   });
   const [location, setLocation] = useState<string>(() => {
-    return localStorage.getItem('ascend_location') || 'India';
+    try {
+      return localStorage.getItem('ascend_location') || 'India';
+    } catch {
+      return 'India';
+    }
   });
 
   // Personal Interests state (preset tags only - no custom tags)
@@ -109,7 +123,11 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
 
   // "What do you want to become?" aspiration state
   const [becomingGoal, setBecomingGoal] = useState<string>(() => {
-    return localStorage.getItem('ascend_becoming_goal') || '';
+    try {
+      return localStorage.getItem('ascend_becoming_goal') || '';
+    } catch {
+      return '';
+    }
   });
 
   // Modals state
@@ -406,6 +424,7 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
 
         <div className="grid grid-cols-1 gap-3 pt-1">
           <button
+            id="toggle-exam-shield-btn"
             type="button"
             onClick={onToggleExamShield}
             disabled={!examShieldActive && Boolean(examShieldStatus && !examShieldStatus.canEnable)}

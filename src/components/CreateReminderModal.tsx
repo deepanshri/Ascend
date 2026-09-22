@@ -32,17 +32,25 @@ export const CreateReminderModal: React.FC<CreateReminderModalProps> = ({
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(() => toISODate());
   const [time, setTime] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
     setTitle('');
     setDate(toISODate());
     setTime('');
+    setError(null);
   }, [isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
+
+    const todayIso = toISODate();
+    if (date < todayIso) {
+      setError('Reminders cannot be set for past dates.');
+      return;
+    }
 
     const now = Date.now();
     const trimmedTime = time.trim();
@@ -114,6 +122,16 @@ export const CreateReminderModal: React.FC<CreateReminderModalProps> = ({
             </div>
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-3.5 text-[13px]">
+              {error && (
+                <div
+                  id="reminder-date-error"
+                  className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-[12px] text-rose-700 dark:text-rose-300 font-medium flex items-center space-x-1.5 animate-in fade-in duration-150"
+                >
+                  <span>⚠️</span>
+                  <span>{error}</span>
+                </div>
+              )}
+
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1 text-[12px]">Title</label>
                 <input
@@ -136,7 +154,10 @@ export const CreateReminderModal: React.FC<CreateReminderModalProps> = ({
                       Date
                       <button
                         type="button"
-                        onClick={() => setDate(toISODate())}
+                        onClick={() => {
+                          setDate(toISODate());
+                          setError(null);
+                        }}
                         className="text-[10px] text-[#22C55E] dark:text-[#3B82F6] font-semibold cursor-pointer hover:underline"
                       >
                         Today
@@ -147,8 +168,12 @@ export const CreateReminderModal: React.FC<CreateReminderModalProps> = ({
                     id="reminder-date-input"
                     type="date"
                     required
+                    min={toISODate()}
                     value={date}
-                    onChange={(e) => setDate(e.target.value)}
+                    onChange={(e) => {
+                      setDate(e.target.value);
+                      if (error) setError(null);
+                    }}
                     className={FIELD_CLASS}
                   />
                 </div>

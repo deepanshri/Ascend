@@ -129,8 +129,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
           onAuthSuccess(result, true, signupInterests);
         }
       }
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Authentication failed. Please check your credentials.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err || '');
+      setErrorMsg(msg || 'Authentication failed. Please check your credentials.');
     } finally {
       setIsLoading(false);
     }
@@ -144,8 +145,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
     try {
       const res = await authService.resetPasswordForEmail(forgotEmail.trim());
       setForgotStatus(res);
-    } catch (err: any) {
-      setForgotStatus({ success: false, message: err?.message || 'Failed to send reset link.' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err || '');
+      setForgotStatus({ success: false, message: msg || 'Failed to send reset link.' });
     } finally {
       setIsForgotLoading(false);
     }

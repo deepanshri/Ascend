@@ -139,6 +139,7 @@ import { QuoteCard } from './components/QuoteCard';
 import { FriendsFeed } from './components/FriendsFeed';
 import { ScreenHeader, SCREEN_INSET_CLASS, HEADER_ICON_BTN_CLASS } from './components/ScreenHeader';
 import { TabLoadingFallback } from './components/TabLoadingFallback';
+import { ExamShieldModal } from './components/ExamShieldModal';
 
 const AddHabitModal = React.lazy(() => import('./components/AddHabitModal').then((m) => ({ default: m.AddHabitModal })));
 const HabitDetailModal = React.lazy(() => import('./components/HabitDetailModal').then((m) => ({ default: m.HabitDetailModal })));
@@ -215,7 +216,12 @@ export default function App() {
   const handleToggleReminderRef = useRef<(id: string) => void>(() => {});
   const handleDeleteReminderRef = useRef<(id: string) => void>(() => {});
   const handleSnoozeReminderRef = useRef<(id: string, minutes: number) => void>(() => {});
-  const [isOnboarded, setIsOnboarded] = useState<boolean>(() => isOnboardingCompleted());
+  const [isOnboarded, setIsOnboarded] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && window.location.search.includes('onboarding=true')) {
+      return false;
+    }
+    return isOnboardingCompleted();
+  });
 
   // Theme state ('light' | 'dark' | 'system')
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -254,6 +260,7 @@ export default function App() {
   const vacationModeActive = protection.vacation.active;
   const examShieldStatus = getExamShieldStatus(protection);
   const vacationStatus = getVacationStatus(protection);
+  const [isExamShieldModalOpen, setIsExamShieldModalOpen] = useState(false);
 
   const examShieldRef = useRef(examShieldActive);
   const vacationModeRef = useRef(vacationModeActive);
@@ -697,6 +704,18 @@ export default function App() {
   });
 
   const handleToggleExamShield = () => {
+    if (!examShieldActive) {
+      // Do not immediately activate - require explanatory confirmation first
+      setIsExamShieldModalOpen(true);
+      return;
+    }
+    setProtection((prev) => {
+      const result = toggleExamShield(prev);
+      return result.state;
+    });
+  };
+
+  const handleConfirmActivateExamShield = () => {
     setProtection((prev) => {
       const result = toggleExamShield(prev);
       return result.state;
@@ -706,20 +725,9 @@ export default function App() {
   const handleToggleVacationMode = () => {
     setProtection((prev) => {
       const result = toggleVacation(prev);
-      if (result.state.vacation.active) {
-      } else {
-      }
       return result.state;
     });
   };
-
-  // Upgrade guest modal
-  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
-  const [upgradeEmail, setUpgradeEmail] = useState('');
-  const [upgradePassword, setUpgradePassword] = useState('');
-  const [upgradeName, setUpgradeName] = useState('');
-  const [upgradeLoading, setUpgradeLoading] = useState(false);
-  const [upgradeError, setUpgradeError] = useState<string | null>(null);
 
   // Change password modal
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -1112,6 +1120,8 @@ export default function App() {
     if (hydratedUserIdRef.current !== session.id) return;
     void persistHabitsToTable(session.id, habits).then((ok) => {
       applySyncStatus(ok ? 'synced' : 'error');
+    }).catch(() => {
+      applySyncStatus('error');
     });
   }, [habits, session?.id, session?.isGuest]);
 
@@ -1222,7 +1232,7 @@ export default function App() {
       setFrictionAudits((prev) =>
         omitDeletedHabitRefs(mergeFrictionAuditsFromLogs(prev, rows, habitsRef.current)),
       );
-    });
+    }).catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -1239,7 +1249,7 @@ export default function App() {
 
   const appendMomentumLog = (event: MomentumEvent) => {
     setMomentumEvents((prev) => mergeMomentumEvents(prev, [event]));
-    void appendMomentumEventRemote(sessionRef.current?.id, event);
+    void appendMomentumEventRemote(sessionRef.current?.id, event).catch(() => {});
   };
 
   /** Local momentum rows awaiting remote flush — cleared on grace undo. */
@@ -1252,7 +1262,7 @@ export default function App() {
     if (!pending) return;
     window.clearTimeout(pending.timer);
     pendingGraceMomentumRef.current.delete(habitId);
-    void appendMomentumEventRemote(sessionRef.current?.id, pending.event);
+    void appendMomentumEventRemote(sessionRef.current?.id, pending.event).catch(() => {});
   };
 
   const cancelGraceMomentum = (habitId: string): boolean => {
@@ -1271,7 +1281,7 @@ export default function App() {
     if (!prompt) return;
     markFrictionPrompted(prompt.habitId, prompt.loggedDate);
     setFrictionAudits((prev) => [createMissedFrictionAudit(prompt, reason), ...prev]);
-    void persistHabitLogFrictionReason(sessionRef.current?.id, prompt.habitId, prompt.loggedDate, reason);
+    void persistHabitLogFrictionReason(sessionRef.current?.id, prompt.habitId, prompt.loggedDate, reason).catch(() => {});
     setPendingFriction((prev) => prev.slice(1));
   };
 
@@ -1610,8 +1620,9 @@ export default function App() {
         setDeleteAccountLoading(false);
         return;
       }
-    } catch (e: any) {
-      setDeleteAccountError(e?.message || 'Account deletion failed.');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e || '');
+      setDeleteAccountError(msg || 'Account deletion failed.');
       setDeleteAccountLoading(false);
       return;
     }
@@ -1640,6 +1651,7 @@ export default function App() {
   const handleAuthSuccess = (newSession: UserSession, isNewUser?: boolean, interests?: string[]) => {
     setSession(newSession);
     setStoredSession(newSession);
+    setActiveTab('home');
     if (interests && interests.length > 0) {
       setSelectedInterests(interests);
       if (newSession && !newSession?.isGuest) {
@@ -1676,6 +1688,9 @@ export default function App() {
       setEvidenceList((prev) => prev.filter((item) => !isSeedHabitId(item.habitId)));
       setIsOnboarded(true);
       setOnboardingCompleted(true);
+      setHasCompletedTutorial(true);
+      setLocalTutorialCompleted(true);
+      tutorialLockRef.current = true;
     }
   };
 
@@ -1683,28 +1698,10 @@ export default function App() {
   const handleOnboardingComplete = () => {
     setIsOnboarded(true);
     setOnboardingCompleted(true);
-  };
-
-  // Upgrade Guest Account handler
-  const handleUpgradeGuestSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!session || !upgradeEmail.trim() || !upgradePassword.trim()) return;
-
-    setUpgradeLoading(true);
-    setUpgradeError(null);
-    try {
-      const updated = await authService.upgradeGuestAccount(
-        upgradeEmail.trim(),
-        upgradePassword.trim(),
-        upgradeName.trim(),
-        session
-      );
-      setSession(updated);
-      setIsUpgradeModalOpen(false);
-    } catch (err: any) {
-      setUpgradeError(err?.message || 'Upgrade failed. Please check your credentials.');
-    } finally {
-      setUpgradeLoading(false);
+    if (typeof window !== 'undefined' && window.location.search.includes('onboarding=true')) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('onboarding');
+      window.history.replaceState({}, '', url.toString());
     }
   };
 
@@ -1724,7 +1721,7 @@ export default function App() {
     void remindersSyncService.syncReminders(reminders, session).then((res) => {
       if (cancelled || seq !== reminderSyncSeqRef.current) return;
       setReminders((prev) => mergeRemindersByUpdatedAt(prev, res.reminders));
-    });
+    }).catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -1738,7 +1735,7 @@ export default function App() {
     void remindersSyncService.syncReminders(updated, session).then((res) => {
       if (seq !== reminderSyncSeqRef.current) return;
       setReminders((prev) => mergeRemindersByUpdatedAt(prev, res.reminders));
-    });
+    }).catch(() => {});
   };
 
   const handleAddReminder = (
@@ -1796,7 +1793,7 @@ export default function App() {
     });
     setReminders(updated);
     const revised = updated.find((item) => item.id === id);
-    if (revised) void upsertPublicReminder(session, revised);
+    if (revised) void upsertPublicReminder(session, revised).catch(() => {});
     persistReminderSync(updated);
   };
 
@@ -1821,7 +1818,7 @@ export default function App() {
     });
     setReminders(updated);
     const revised = updated.find((item) => item.id === id);
-    if (revised) void upsertPublicReminder(session, revised);
+    if (revised) void upsertPublicReminder(session, revised).catch(() => {});
     persistReminderSync(updated);
   };
 
@@ -1965,8 +1962,6 @@ export default function App() {
   const handleOpenHomeTab = useCallback(() => setActiveTab('home'), []);
   const handleOpenLedgerModal = useCallback(() => setIsLedgerModalOpen(true), []);
   const handleCloseLedgerModal = useCallback(() => setIsLedgerModalOpen(false), []);
-  const handleOpenUpgradeModal = useCallback(() => setIsUpgradeModalOpen(true), []);
-  const handleCloseUpgradeModal = useCallback(() => setIsUpgradeModalOpen(false), []);
   const handleOpenPasswordModal = useCallback(() => setIsPasswordModalOpen(true), []);
   const handleClosePasswordModal = useCallback(() => setIsPasswordModalOpen(false), []);
 
@@ -2052,7 +2047,7 @@ export default function App() {
     });
     setReminders(updated);
     const revised = updated.find((item) => item.id === id);
-    if (revised) void upsertPublicReminder(session, revised);
+    if (revised) void upsertPublicReminder(session, revised).catch(() => {});
     persistReminderSync(updated);
   };
 
@@ -2068,7 +2063,7 @@ export default function App() {
         updatedAt: now,
       });
       notificationScheduler.cancelReminderAlerts(id, tombstone);
-      void upsertPublicReminder(session, tombstone);
+      void upsertPublicReminder(session, tombstone).catch(() => {});
       persistReminderSync([tombstone, ...updated]);
     }
     setReminders(updated);
@@ -2096,7 +2091,7 @@ export default function App() {
     });
     setReminders(updated);
     const snoozed = updated.find((item) => item.id === id);
-    if (snoozed) void upsertPublicReminder(session, snoozed);
+    if (snoozed) void upsertPublicReminder(session, snoozed).catch(() => {});
     persistReminderSync(updated);
   };
 
@@ -2318,6 +2313,8 @@ export default function App() {
               habits={activeHabits}
               todayIndex={todayDayIndex}
               renderHabit={renderHabit}
+              examShieldActive={examShieldActive}
+              onOpenExamShield={() => setIsExamShieldModalOpen(true)}
             >
               {quoteCardElement}
             </HomeView>
@@ -2413,7 +2410,6 @@ export default function App() {
               momentumScore={momentumScore}
               onOpenSettings={handleOpenSettingsTab}
               onOpenLedger={handleOpenLedgerModal}
-              onUpgradeGuest={handleOpenUpgradeModal}
               onSyncNow={async () => {
                 if (!session || session?.isGuest) {
                   throw new Error('Please sign in to sync');
@@ -2615,97 +2611,13 @@ export default function App() {
           </Suspense>
         )}
 
-
-        {/* Upgrade Guest Modal */}
-        <MotionModal
-          isOpen={isUpgradeModalOpen}
-          onClose={() => setIsUpgradeModalOpen(false)}
-          overlayClassName="bg-slate-900/60 backdrop-blur-xs"
-          cardClassName="p-5 max-w-sm space-y-3"
-        >
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-slate-900">Upgrade to Cloud Account</h3>
-                <button
-                  type="button"
-                  onClick={() => setIsUpgradeModalOpen(false)}
-                  className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-              <p className="text-[12px] text-slate-500">
-                Sync your momentum, habits, and permanent Identity Ledger across all devices securely.
-              </p>
-
-              {upgradeError && (
-                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11.5px]">
-                  {upgradeError}
-                </div>
-              )}
-
-              <form onSubmit={handleUpgradeGuestSubmit} className="space-y-2.5">
-                <div>
-                  <label className="block text-[10.5px] font-bold text-slate-600 uppercase mb-0.5">
-                    Your Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={upgradeName}
-                    onChange={(e) => setUpgradeName(e.target.value)}
-                    placeholder="e.g. Maya Lin"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[12.5px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10.5px] font-bold text-slate-600 uppercase mb-0.5">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={upgradeEmail}
-                    onChange={(e) => setUpgradeEmail(e.target.value)}
-                    placeholder="name@example.com"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[12.5px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10.5px] font-bold text-slate-600 uppercase mb-0.5">
-                    Create Password
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    value={upgradePassword}
-                    onChange={(e) => setUpgradePassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[12.5px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-blue-500"
-                  />
-                </div>
-
-                <div className="flex space-x-2 pt-2">
-                  <motion.button
-                    type="button"
-                    whileTap={tapPress}
-                    onClick={() => setIsUpgradeModalOpen(false)}
-                    className="flex-1 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold text-[11.5px] hover:bg-slate-200 cursor-pointer"
-                  >
-                    Cancel
-                  </motion.button>
-                  <motion.button
-                    type="submit"
-                    whileTap={upgradeLoading ? undefined : tapPress}
-                    disabled={upgradeLoading}
-                    className="flex-1 py-2 rounded-xl bg-emerald-600 dark:bg-blue-600 text-white font-bold text-[11.5px] hover:bg-emerald-700 dark:hover:bg-blue-500 cursor-pointer disabled:opacity-50"
-                  >
-                    {upgradeLoading ? 'Saving...' : 'Upgrade Now'}
-                  </motion.button>
-                </div>
-              </form>
-        </MotionModal>
+        {/* Exam Shield Confirmation Modal */}
+        <ExamShieldModal
+          isOpen={isExamShieldModalOpen}
+          onClose={() => setIsExamShieldModalOpen(false)}
+          onConfirmActivate={handleConfirmActivateExamShield}
+          status={examShieldStatus}
+        />
 
         {/* Change Password Modal */}
         <MotionModal
