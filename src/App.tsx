@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
@@ -478,7 +478,16 @@ export default function App() {
 
   const [cycleDays, setCycleDays] = useState<CycleDays>(() => readStoredCycleDays());
   const [bowlEpoch, setBowlEpoch] = useState(() => readBowlCycleEpoch(toISODate()));
-  const [cycleHistory, setCycleHistory] = useState<CompletedCycleSummary[]>(() => readCycleHistory());
+  const [cycleHistory, setCycleHistory] = useState<CompletedCycleSummary[]>(() => {
+    if (!isOnboarded) return [];
+    return readCycleHistory();
+  });
+
+  useEffect(() => {
+    if (isOnboarded || onboardingStep >= 3) {
+      setCycleHistory((prev) => (prev.length > 0 ? prev : readCycleHistory()));
+    }
+  }, [isOnboarded, onboardingStep]);
   const [bowlCelebrating, setBowlCelebrating] = useState(false);
   const [pieceFlights, setPieceFlights] = useState<PieceFlight[]>([]);
   const [settlePieceIds, setSettlePieceIds] = useState<string[]>([]);
@@ -585,6 +594,8 @@ export default function App() {
 
   useEffect(() => {
     const rollForwardIfMidnightPassed = () => {
+      // Defer midnight history loop computation during onboarding until step 3
+      if (!isOnboarded && onboardingStep < 3) return;
       const nowIso = toISODate();
       const originIso = toISODate(calendarOrigin);
       if (nowIso === originIso) {
@@ -673,7 +684,7 @@ export default function App() {
       window.removeEventListener('focus', onResume);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [calendarOrigin]);
+  }, [calendarOrigin, isOnboarded, onboardingStep]);
 
   useEffect(() => {
     setProtection((prev) => tickProtectionState(prev, toISODate(calendarOrigin)));
@@ -1102,6 +1113,8 @@ export default function App() {
       hydratedUserIdRef.current = null;
       return;
     }
+    // Defer initial sync during onboarding until step 3
+    if (!isOnboarded && onboardingStep < 3) return;
     let cancelled = false;
     void (async () => {
       applySyncStatus('syncing');
@@ -1117,7 +1130,7 @@ export default function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, session?.isGuest]);
+  }, [session?.id, session?.isGuest, isOnboarded, onboardingStep]);
 
   useEffect(() => {
     if (!session || session?.isGuest) return;
@@ -1173,8 +1186,9 @@ export default function App() {
   }, [notificationWindows, activeHabits, todayDayIndex, todayMomentumScore, completionEvents]);
 
   useEffect(() => {
+    if (!isOnboarded && onboardingStep < 3) return;
     void syncAllHabitTargetNotifications(habits, todayDayIndex, calendarOrigin);
-  }, [habits, todayDayIndex, calendarOrigin, completionEvents]);
+  }, [habits, todayDayIndex, calendarOrigin, completionEvents, isOnboarded, onboardingStep]);
 
   // Cycle-window habit_logs hydrate (Home + any tab once signed in).
   // Range query is read-only — never resets bowlEpoch (celebration/rollover only).
@@ -1742,7 +1756,7 @@ export default function App() {
   };
 
   // Onboarding Complete handler
-  const handleOnboardingComplete = () => {
+  const handleOnboardingComplete = useCallback(() => {
     setIsOnboarded(true);
     setOnboardingCompleted(true);
     if (typeof window !== 'undefined' && window.location.search.includes('onboarding=true')) {
@@ -1750,7 +1764,13 @@ export default function App() {
       url.searchParams.delete('onboarding');
       window.history.replaceState({}, '', url.toString());
     }
-  };
+  }, []);
+
+  const handleOnboardingStepChange = useCallback((step: 1 | 2 | 3) => {
+    startTransition(() => {
+      setOnboardingStep(step);
+    });
+  }, []);
 
   // Native dual-alert re-scheduler after force-quit / reboot (RECEIVE_BOOT_COMPLETED)
   useEffect(() => {
@@ -2290,7 +2310,7 @@ export default function App() {
       <Suspense fallback={<TabLoadingFallback />}>
         <OnboardingView
           onComplete={handleOnboardingComplete}
-          onStepChange={setOnboardingStep}
+          onStepChange={handleOnboardingStepChange}
         />
       </Suspense>
     );

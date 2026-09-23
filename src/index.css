@@ -122,6 +122,10 @@ html, body, #root {
 
 .tab-pane-host {
   contain: layout style;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .tab-pane {
@@ -130,6 +134,8 @@ html, body, #root {
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .tab-pane-active {
@@ -138,6 +144,7 @@ html, body, #root {
   visibility: visible;
   pointer-events: auto;
   content-visibility: visible;
+  contain: layout style paint;
 }
 
 .tab-pane-cached {
@@ -157,6 +164,9 @@ html, body, #root {
   will-change: transform;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  perspective: 1000px;
 }
 
 .onboarding-slide-track {
@@ -166,6 +176,8 @@ html, body, #root {
   will-change: transform;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
   transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -176,6 +188,8 @@ html, body, #root {
   will-change: transform;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 #floating-bottom-nav {

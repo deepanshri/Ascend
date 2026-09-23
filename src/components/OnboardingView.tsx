@@ -7,9 +7,17 @@ export interface OnboardingViewProps {
   onStepChange?: (step: 1 | 2 | 3) => void;
 }
 
+const GPU_SLIDE_STYLE: React.CSSProperties = {
+  willChange: 'transform',
+  transform: 'translate3d(0, 0, 0)',
+  WebkitTransform: 'translate3d(0, 0, 0)',
+  backfaceVisibility: 'hidden',
+  WebkitBackfaceVisibility: 'hidden',
+};
+
 /** Memoized Step 1 Slide: Habit Tracking & Gestures */
 const SlideOne = React.memo<{ onNext: () => void }>(({ onNext }) => (
-  <div className="onboarding-slide px-1">
+  <div className="onboarding-slide px-1" style={GPU_SLIDE_STYLE}>
     <div className="space-y-4 max-w-sm mx-auto w-full">
       <div className="w-12 h-12 rounded-2xl bg-emerald-100/80 dark:bg-blue-950/80 border border-emerald-200 dark:border-blue-800 flex items-center justify-center text-2xl shadow-xs">
         🎯
@@ -74,7 +82,7 @@ SlideOne.displayName = 'SlideOne';
 
 /** Memoized Step 2 Slide: Momentum Engine & Decay */
 const SlideTwo = React.memo<{ onBack: () => void; onNext: () => void }>(({ onBack, onNext }) => (
-  <div className="onboarding-slide px-1">
+  <div className="onboarding-slide px-1" style={GPU_SLIDE_STYLE}>
     <div className="space-y-4 max-w-sm mx-auto w-full">
       <div className="w-12 h-12 rounded-2xl bg-emerald-100/80 dark:bg-blue-950/80 border border-emerald-200 dark:border-blue-800 flex items-center justify-center text-2xl shadow-xs">
         🛡️
@@ -149,7 +157,7 @@ const SlideThree = React.memo<{
   downloadStatus: 'idle' | 'downloading' | 'downloaded';
   onDownloadApk: () => void;
 }>(({ onBack, onFinish, downloadStatus, onDownloadApk }) => (
-  <div className="onboarding-slide px-1">
+  <div className="onboarding-slide px-1" style={GPU_SLIDE_STYLE}>
     <div className="space-y-4 max-w-sm mx-auto w-full">
       <div className="w-12 h-12 rounded-2xl bg-emerald-100/80 dark:bg-blue-950/80 border border-emerald-200 dark:border-blue-800 flex items-center justify-center text-2xl shadow-xs">
         🔮
@@ -240,10 +248,18 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
   const [step, setStepState] = useState<1 | 2 | 3>(1);
   const [downloadStatus, setDownloadStatus] = useState<'idle' | 'downloading' | 'downloaded'>('idle');
 
+  // Asynchronous transition wrapper so slide transitions remain 120 FPS on compositor
   const setStep = useCallback((next: 1 | 2 | 3) => {
     setStepState(next);
-    onStepChange?.(next);
+    React.startTransition(() => {
+      onStepChange?.(next);
+    });
   }, [onStepChange]);
+
+  const handleNextToStep2 = useCallback(() => setStep(2), [setStep]);
+  const handleBackToStep1 = useCallback(() => setStep(1), [setStep]);
+  const handleNextToStep3 = useCallback(() => setStep(3), [setStep]);
+  const handleBackToStep2 = useCallback(() => setStep(2), [setStep]);
 
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
@@ -269,29 +285,31 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
       if (deltaX < 0) {
         // Swipe Left -> Next slide
         setStepState((prev) => {
-          const next = (prev === 1 ? 2 : prev === 2 ? 3 : 3) as 1 | 2 | 3;
-          onStepChange?.(next);
+          const next = (prev === 1 ? 2 : 3) as 1 | 2 | 3;
+          React.startTransition(() => {
+            onStepChange?.(next);
+          });
           return next;
         });
       } else {
         // Swipe Right -> Previous slide
         setStepState((prev) => {
-          const next = (prev === 3 ? 2 : prev === 2 ? 1 : 1) as 1 | 2 | 3;
-          onStepChange?.(next);
+          const next = (prev === 3 ? 2 : 1) as 1 | 2 | 3;
+          React.startTransition(() => {
+            onStepChange?.(next);
+          });
           return next;
         });
       }
     }
   }, [onStepChange]);
 
-  if (!isOpen) return null;
-
-  const handleFinish = () => {
+  const handleFinish = useCallback(() => {
     onComplete?.();
     onClose?.();
-  };
+  }, [onComplete, onClose]);
 
-  const handleDownloadApk = () => {
+  const handleDownloadApk = useCallback(() => {
     try {
       setDownloadStatus('downloading');
       const link = document.createElement('a');
@@ -307,7 +325,9 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
       window.open('/ascend-release.apk', '_blank');
       setDownloadStatus('idle');
     }
-  };
+  }, []);
+
+  if (!isOpen) return null;
 
   return (
     <div
@@ -355,12 +375,15 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
           style={{
             transform: `translate3d(-${(step - 1) * 33.333333}%, 0, 0)`,
             WebkitTransform: `translate3d(-${(step - 1) * 33.333333}%, 0, 0)`,
+            willChange: 'transform',
+            backfaceVisibility: 'hidden',
+            WebkitBackfaceVisibility: 'hidden',
           }}
         >
-          <SlideOne onNext={() => setStep(2)} />
-          <SlideTwo onBack={() => setStep(1)} onNext={() => setStep(3)} />
+          <SlideOne onNext={handleNextToStep2} />
+          <SlideTwo onBack={handleBackToStep1} onNext={handleNextToStep3} />
           <SlideThree
-            onBack={() => setStep(2)}
+            onBack={handleBackToStep2}
             onFinish={handleFinish}
             downloadStatus={downloadStatus}
             onDownloadApk={handleDownloadApk}
