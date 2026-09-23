@@ -211,7 +211,7 @@ export default function App() {
   sessionRef.current = session;
   const derivedHabitsRef = useRef<Habit[]>([]);
   const todayDayIndexRef = useRef(3);
-  const handleCompleteTodayRef = useRef<(habitId: string, isFallback?: boolean) => void>(() => {});
+  const handleCompleteTodayRef = useRef<(habitId: string, isFallback?: boolean, originCoord?: { x: number; y: number }) => void>(() => {});
   const handleResetTodayRef = useRef<(habitId: string) => void>(() => {});
   const handleToggleFallbackModeRef = useRef<(habitId: string) => void>(() => {});
   const handleToggleKeystoneRef = useRef<(habitId: string, next: boolean) => void>(() => {});
@@ -1300,7 +1300,7 @@ export default function App() {
   };
 
   // GESTURE / TAP ACTION: Complete Today (Full 100% or Fallback Micro 50%)
-  const handleCompleteToday = (habitId: string, isFallback: boolean = false) => {
+  const handleCompleteToday = (habitId: string, isFallback: boolean = false, originCoord?: { x: number; y: number }) => {
     if (!isViewingToday) return;
     const targetHabit = habits.find((h) => h.id === habitId);
     if (!targetHabit) return;
@@ -1396,7 +1396,7 @@ export default function App() {
       requestAnimationFrame(() => {
         try {
           const swipeDir = isMicro ? 'left' : 'right';
-          const points = measureCompletionFlight(habitId, swipeDir);
+          const points = measureCompletionFlight(habitId, swipeDir, originCoord);
           if (!points) return;
           const flight: PieceFlight = {
             id: `fly-${pieceId}-${Date.now()}`,
@@ -1911,9 +1911,12 @@ export default function App() {
     []
   );
 
-  const stableCompleteToday = useCallback((habitId: string, isFallback?: boolean) => {
-    handleCompleteTodayRef.current(habitId, isFallback);
-  }, []);
+  const stableCompleteToday = useCallback(
+    (habitId: string, isFallback?: boolean, originCoord?: { x: number; y: number }) => {
+      handleCompleteTodayRef.current(habitId, isFallback, originCoord);
+    },
+    []
+  );
   const stableResetToday = useCallback((habitId: string) => {
     handleResetTodayRef.current(habitId);
   }, []);

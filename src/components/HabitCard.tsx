@@ -42,7 +42,7 @@ interface HabitCardProps {
   isOtherLongPressed?: boolean;
   isFallbackActive?: boolean;
   isTourTarget?: boolean;
-  onCompleteToday: (habitId: string, isFallback?: boolean) => void;
+  onCompleteToday: (habitId: string, isFallback?: boolean, originCoord?: { x: number; y: number }) => void;
   onToggleFallbackMode: (habitId: string) => void;
   onResetToday: (habitId: string) => void;
   onLongPress: (habit: Habit, rect?: DOMRect) => void;
@@ -178,12 +178,12 @@ function HabitCardInner({
   }, []);
 
   const scheduleComplete = useCallback(
-    (isFallback: boolean) => {
+    (isFallback: boolean, originCoord?: { x: number; y: number }) => {
       clearPendingComplete();
       setOptimisticDone(true);
       void triggerCompletionHaptic();
       // Instant local complete (marble + island); grace only covers undo.
-      onCompleteTodayRef.current(habitRef.current.id, isFallback);
+      onCompleteTodayRef.current(habitRef.current.id, isFallback, originCoord);
       pendingCompleteRef.current = {
         isFallback,
         timer: window.setTimeout(() => {
@@ -202,15 +202,16 @@ function HabitCardInner({
   }, [clearPendingComplete]);
 
   const handlePillClick = useCallback(
-    (e: React.MouseEvent, action: () => void) => {
+    (e: React.MouseEvent, action: (coord: { x: number; y: number }) => void) => {
       e.stopPropagation();
       if (tapLockRef.current || commitLockRef.current || gesturesLockedRef.current) {
         return;
       }
       tapLockRef.current = true;
       commitLockRef.current = true;
+      const coord = { x: e.clientX, y: e.clientY };
       try {
-        action();
+        action(coord);
       } finally {
         window.setTimeout(() => {
           tapLockRef.current = false;
@@ -335,17 +336,25 @@ function HabitCardInner({
         } else if (!isScheduledTodayRef.current) {
           // Off day: settle silently — no complete / momentum.
         } else if (isFallbackActiveRef.current) {
+          const originCoord = {
+            x: startXRef.current + offset,
+            y: startYRef.current,
+          };
           pendingAction = () => {
             setCelebration('fallback');
             void triggerCompletionHaptic();
-            scheduleComplete(true);
+            scheduleComplete(true, originCoord);
           };
         } else {
+          const originCoord = {
+            x: startXRef.current + offset,
+            y: startYRef.current,
+          };
           pendingAction = () => {
             setCelebration('full');
             setFullPopSeq((seq) => seq + 1);
             void triggerCompletionHaptic();
-            scheduleComplete(false);
+            scheduleComplete(false, originCoord);
           };
         }
       } else if (commitsLeft) {
@@ -790,9 +799,9 @@ function HabitCardInner({
                                 whileTap={{ scale: 0.86 }}
                                 transition={{ type: 'spring', stiffness: 500, damping: 15 }}
                                 onClick={(e) => {
-                                  handlePillClick(e, () => {
+                                  handlePillClick(e, (coord) => {
                                     setCelebration('fallback');
-                                    scheduleComplete(true);
+                                    scheduleComplete(true, coord);
                                   });
                                 }}
                                 title="Fallback active: Tap or swipe right to complete fallback"
@@ -814,10 +823,10 @@ function HabitCardInner({
                               whileTap={{ scale: 0.86 }}
                               transition={{ type: 'spring', stiffness: 500, damping: 15 }}
                               onClick={(e) => {
-                                handlePillClick(e, () => {
+                                handlePillClick(e, (coord) => {
                                   setCelebration('full');
                                   setFullPopSeq((seq) => seq + 1);
-                                  scheduleComplete(false);
+                                  scheduleComplete(false, coord);
                                 });
                               }}
                               title="Today: Tap or swipe right to complete, swipe left for fallback"

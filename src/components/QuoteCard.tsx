@@ -9,7 +9,7 @@ import {
 export type { Quote } from '../data/quotes';
 
 export const INTEREST_QUOTES: Quote[] = [
-  // Movies
+  // Movies (11 quotes)
   {
     text: 'It’s not about how hard you hit. It’s about how hard you can get hit and keep moving forward.',
     author: 'Rocky Balboa',
@@ -59,8 +59,36 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Movies',
     icon: '🎬',
   },
+  {
+    text: 'Get busy living, or get busy dying.',
+    author: 'Andy Dufresne',
+    source: 'The Shawshank Redemption',
+    category: 'Movies',
+    icon: '🎬',
+  },
+  {
+    text: 'It is not our abilities that show what we truly are… it is our choices.',
+    author: 'Albus Dumbledore',
+    source: 'Harry Potter and the Chamber of Secrets',
+    category: 'Movies',
+    icon: '🎬',
+  },
+  {
+    text: 'The past can hurt. But the way I see it, you can either run from it or learn from it.',
+    author: 'Rafiki',
+    source: 'The Lion King',
+    category: 'Movies',
+    icon: '🎬',
+  },
+  {
+    text: 'No amount of money ever bought a second of time.',
+    author: 'Tony Stark',
+    source: 'Avengers: Endgame',
+    category: 'Movies',
+    icon: '🎬',
+  },
 
-  // Books
+  // Books (11 quotes)
   {
     text: 'You do not rise to the level of your goals. You fall to the level of your systems.',
     author: 'James Clear',
@@ -79,13 +107,6 @@ export const INTEREST_QUOTES: Quote[] = [
     text: 'A reader lives a thousand lives before he dies. The man who never reads lives only one.',
     author: 'George R.R. Martin',
     source: 'A Dance with Dragons',
-    category: 'Books',
-    icon: '📚',
-  },
-  {
-    text: 'It is our choices that show what we truly are, far more than our abilities.',
-    author: 'Albus Dumbledore',
-    source: 'Harry Potter',
     category: 'Books',
     icon: '📚',
   },
@@ -110,8 +131,43 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Books',
     icon: '📚',
   },
+  {
+    text: 'It takes courage to grow up and become who you really are.',
+    author: 'E.E. Cummings',
+    source: 'Selected Poems',
+    category: 'Books',
+    icon: '📚',
+  },
+  {
+    text: 'There is nothing noble in being superior to your fellow man; true nobility is being superior to your former self.',
+    author: 'Ernest Hemingway',
+    source: 'By-Line',
+    category: 'Books',
+    icon: '📚',
+  },
+  {
+    text: 'The only person you are destined to become is the person you decide to be.',
+    author: 'Ralph Waldo Emerson',
+    source: 'Essays',
+    category: 'Books',
+    icon: '📚',
+  },
+  {
+    text: 'Start where you are. Use what you have. Do what you can.',
+    author: 'Arthur Ashe',
+    source: 'Days of Grace',
+    category: 'Books',
+    icon: '📚',
+  },
+  {
+    text: 'He who has a why to live can bear almost any how.',
+    author: 'Friedrich Nietzsche',
+    source: 'Twilight of the Idols',
+    category: 'Books',
+    icon: '📚',
+  },
 
-  // Anime
+  // Anime (11 quotes)
   {
     text: 'If you don’t take risks, you can’t create a future.',
     author: 'Monkey D. Luffy',
@@ -161,8 +217,36 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Anime',
     icon: '⚔️',
   },
+  {
+    text: 'The moment you think of giving up, think of the reason why you held on so long.',
+    author: 'Natsu Dragneel',
+    source: 'Fairy Tail',
+    category: 'Anime',
+    icon: '⚔️',
+  },
+  {
+    text: 'If you can’t do something, then don’t. Focus on what you can do.',
+    author: 'Shiroe',
+    source: 'Log Horizon',
+    category: 'Anime',
+    icon: '⚔️',
+  },
+  {
+    text: 'Whatever you lose, you’ll find it again. But what you throw away you’ll never get back.',
+    author: 'Kenshin Himura',
+    source: 'Rurouni Kenshin',
+    category: 'Anime',
+    icon: '⚔️',
+  },
+  {
+    text: 'Fear is not evil. It tells you what your weakness is. Once you know your weakness, you can become stronger.',
+    author: 'Gildarts Clive',
+    source: 'Fairy Tail',
+    category: 'Anime',
+    icon: '⚔️',
+  },
 
-  // Running
+  // Running (11 quotes)
   {
     text: 'Pain is inevitable. Suffering is optional.',
     author: 'Haruki Murakami',
@@ -198,8 +282,50 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Running',
     icon: '🏃',
   },
+  {
+    text: 'If you run, you are a runner. It doesn’t matter how fast or how far.',
+    author: 'John Bingham',
+    source: 'No Need for Speed',
+    category: 'Running',
+    icon: '🏃',
+  },
+  {
+    text: 'It’s supposed to be hard. If it wasn’t hard, everyone would do it. The hard is what makes it great.',
+    author: 'Coach Wisdom',
+    source: 'A League of Their Own',
+    category: 'Running',
+    icon: '🏃',
+  },
+  {
+    text: 'The obsessiveness about running is really an obsessiveness about the potential for more and more life.',
+    author: 'George Sheehan',
+    source: 'Running & Being',
+    category: 'Running',
+    icon: '🏃',
+  },
+  {
+    text: 'You have a choice. You can throw in the towel, or you can use it to wipe the sweat off your face.',
+    author: 'Trail Runner Creed',
+    source: 'Endurance Path',
+    category: 'Running',
+    icon: '🏃',
+  },
+  {
+    text: 'A 12-minute mile is just as far as a 6-minute mile.',
+    author: 'Running Axiom',
+    source: 'Everyday Mileage',
+    category: 'Running',
+    icon: '🏃',
+  },
+  {
+    text: 'Consistency isn’t about perfection. It’s about lacing up your shoes even on the days you don’t feel like it.',
+    author: 'Distance Discipline',
+    source: 'Trail Wisdom',
+    category: 'Running',
+    icon: '🏃',
+  },
 
-  // Fitness
+  // Fitness (11 quotes)
   {
     text: 'Discipline is doing what you hate to do, but doing it like you love it.',
     author: 'Mike Tyson',
@@ -221,8 +347,64 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Fitness',
     icon: '💪',
   },
+  {
+    text: 'The last three or four reps is what makes the muscle grow. This area of pain divides a champion from someone who is not.',
+    author: 'Arnold Schwarzenegger',
+    source: 'Pumping Iron',
+    category: 'Fitness',
+    icon: '💪',
+  },
+  {
+    text: 'We don’t stop exercising because we grow old; we grow old because we stop exercising.',
+    author: 'Kenneth Cooper',
+    source: 'Aerobics Pioneer',
+    category: 'Fitness',
+    icon: '💪',
+  },
+  {
+    text: 'You don’t have to be extreme, just consistent.',
+    author: 'Strength Culture',
+    source: 'Habitual Fitness',
+    category: 'Fitness',
+    icon: '💪',
+  },
+  {
+    text: 'Today’s workout is tomorrow’s warm-up.',
+    author: 'Iron Mindset',
+    source: 'Gym Axiom',
+    category: 'Fitness',
+    icon: '💪',
+  },
+  {
+    text: 'The clock is ticking. Are you becoming the person you want to be?',
+    author: 'Greg Plitt',
+    source: 'Workout Drive',
+    category: 'Fitness',
+    icon: '💪',
+  },
+  {
+    text: 'Energy flows where attention goes. Focus on the lift, the breath, and the rep.',
+    author: 'Movement Science',
+    source: 'Kinetic Focus',
+    category: 'Fitness',
+    icon: '💪',
+  },
+  {
+    text: 'You are one workout away from a completely different mood.',
+    author: 'Endorphin Axiom',
+    source: 'Recovery Science',
+    category: 'Fitness',
+    icon: '💪',
+  },
+  {
+    text: 'Small daily improvements over time lead to stunning results.',
+    author: 'Robin Sharma',
+    source: 'Mastery Formula',
+    category: 'Fitness',
+    icon: '💪',
+  },
 
-  // Coding
+  // Coding (11 quotes)
   {
     text: 'First, solve the problem. Then, write the code.',
     author: 'John Johnson',
@@ -244,8 +426,64 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Coding',
     icon: '💻',
   },
+  {
+    text: 'Any fool can write code that a computer can understand. Good programmers write code that humans can understand.',
+    author: 'Martin Fowler',
+    source: 'Refactoring',
+    category: 'Coding',
+    icon: '💻',
+  },
+  {
+    text: 'Programs must be written for people to read, and only incidentally for machines to execute.',
+    author: 'Harold Abelson',
+    source: 'SICP',
+    category: 'Coding',
+    icon: '💻',
+  },
+  {
+    text: 'The best error message is the one that never shows up.',
+    author: 'Thomas Fuchs',
+    source: 'Pragmatic Thinking',
+    category: 'Coding',
+    icon: '💻',
+  },
+  {
+    text: 'Deleted code is debugged code.',
+    author: 'Jeff Sickel',
+    source: 'Unix Wisdom',
+    category: 'Coding',
+    icon: '💻',
+  },
+  {
+    text: 'Experience is the name everyone gives to their mistakes.',
+    author: 'Oscar Wilde',
+    source: 'Software Craft',
+    category: 'Coding',
+    icon: '💻',
+  },
+  {
+    text: 'Premature optimization is the root of all evil.',
+    author: 'Donald Knuth',
+    source: 'Structured Programming',
+    category: 'Coding',
+    icon: '💻',
+  },
+  {
+    text: 'Code never lies, comments sometimes do.',
+    author: 'Ron Jeffries',
+    source: 'Extreme Programming',
+    category: 'Coding',
+    icon: '💻',
+  },
+  {
+    text: 'Walking on water and developing software from a specification are easy if both are frozen.',
+    author: 'Edward V. Berard',
+    source: 'Software Engineering',
+    category: 'Coding',
+    icon: '💻',
+  },
 
-  // Music
+  // Music (11 quotes)
   {
     text: 'Where words fail, music speaks.',
     author: 'Hans Christian Andersen',
@@ -260,8 +498,71 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Music',
     icon: '🎵',
   },
+  {
+    text: 'Without music, life would be a mistake.',
+    author: 'Friedrich Nietzsche',
+    source: 'Twilight of the Idols',
+    category: 'Music',
+    icon: '🎵',
+  },
+  {
+    text: 'One good thing about music, when it hits you, you feel no pain.',
+    author: 'Bob Marley',
+    source: 'Trenchtown Rock',
+    category: 'Music',
+    icon: '🎵',
+  },
+  {
+    text: 'Music is the shorthand of emotion.',
+    author: 'Leo Tolstoy',
+    source: 'The Kreutzer Sonata',
+    category: 'Music',
+    icon: '🎵',
+  },
+  {
+    text: 'To play a wrong note is insignificant; to play without passion is inexcusable.',
+    author: 'Ludwig van Beethoven',
+    source: 'Classical Masters',
+    category: 'Music',
+    icon: '🎵',
+  },
+  {
+    text: 'Music is moonlight in the gloomy night of life.',
+    author: 'Jean Paul Richter',
+    source: 'Melodic Philosophy',
+    category: 'Music',
+    icon: '🎵',
+  },
+  {
+    text: 'Everything in the universe has a rhythm, everything dances.',
+    author: 'Maya Angelou',
+    source: 'Rhythm of Life',
+    category: 'Music',
+    icon: '🎵',
+  },
+  {
+    text: 'The true beauty of music is that it connects people. It carries a message, and we, the musicians, are the messengers.',
+    author: 'Roy Ayers',
+    source: 'Soul Harmony',
+    category: 'Music',
+    icon: '🎵',
+  },
+  {
+    text: 'Practice until you cannot get it wrong, not just until you get it right.',
+    author: 'Virtuoso Practice',
+    source: 'Orchestral Disciplines',
+    category: 'Music',
+    icon: '🎵',
+  },
+  {
+    text: 'Music washes away from the soul the dust of everyday life.',
+    author: 'Berthold Auerbach',
+    source: 'Sound & Spirit',
+    category: 'Music',
+    icon: '🎵',
+  },
 
-  // Gaming
+  // Gaming (11 quotes)
   {
     text: 'Failure is just another checkpoint on the way to mastery.',
     author: 'Gamer Mindset',
@@ -273,6 +574,69 @@ export const INTEREST_QUOTES: Quote[] = [
     text: 'Every boss was once an impossible obstacle until you learned the pattern.',
     author: 'Speedrun Axiom',
     source: 'Pattern Recognition',
+    category: 'Gaming',
+    icon: '🎮',
+  },
+  {
+    text: 'What is better: to be born good, or to overcome your evil nature through great effort?',
+    author: 'Paarthurnax',
+    source: 'The Elder Scrolls V: Skyrim',
+    category: 'Gaming',
+    icon: '🎮',
+  },
+  {
+    text: 'A hero doesn’t need to speak when his actions echo through the realm.',
+    author: 'Link’s Legacy',
+    source: 'The Legend of Zelda',
+    category: 'Gaming',
+    icon: '🎮',
+  },
+  {
+    text: 'The right man in the wrong place can make all the difference in the world.',
+    author: 'The G-Man',
+    source: 'Half-Life 2',
+    category: 'Gaming',
+    icon: '🎮',
+  },
+  {
+    text: 'Even in Dark Souls, the bonfire is always waiting if you persist.',
+    author: 'Undead Wisdom',
+    source: 'Lordran Chronicles',
+    category: 'Gaming',
+    icon: '🎮',
+  },
+  {
+    text: 'You died. Learn the timing, adapt your strategy, and try again.',
+    author: 'Soulsborne Axiom',
+    source: 'Trial and Triumph',
+    category: 'Gaming',
+    icon: '🎮',
+  },
+  {
+    text: 'No matter how dark the night, morning always comes, and our journey begins anew.',
+    author: 'Lulu',
+    source: 'Final Fantasy X',
+    category: 'Gaming',
+    icon: '🎮',
+  },
+  {
+    text: 'It’s dangerous to go alone! Take this.',
+    author: 'Old Man',
+    source: 'The Legend of Zelda',
+    category: 'Gaming',
+    icon: '🎮',
+  },
+  {
+    text: 'Protocol 3: Protect the Pilot.',
+    author: 'BT-7274',
+    source: 'Titanfall 2',
+    category: 'Gaming',
+    icon: '🎮',
+  },
+  {
+    text: 'Keep grinding the levels; the hardest quests grant the greatest XP.',
+    author: 'RPG Creed',
+    source: 'Progress Mechanics',
     category: 'Gaming',
     icon: '🎮',
   },
@@ -339,11 +703,11 @@ function normalizeCategory(value: string): string {
   return value.trim().toLowerCase();
 }
 
+/** Strictly match quote's category against selected categories (never substrings or sources). */
 function matchesCategories(quote: Quote, categories: string[]): boolean {
-  const list = Array.isArray(categories) ? categories : [];
-  const needles = list.map(normalizeCategory);
-  const haystacks = [quote.category, quote.source].map(normalizeCategory);
-  return needles.some((needle) => haystacks.some((hay) => hay.includes(needle) || needle.includes(hay)));
+  if (!categories || categories.length === 0) return false;
+  const allowedSet = new Set(categories.map((item) => normalizeCategory(item)));
+  return allowedSet.has(normalizeCategory(quote.category));
 }
 
 function localQuotesFor(interests: string[], isGuest: boolean = false): Quote[] {
@@ -351,7 +715,8 @@ function localQuotesFor(interests: string[], isGuest: boolean = false): Quote[] 
   if (isGuest || list.length === 0) {
     return DEFAULT_HABIT_QUOTES;
   }
-  const matched = INTEREST_QUOTES.filter((quote) => matchesCategories(quote, list));
+  const allowedSet = new Set(list.map((item) => normalizeCategory(item)));
+  const matched = INTEREST_QUOTES.filter((quote) => allowedSet.has(normalizeCategory(quote.category)));
   return matched.length > 0 ? matched : DEFAULT_HABIT_QUOTES;
 }
 
@@ -404,7 +769,7 @@ async function fetchQuotesFromSupabase(categories: string[]): Promise<Quote[]> {
       .filter((quote): quote is Quote => quote !== null);
 
     const matched = mapped.filter((quote) => matchesCategories(quote, uniqueCategories));
-    return matched.length > 0 ? matched : mapped;
+    return matched;
   } catch (err) {
     console.warn('quotes fetch offline:', err);
     return [];
@@ -429,6 +794,11 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
     return merged.length > 0 ? merged : mergeQuoteBank([]);
   }, [quotes]);
   const poolLength = Math.max(pool.length, 1);
+
+  // Immediately reset index to 0 whenever interests are toggled so the user sees matching quotes instantly
+  useEffect(() => {
+    setQuoteIndex(0);
+  }, [selectedInterests]);
 
   useEffect(() => {
     let cancelled = false;

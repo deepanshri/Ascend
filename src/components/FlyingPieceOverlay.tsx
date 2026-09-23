@@ -12,8 +12,8 @@ const EMERGENCE_MS = 240;
 const ANTICIPATION_MS = 120;
 /** Total wait time (360ms) before the throw begins. */
 const TOTAL_HOLD_MS = EMERGENCE_MS + ANTICIPATION_MS; // 360ms
-/** Natural physical gravity flight arc into the bowl cavity (+0.5s slower, majestic & smooth). */
-const FLIGHT_MS = 1120;
+/** Natural physical gravity flight arc into the bowl cavity without pauses. */
+const FLIGHT_MS = 880;
 const PIECE_PX = 24;
 const MAX_FLIGHTS = 4;
 
@@ -56,9 +56,9 @@ const FlightMarble: React.FC<{
 }> = ({ flight, onDone }) => {
   const x = useMotionValue(flight.from.x);
   const y = useMotionValue(flight.from.y);
-  // Phase 1 (Emergence & Self-Scaling): Starts at scale 0, opacity 0, organically self-scaling up
-  const scale = useMotionValue(0);
-  const opacity = useMotionValue(0);
+  // Starts with subtle scale and immediately scales up in flight — zero pause
+  const scale = useMotionValue(0.4);
+  const opacity = useMotionValue(0.85);
   const rotate = useMotionValue(0);
   const rotateX = useMotionValue(0);
   const [broken, setBroken] = useState(false);
@@ -84,9 +84,6 @@ const FlightMarble: React.FC<{
 
   useEffect(() => {
     let finished = false;
-    let holdTimer: number | null = null;
-    let emergenceControls: { stop: () => void } | null = null;
-    let anticipationControls: { stop: () => void } | null = null;
     let launchControls: { stop: () => void } | null = null;
 
     const finish = () => {
@@ -95,148 +92,116 @@ const FlightMarble: React.FC<{
       onDoneRef.current?.();
     };
 
-    const habitId = flight.pieceId.split('::')[0];
-    const isLeft = flight.direction === 'left' || flight.kind === 'fallback';
-
-    // Keep the piece anchored over the completed checkmark / today button during the hold
-    const updateCardAnchor = () => {
-      const card = document.getElementById(`habit-card-${habitId}`);
-      if (card) {
-        const todayBtn =
-          card.querySelector('[data-today-button="true"]') ||
-          document.getElementById(`habit-today-btn-${habitId}`);
-        if (todayBtn) {
-          const tRect = todayBtn.getBoundingClientRect();
-          x.set(tRect.left + tRect.width * 0.5);
-          y.set(tRect.top + tRect.height * 0.5);
-        } else {
-          const a = card.getBoundingClientRect();
-          x.set(isLeft ? a.right - 36 : a.left + 36);
-          y.set(a.top + a.height * 0.5);
-        }
-      }
-    };
-
-    window.addEventListener('scroll', updateCardAnchor, { passive: true });
-
-    // --- PHASE 1: ORGANIC SELF-SCALING EMERGENCE ---
+    // Trigger completion chime immediately at throw launch — zero pause
     try {
-      emergenceControls = animate(0, 1, {
-        duration: EMERGENCE_MS / 1000,
-        ease: [0.34, 1.56, 0.64, 1], // Organic elastic scale-up curve
-        onUpdate: (v) => {
-          scale.set(v * 1.25);
-          opacity.set(Math.min(1, v * 2.8));
-          rotate.set(v * 180);
-        },
-        onComplete: () => {
-          scale.set(1.05);
-          opacity.set(1);
-          rotate.set(180);
-
-          // --- PHASE 2: KINETIC ANTICIPATION & COIL ---
-          try {
-            anticipationControls = animate(1.05, 0.95, {
-              duration: ANTICIPATION_MS / 1000,
-              ease: 'easeInOut',
-              onUpdate: (s) => {
-                scale.set(s);
-              },
-            });
-          } catch {}
-        },
-      });
+      playCompletionSound();
     } catch {
-      scale.set(1);
-      opacity.set(1);
-      rotate.set(180);
+      /* audio failure must never block animation */
     }
 
-    // --- PHASE 3: PARABOLIC THROW LAUNCH (+0.5s SLOWER, ORGANIC GRAVITY) ---
-    holdTimer = window.setTimeout(() => {
-      window.removeEventListener('scroll', updateCardAnchor);
-      emergenceControls?.stop();
-      anticipationControls?.stop();
+    const startFrom = flight.from;
+    const targetTo = flight.to;
 
-      // Trigger completion audio precisely at the moment of launch
-      try {
-        playCompletionSound();
-      } catch {
-        /* audio failure must never block animation */
-      }
+    const bowlFrame = document.getElementById('accumulation-bowl-frame');
+    const bowlTop = bowlFrame ? bowlFrame.getBoundingClientRect().top : targetTo.y - 48;
 
-      // Live measurements at launch moment
-      const swipeDir = flight.direction || (isFallback ? 'left' : 'right');
-      const livePoints = measureCompletionFlight(habitId, swipeDir);
-      const startFrom = livePoints ? livePoints.from : { x: x.get(), y: y.get() };
-      const targetTo = livePoints ? livePoints.to : flight.to;
+    // Pseudo-random deterministic parameters from flight id for per-swipe distinct arcs
+    let seed = 0;
+    for (let i = 0; i < flight.id.length; i++) {
+      seed = (seed * 31 + flight.id.charCodeAt(i)) & 0xffffffff;
+    }
+    const rand1 = ((seed & 0xffff) / 0xffff);
+    const rand2 = (((seed >>> 16) & 0xffff) / 0xffff);
+    const rand3 = Math.abs(Math.sin(seed));
 
-      const bowlFrame = document.getElementById('accumulation-bowl-frame');
-      const bowlTop = bowlFrame ? bowlFrame.getBoundingClientRect().top : targetTo.y - 48;
+    // Dynamic arc variation: height varies above bowl top rim
+    const apexLift = 40 + rand1 * 40;
+    const yApex = Math.min(bowlTop - apexLift, Math.min(startFrom.y, targetTo.y) - 50);
 
-      // Force Y_apex at least 55px ABOVE the top rim of the bowl for an organic, majestic arc
-      const yApex = Math.max(16, Math.min(bowlTop - 55, targetTo.y - 95, startFrom.y - 120));
-      const apexT = 0.44; // Peak of the throw at 44% of the flight
-      const landingScale = 10 / 24; // 0.4167, exactly 10px diameter matching resting bowl pieces
+    // Dynamic apex timing along the throw (34% to 48%)
+    const apexT = 0.34 + rand2 * 0.14;
 
-      try {
-        launchControls = animate(0, 1, {
-          duration: FLIGHT_MS / 1000,
-          ease: 'linear', // Pure normalized time; physical gravity curves below
-          onUpdate: (t) => {
-            // Horizontal travel: smooth energetic start, easing gently over the bowl
-            const xProgress = Math.sin(t * Math.PI * 0.5);
-            x.set(startFrom.x + (targetTo.x - startFrom.x) * xProgress);
+    // Dynamic lateral curvature (sway in air)
+    const lateralCurvature = (rand3 - 0.5) * 55;
 
-            // Vertical travel: parabolic physical gravity arc
-            let currentY: number;
-            if (t <= apexT) {
-              const u = t / apexT;
-              // Smooth upward deceleration to zero velocity at apex
-              currentY = yApex + (startFrom.y - yApex) * Math.pow(1 - u, 2.2);
+    // Rim contact point where the marble transitions direction and speed
+    const rimT = 0.70;
+    const rimX = targetTo.x + (rand1 - 0.5) * 24;
+    const rimY = bowlTop + 14;
+
+    const landingScale = 10 / 24; // 0.4167, exactly 10px diameter matching resting bowl pieces
+
+    try {
+      launchControls = animate(0, 1, {
+        duration: FLIGHT_MS / 1000,
+        ease: 'linear', // Normalized time; physical gravity curves below
+        onUpdate: (t) => {
+          let curX: number;
+          let curY: number;
+          let curScale: number;
+
+          if (t <= rimT) {
+            // --- STAGE 1: AIRBORNE BALLISTIC ARC (Card to Bowl Rim) ---
+            const u = t / rimT; // 0 to 1
+
+            // Horizontal travel: energetic start, easing toward rim
+            const xProg = Math.sin(u * Math.PI * 0.5);
+            const sway = Math.sin(u * Math.PI) * lateralCurvature;
+            curX = startFrom.x + (rimX - startFrom.x) * xProg + sway;
+
+            // Vertical travel: parabolic physical gravity arc up to apex, then falling to rim
+            if (u <= apexT) {
+              const au = u / apexT;
+              curY = yApex + (startFrom.y - yApex) * Math.pow(1 - au, 2.0);
             } else {
-              const p = (t - apexT) / (1 - apexT);
-              // Downward gravity acceleration straight into the cavity floor
-              currentY = yApex + (targetTo.y - yApex) * Math.pow(p, 1.85);
+              const ad = (u - apexT) / (1 - apexT);
+              curY = yApex + (rimY - yApex) * Math.pow(ad, 1.8);
             }
-            y.set(currentY);
 
-            // Perspective scale: swells in midair, then tapers down to exact 10px piece size
-            let currentScale: number;
-            if (t <= apexT) {
-              const u = t / apexT;
-              currentScale = 0.95 + Math.sin(u * Math.PI * 0.5) * 0.30;
+            // Continuous scale: emerges immediately from 0.40 to 1.15 in first 20%, then glides
+            if (u < 0.20) {
+              const su = u / 0.20;
+              curScale = 0.40 + (1.15 - 0.40) * Math.sin(su * Math.PI * 0.5);
+              opacity.set(Math.min(1, 0.4 + su * 0.6));
             } else {
-              const p = (t - apexT) / (1 - apexT);
-              currentScale = 1.25 - (1.25 - landingScale) * Math.sin(p * Math.PI * 0.5);
+              curScale = 1.15 - (u - 0.20) * 0.12;
+              opacity.set(1);
             }
-            scale.set(currentScale);
+          } else {
+            // --- STAGE 2: RIM DEFLECTION (Direction & Speed Change into Cavity Floor) ---
+            const p = (t - rimT) / (1 - rimT); // 0 to 1
 
-            // Organic tumbling rotation
-            rotate.set(180 + t * 450);
-            rotateX.set(Math.sin(t * Math.PI) * 28);
+            // Direction curves sharply inward towards resting center target
+            const inwardEase = Math.sin(p * Math.PI * 0.5);
+            curX = rimX + (targetTo.x - rimX) * inwardEase;
 
-            // Soft handover into resting piece as it plunges into the cavity floor
-            if (t > 0.90) {
-              opacity.set(Math.max(0, 1 - (t - 0.90) / 0.10));
+            // Speed changes: plunges with dampened deceleration into cavity floor
+            curY = rimY + (targetTo.y - rimY) * Math.pow(p, 1.45);
+
+            // Scales down smoothly to resting 10px piece size
+            curScale = 1.09 - (1.09 - landingScale) * Math.sin(p * Math.PI * 0.5);
+
+            // Soft handover into resting marble in cavity floor
+            if (p > 0.70) {
+              opacity.set(Math.max(0, 1 - (p - 0.70) / 0.30));
             }
-          },
-          onComplete: finish,
-        });
-      } catch {
-        finish();
-      }
-    }, TOTAL_HOLD_MS);
+          }
+
+          x.set(curX);
+          y.set(curY);
+          scale.set(curScale);
+          rotate.set(t * 540);
+          rotateX.set(Math.sin(t * Math.PI) * 32);
+        },
+        onComplete: finish,
+      });
+    } catch {
+      finish();
+    }
 
     return () => {
-      window.removeEventListener('scroll', updateCardAnchor);
-      if (holdTimer !== null) window.clearTimeout(holdTimer);
-      emergenceControls?.stop();
-      anticipationControls?.stop();
       launchControls?.stop();
     };
-    // Animate once per flight id
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flight.id]);
 
   return (
@@ -302,10 +267,11 @@ export const FlyingPieceOverlay: React.FC<FlyingPieceOverlayProps> = ({
   );
 };
 
-/** Resolve card checkmark → bowl base for an authentic top-down parabolic flight. */
+/** Resolve card swipe point → bowl base for an authentic continuous parabolic flight. */
 export function measureCompletionFlight(
   habitId: string,
-  direction?: 'left' | 'right'
+  direction?: 'left' | 'right',
+  customOrigin?: { x: number; y: number }
 ): { from: { x: number; y: number }; to: { x: number; y: number } } | null {
   const card = document.getElementById(`habit-card-${habitId}`);
   const bowlFrame = document.getElementById('accumulation-bowl-frame');
@@ -316,37 +282,37 @@ export function measureCompletionFlight(
   const a = card.getBoundingClientRect();
   const b = (bowlFrame || bowl).getBoundingClientRect();
 
-  // Anchor directly over the today day button if present, or swipe checkmark
   let fromX: number;
   let fromY: number;
 
-  const todayBtn =
-    card.querySelector('[data-today-button="true"]') ||
-    document.getElementById(`habit-today-btn-${habitId}`) ||
-    card.querySelector('button[id*="-day-"]');
-  if (todayBtn) {
-    const tRect = todayBtn.getBoundingClientRect();
-    fromX = tRect.left + tRect.width * 0.5;
-    fromY = tRect.top + tRect.height * 0.5;
-  } else if (direction === 'left') {
-    fromX = a.right - 36;
-    fromY = a.top + a.height * 0.5;
+  if (customOrigin && Number.isFinite(customOrigin.x) && Number.isFinite(customOrigin.y)) {
+    fromX = customOrigin.x;
+    fromY = customOrigin.y;
   } else {
-    fromX = a.left + 36;
-    fromY = a.top + a.height * 0.5;
+    // If swiped right: release point is towards the right side of the card
+    // If swiped left: release point is towards the left side of the card
+    if (direction === 'left') {
+      fromX = a.left + 48;
+      fromY = a.top + a.height * 0.5;
+    } else {
+      fromX = a.right - 48;
+      fromY = a.top + a.height * 0.5;
+    }
   }
+
+  // Target resting position inside bowl cavity floor with organic spread
+  const targetJitterX = (Math.random() - 0.5) * 16;
+  const targetJitterY = (Math.random() - 0.5) * 10;
+
+  const toX = bowlTarget
+    ? bowlTarget.getBoundingClientRect().left + targetJitterX
+    : b.left + b.width * 0.5 + targetJitterX;
+  const toY = bowlTarget
+    ? bowlTarget.getBoundingClientRect().top + targetJitterY
+    : b.top + b.height * 0.56 + targetJitterY;
 
   return {
     from: { x: fromX, y: fromY },
-    // Target resting position deep inside bowl cavity floor (56% down into the piece cluster)
-    to: bowlTarget
-      ? {
-          x: bowlTarget.getBoundingClientRect().left,
-          y: bowlTarget.getBoundingClientRect().top,
-        }
-      : {
-          x: b.left + b.width * 0.5,
-          y: b.top + b.height * 0.56,
-        },
+    to: { x: toX, y: toY },
   };
 }

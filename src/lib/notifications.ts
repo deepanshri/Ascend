@@ -4,9 +4,12 @@ import { Preferences } from '@capacitor/preferences';
 import { Habit, StandaloneReminder } from '../types';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
 import {
-  completionConfirmCopy,
-  compactNotificationPair,
-  reminderPromptCopy,
+  afternoonFocusCopy,
+  habitTargetCopy,
+  morningMomentumCopy,
+  nightWrapUpCopy,
+  reminderExactCopy,
+  reminderPriorCopy,
 } from '../services/notificationService';
 import { parseTargetTimeHHmm } from '../utils/timeFormat';
 
@@ -122,7 +125,7 @@ function featuredHabitName(habits: Habit[], todayIndex: number): string {
 }
 
 function morningCopy(habits: Habit[], todayIndex: number): { title: string; body: string } {
-  return compactNotificationPair(featuredHabitName(habits, todayIndex));
+  return morningMomentumCopy(featuredHabitName(habits, todayIndex));
 }
 
 function afternoonCopy(
@@ -130,25 +133,17 @@ function afternoonCopy(
   todayIndex: number,
   remaining: number
 ): { title: string; body: string } {
-  if (remaining <= 0) {
-    return compactNotificationPair(featuredHabitName(habits, todayIndex));
-  }
   const open = activeHabits(habits).find(
     (habit) => isHabitScheduledOnDayIndex(habit, todayIndex) && !habit.days?.[todayIndex]
   );
-  return compactNotificationPair(open?.name?.trim() || featuredHabitName(habits, todayIndex));
+  return afternoonFocusCopy(open?.name?.trim() || featuredHabitName(habits, todayIndex), remaining);
 }
 
 function nightCopy(habits: Habit[], todayIndex: number, remaining: number): { title: string; body: string } {
-  if (remaining <= 0) {
-    const name = featuredHabitName(habits, todayIndex);
-    const title = completionConfirmCopy(name);
-    return { title, body: title };
-  }
   const open = activeHabits(habits).find(
     (habit) => isHabitScheduledOnDayIndex(habit, todayIndex) && !habit.days?.[todayIndex]
   );
-  return compactNotificationPair(open?.name?.trim() || featuredHabitName(habits, todayIndex));
+  return nightWrapUpCopy(open?.name?.trim() || featuredHabitName(habits, todayIndex), remaining);
 }
 
 async function ensureChannel(): Promise<void> {
@@ -411,10 +406,11 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
   const notifications: LocalNotificationSchema[] = [];
 
   if (hydrated.alert10Min !== false && tenMinBefore.getTime() > now && Number.isInteger(notificationId1)) {
+    const prior = reminderPriorCopy(hydrated.title);
     notifications.push({
       id: notificationId1,
-      title: reminderPromptCopy(hydrated.title),
-      body: reminderPromptCopy(hydrated.title),
+      title: prior.title,
+      body: prior.body,
       channelId: REMINDER_CHANNEL_ID,
       extra: { reminderId: hydrated.id, kind: 'prior' },
       schedule: { at: tenMinBefore, allowWhileIdle: true },
@@ -422,10 +418,11 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
   }
 
   if (hydrated.alertExact !== false && target.getTime() > now && Number.isInteger(notificationId2)) {
+    const exact = reminderExactCopy(hydrated.title);
     notifications.push({
       id: notificationId2,
-      title: completionConfirmCopy(hydrated.title),
-      body: completionConfirmCopy(hydrated.title),
+      title: exact.title,
+      body: exact.body,
       channelId: REMINDER_CHANNEL_ID,
       extra: { reminderId: hydrated.id, kind: 'exact' },
       schedule: { at: target, allowWhileIdle: true },
@@ -495,12 +492,14 @@ export async function scheduleHabitTargetTimeNotification(habit: Habit): Promise
 
     await ensureChannel();
 
+    const targetPayload = habitTargetCopy(habit);
+
     await LocalNotifications.schedule({
       notifications: [
         {
           id: notificationId,
-          title: `Time for ${habit.name}`,
-          body: habit.purposeAnchor?.trim() || `Daily scheduled target time reached for ${habit.name}.`,
+          title: targetPayload.title,
+          body: targetPayload.body,
           channelId: CHANNEL_ID,
           extra: { habitId: habit.id, kind: 'habit_target' },
           schedule: {
