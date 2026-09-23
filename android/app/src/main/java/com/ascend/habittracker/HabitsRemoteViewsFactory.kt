@@ -3,6 +3,7 @@ package com.ascend.habittracker
 import android.content.Context
 import android.content.Intent
 import android.graphics.Paint
+import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import org.json.JSONArray
@@ -34,6 +35,7 @@ class HabitsRemoteViewsFactory(
         val id = row.optString("id")
         val completed = row.optBoolean("completed", false)
         val streak = row.optInt("streak", 0)
+        val targetTime = row.optString("targetTime", "").trim()
         val palette = WidgetTheme.palette(appDark)
 
         views.setInt(R.id.habit_row, "setBackgroundResource", palette.pillBg)
@@ -56,6 +58,16 @@ class HabitsRemoteViewsFactory(
             R.id.habit_title,
             if (completed) palette.muted else palette.text
         )
+
+        if (targetTime.isNotEmpty()) {
+            views.setTextViewText(R.id.habit_time, targetTime)
+            views.setViewVisibility(R.id.habit_time, View.VISIBLE)
+            views.setTextColor(R.id.habit_time, palette.muted)
+        } else {
+            views.setTextViewText(R.id.habit_time, "")
+            views.setViewVisibility(R.id.habit_time, View.GONE)
+        }
+
         views.setFloat(R.id.habit_row, "setAlpha", if (completed) 0.6f else 1f)
 
         val toggleFill = Intent().apply {
@@ -63,6 +75,7 @@ class HabitsRemoteViewsFactory(
         }
         views.setOnClickFillInIntent(R.id.habit_check, toggleFill)
         views.setOnClickFillInIntent(R.id.habit_title, toggleFill)
+        views.setOnClickFillInIntent(R.id.habit_time, toggleFill)
         views.setOnClickFillInIntent(R.id.habit_row, toggleFill)
 
         return views

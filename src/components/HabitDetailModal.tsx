@@ -7,6 +7,7 @@ import { MAX_KEYSTONE_HABITS } from '../lib/keystone';
 import { normalizeScheduledDays, scheduleTypeFromDays } from '../utils/schedule';
 import { WeekdayScheduleChips } from './WeekdayScheduleChips';
 import { resolveHabitTimeOfDay } from '../utils/timeOfDay';
+import { formatTargetTimeDisplay } from '../utils/timeFormat';
 
 interface HabitDetailModalProps {
   habit: Habit | null;
@@ -31,6 +32,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   const [priority, setPriority] = useState<HabitPriority>('mid');
   const [purpose, setPurpose] = useState('');
   const [fallback, setFallback] = useState('');
+  const [targetTime, setTargetTime] = useState('');
   const [category, setCategory] = useState<HabitCategory>('self_improvement');
   const [isKeystone, setIsKeystone] = useState(false);
   const [keystoneWarning, setKeystoneWarning] = useState(false);
@@ -42,6 +44,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
     setPriority(habit.priority || 'mid');
     setPurpose(habit.purposeAnchor || '');
     setFallback(habit.fallbackMicroHabit || '');
+    setTargetTime(habit.targetTime || '');
     setCategory(habit.category === 'work' ? 'work' : 'self_improvement');
     setIsKeystone(Boolean(habit.isKeystone));
     setKeystoneWarning(false);
@@ -75,6 +78,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
       scheduleType: scheduleTypeFromDays(days),
       targetDaysPerWeek: days.length,
       timeOfDay: resolveHabitTimeOfDay(habit),
+      targetTime: targetTime ? targetTime : undefined,
     });
     onClose();
   };
@@ -234,6 +238,38 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
           </div>
 
           <WeekdayScheduleChips selected={scheduledWeekdays} onChange={setScheduledWeekdays} hint="" />
+
+          {/* Target Time */}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
+              <span className="flex items-center justify-between">
+                <span>Target Time</span>
+                {targetTime ? (
+                  <button
+                    type="button"
+                    onClick={() => setTargetTime('')}
+                    className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold cursor-pointer hover:underline normal-case tracking-normal"
+                  >
+                    Clear
+                  </button>
+                ) : (
+                  <span className="text-[10px] font-normal text-slate-400 normal-case tracking-normal">optional</span>
+                )}
+              </span>
+            </label>
+            <input
+              id="edit-habit-target-time-input"
+              type="time"
+              value={targetTime}
+              onChange={(e) => setTargetTime(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-[12.5px]"
+            />
+            {targetTime && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                Daily reminder scheduled for {formatTargetTimeDisplay(targetTime)}
+              </p>
+            )}
+          </div>
 
           <div>
             <div className="flex items-center justify-between">

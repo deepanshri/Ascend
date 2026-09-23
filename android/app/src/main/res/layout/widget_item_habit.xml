@@ -32,6 +32,17 @@
         android:textStyle="bold" />
 
     <TextView
+        android:id="@+id/habit_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:textColor="#64748B"
+        android:textSize="11sp"
+        android:visibility="gone" />
+
+    <TextView
         android:id="@+id/habit_streak"
         android:layout_width="0dp"
         android:layout_height="0dp"

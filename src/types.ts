@@ -61,6 +61,8 @@ export interface Habit {
   isKeystone?: boolean;
   /** Morning vs night bowl this habit drops into. */
   timeOfDay?: TimeOfDay;
+  /** Optional daily target time in HH:mm 24-hr format (e.g. "07:00"). */
+  targetTime?: string;
   /** Epoch ms of last local/remote mutation. Used for habit hydrate LWW. */
   updatedAt?: number;
 }

@@ -8,6 +8,7 @@ import {
   compactNotificationPair,
   reminderPromptCopy,
 } from '../services/notificationService';
+import { parseTargetTimeHHmm } from '../utils/timeFormat';
 
 export type NotificationWindowKey = 'morning' | 'afternoon' | 'night';
 
@@ -453,4 +454,84 @@ export async function rescheduleAllReminderDualAlerts(reminders: StandaloneRemin
     scheduled.push(await scheduleReminderDualAlerts(reminder));
   }
   return scheduled;
+}
+
+export function habitTargetNotificationId(habitId: string): number {
+  let hash = 0x45d9f3b >>> 0;
+  const key = `habit-target-${habitId}`;
+  for (let i = 0; i < key.length; i++) {
+    hash = Math.imul(hash ^ key.charCodeAt(i), 16777619) >>> 0;
+  }
+  // Range: 100000–199999 (completely disjoint from psychology ids 20300/81000/81300 and reminder ids 210000–909999)
+  return (100000 + (hash % 100000)) | 0;
+}
+
+export async function cancelHabitTargetTimeNotification(habitId: string): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const notificationId = habitTargetNotificationId(habitId);
+  try {
+    await LocalNotifications.cancel({
+      notifications: [{ id: notificationId }],
+    });
+  } catch {
+    // Nothing pending, or plugin unavailable on web.
+  }
+}
+
+export async function scheduleHabitTargetTimeNotification(habit: Habit): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  if (!habit.targetTime || habit.archived) return;
+
+  const parsed = parseTargetTimeHHmm(habit.targetTime);
+  if (!parsed) return;
+
+  const notificationId = habitTargetNotificationId(habit.id);
+  // Cancel previous first to prevent stacking
+  await cancelHabitTargetTimeNotification(habit.id);
+
+  try {
+    const granted = await requestNotificationPermissions();
+    if (!granted) return;
+
+    await ensureChannel();
+
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: notificationId,
+          title: `Time for ${habit.name}`,
+          body: habit.purposeAnchor?.trim() || `Daily scheduled target time reached for ${habit.name}.`,
+          channelId: CHANNEL_ID,
+          extra: { habitId: habit.id, kind: 'habit_target' },
+          schedule: {
+            on: { hour: parsed.hour, minute: parsed.minute },
+            allowWhileIdle: true,
+          },
+        },
+      ],
+    });
+  } catch (err) {
+    console.warn('LocalNotifications.schedule habit target failed:', err);
+  }
+}
+
+export async function syncAllHabitTargetNotifications(
+  habits: Habit[],
+  todayDayIndex: number,
+  calendarOrigin: Date = new Date()
+): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  for (const habit of habits) {
+    if (!habit.targetTime || habit.archived) {
+      await cancelHabitTargetTimeNotification(habit.id);
+      continue;
+    }
+    const isScheduled = isHabitScheduledOnDayIndex(habit, todayDayIndex, calendarOrigin);
+    const isCompleted = Boolean(habit.days?.[todayDayIndex]);
+    if (isScheduled && !isCompleted) {
+      await scheduleHabitTargetTimeNotification(habit);
+    } else {
+      await cancelHabitTargetTimeNotification(habit.id);
+    }
+  }
 }

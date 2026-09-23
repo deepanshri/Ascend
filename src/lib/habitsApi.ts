@@ -57,6 +57,11 @@ export function rowToHabit(row: Record<string, unknown>): Habit | null {
     weeklyTargetCount: row.weekly_target_count != null ? Number(row.weekly_target_count) : undefined,
     isKeystone: Boolean(row.is_keystone ?? row.isKeystone),
     timeOfDay: parseTimeOfDay(row.time_of_day ?? row.timeOfDay, String(row.timestamp || '')),
+    targetTime: row.target_time
+      ? String(row.target_time).slice(0, 5)
+      : row.targetTime
+        ? String(row.targetTime).slice(0, 5)
+        : undefined,
     updatedAt: row.updated_at ? Date.parse(String(row.updated_at)) || undefined : undefined,
   };
 }
@@ -135,17 +140,18 @@ export function habitToRow(habit: Habit, userId: string) {
     weekly_target_count: habit.weeklyTargetCount ?? null,
     is_keystone: Boolean(habit.isKeystone),
     time_of_day: resolveHabitTimeOfDay(habit),
+    target_time: habit.targetTime || null,
     updated_at: new Date(habit.updatedAt || Date.now()).toISOString(),
   };
 }
 
-function stripTimeOfDayColumn<T extends { time_of_day?: unknown }>(row: T): Omit<T, 'time_of_day'> {
-  const { time_of_day: _ignored, ...rest } = row;
+function stripTimeOfDayColumn<T extends { time_of_day?: unknown; target_time?: unknown }>(row: T): Omit<T, 'time_of_day' | 'target_time'> {
+  const { time_of_day: _ignored, target_time: _ignoredTarget, ...rest } = row;
   return rest;
 }
 
 function isMissingTimeOfDayColumn(message: string): boolean {
-  return /time_of_day/i.test(message);
+  return /time_of_day|target_time/i.test(message);
 }
 
 async function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {

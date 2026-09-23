@@ -82,6 +82,9 @@ import {
   reminderNotificationIds,
   requestNotificationPermissions,
   schedulePsychologyNotifications,
+  cancelHabitTargetTimeNotification,
+  scheduleHabitTargetTimeNotification,
+  syncAllHabitTargetNotifications,
   weekdayFromIsoDate,
   withReminderNotificationIds,
   type NotificationWindowKey,
@@ -1168,6 +1171,10 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [notificationWindows, activeHabits, todayDayIndex, todayMomentumScore, completionEvents]);
 
+  useEffect(() => {
+    void syncAllHabitTargetNotifications(habits, todayDayIndex, calendarOrigin);
+  }, [habits, todayDayIndex, calendarOrigin, completionEvents]);
+
   // Cycle-window habit_logs hydrate (Home + any tab once signed in).
   // Range query is read-only — never resets bowlEpoch (celebration/rollover only).
   useEffect(() => {
@@ -1306,6 +1313,9 @@ export default function App() {
     const alreadyVotedMomentum = hasMomentumVoteOnIso(momentumEvents, habitId, loggedDate);
 
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
+
+    // Dynamic Cancellation: cancel today's scheduled notification immediately on completion.
+    void cancelHabitTargetTimeNotification(habitId);
 
     const newEvent: HabitCompletionEvent = withHabitTimeOfDay(
       {
@@ -1452,6 +1462,12 @@ export default function App() {
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
     setEvidenceList((prev) => removeTodayEvidence(prev, habitId, loggedDate, calendarOrigin));
 
+    // Reschedule daily notification when uncompleted
+    const targetHabit = habits.find((h) => h.id === habitId);
+    if (targetHabit?.targetTime && !targetHabit.archived) {
+      void scheduleHabitTargetTimeNotification(targetHabit);
+    }
+
     if (rolledBackMomentum) {
       setMomentumPulse((n) => n + 1);
     } else {
@@ -1494,6 +1510,9 @@ export default function App() {
       updatedAt: Date.now(),
     };
     setHabits((prev) => [newHabit, ...prev]);
+    if (newHabit.targetTime) {
+      void scheduleHabitTargetTimeNotification(newHabit);
+    }
     return newHabit;
   };
 
@@ -1502,6 +1521,7 @@ export default function App() {
     setHabits((prev) =>
       prev.map((h) => (h.id === habitId ? touchHabit({ ...h, archived: true }) : h))
     );
+    void cancelHabitTargetTimeNotification(habitId);
     if (detailHabit && detailHabit.id === habitId) {
       setDetailHabit(null);
     }
@@ -1514,13 +1534,23 @@ export default function App() {
       return;
     }
     setHabits((prev) =>
-      prev.map((h) => (h.id === habitId ? touchHabit({ ...h, archived: false }) : h))
+      prev.map((h) => {
+        if (h.id === habitId) {
+          const restored = touchHabit({ ...h, archived: false });
+          if (restored.targetTime) {
+            void scheduleHabitTargetTimeNotification(restored);
+          }
+          return restored;
+        }
+        return h;
+      })
     );
   };
 
   // Delete habit (optimistic) + purge every local trace so Report Analysis cannot resurface it
   const handleDeleteHabit = (habitId: string) => {
     rememberDeletedHabit(habitId);
+    void cancelHabitTargetTimeNotification(habitId);
     setHabits((prev) => prev.filter((h) => h.id !== habitId));
     setCompletionEvents((prev) => prev.filter((e) => e.habitId !== habitId));
     setMomentumEvents((prev) => prev.filter((e) => e.habitId !== habitId));
@@ -1544,6 +1574,16 @@ export default function App() {
       prev.map((h) => (h.id === next.id ? touchHabit(next) : h))
     );
     setDetailHabit(touchHabit(next));
+    if (next.targetTime && !next.archived) {
+      const isCompletedToday = Boolean(next.days?.[todayDayIndex]);
+      if (!isCompletedToday) {
+        void scheduleHabitTargetTimeNotification(next);
+      } else {
+        void cancelHabitTargetTimeNotification(next.id);
+      }
+    } else {
+      void cancelHabitTargetTimeNotification(next.id);
+    }
   };
 
   const handleToggleKeystone = (habitId: string, nextValue: boolean) => {

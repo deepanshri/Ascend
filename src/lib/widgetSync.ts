@@ -6,6 +6,7 @@ import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/mome
 import { isHabitScheduledOnIso, scheduledHabitsForDayIndex } from '../utils/schedule';
 import { SLEEP_TARGET_HOURS } from './health';
 import { WidgetBridge, type WidgetPendingAction } from './widgetBridge';
+import { formatTargetTimeDisplay } from '../utils/timeFormat';
 
 export const WIDGET_DATA_KEY = 'ascend_widget_data';
 export const WIDGET_SCHEME = 'ascend';
@@ -29,6 +30,7 @@ export interface WidgetHabitItem {
   title: string;
   completed: boolean;
   streak: number;
+  targetTime?: string;
 }
 
 export interface WidgetIdentityLine {
@@ -214,6 +216,7 @@ export function buildWidgetSnapshot(input: WidgetSnapshotInput): WidgetSnapshot 
     title: habit.name,
     completed: hasTodayLedgerEntry(input.completionEvents, habit.id, todayIso, origin),
     streak: habitStreak(habit, todayIso, input.momentumEvents, input.completionEvents),
+    targetTime: formatTargetTimeDisplay(habit.targetTime),
   }));
 
   const sleepRate =

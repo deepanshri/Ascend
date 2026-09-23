@@ -139,6 +139,7 @@ export type Database = {
           scheduled_days: number[] | null
           tags: string[] | null
           target_days_per_week: number | null
+          target_time?: string | null
           timestamp: string | null
           title: string
           updated_at: string | null
@@ -167,6 +168,7 @@ export type Database = {
           scheduled_days?: number[] | null
           tags?: string[] | null
           target_days_per_week?: number | null
+          target_time?: string | null
           timestamp?: string | null
           title: string
           updated_at?: string | null
@@ -195,6 +197,7 @@ export type Database = {
           scheduled_days?: number[] | null
           tags?: string[] | null
           target_days_per_week?: number | null
+          target_time?: string | null
           timestamp?: string | null
           title?: string
           updated_at?: string | null
