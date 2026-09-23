@@ -225,6 +225,7 @@ export default function App() {
     }
     return isOnboardingCompleted();
   });
+  const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3>(1);
 
   // Theme state ('light' | 'dark' | 'system')
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -1179,6 +1180,8 @@ export default function App() {
   // Range query is read-only — never resets bowlEpoch (celebration/rollover only).
   useEffect(() => {
     if (!session || session?.isGuest) return;
+    // Defer heavy history parsing passes until after onboarding completes or reaches step 3
+    if (!isOnboarded && onboardingStep < 3) return;
     const startIso = bowlWindow.startIso;
     const endIso = bowlWindow.endIso;
     if (!startIso || !endIso || startIso > endIso) return;
@@ -1229,10 +1232,14 @@ export default function App() {
     bowlWindow.startIso,
     bowlWindow.endIso,
     calendarOrigin,
+    isOnboarded,
+    onboardingStep,
   ]);
 
   useEffect(() => {
     if (!session || session?.isGuest) return;
+    // Defer friction audit parsing during initial onboarding
+    if (!isOnboarded && onboardingStep < 3) return;
     let cancelled = false;
     void fetchFrictionReasonsFromTable(session.id).then((rows) => {
       if (cancelled || rows.length === 0) return;
@@ -1243,7 +1250,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [session?.id, session?.isGuest]);
+  }, [session?.id, session?.isGuest, isOnboarded, onboardingStep]);
 
   const selectedDayCompletedCount = activeHabits.filter(
     (h) => Boolean(h.days?.[currentDayIndex])
@@ -2283,7 +2290,10 @@ export default function App() {
   if (!isOnboarded) {
     return (
       <Suspense fallback={<TabLoadingFallback />}>
-        <OnboardingView onComplete={handleOnboardingComplete} />
+        <OnboardingView
+          onComplete={handleOnboardingComplete}
+          onStepChange={setOnboardingStep}
+        />
       </Suspense>
     );
   }

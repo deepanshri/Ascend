@@ -127,6 +127,9 @@ html, body, #root {
 .tab-pane {
   contain: layout style paint;
   -webkit-overflow-scrolling: touch;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
 }
 
 .tab-pane-active {
@@ -145,6 +148,34 @@ html, body, #root {
   /* Skip layout/paint for the hidden Home tree while on another tab. */
   content-visibility: hidden;
   contain: strict;
+  contain-intrinsic-size: 100vw 100vh;
+}
+
+/* Hardware-accelerated onboarding & tutorial slide container */
+.onboarding-slide-container {
+  contain: layout style paint;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+}
+
+.onboarding-slide-track {
+  display: flex;
+  width: 300%;
+  height: 100%;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.onboarding-slide {
+  width: 33.333333%;
+  flex-shrink: 0;
+  contain: layout style paint;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
 }
 
 #floating-bottom-nav {
