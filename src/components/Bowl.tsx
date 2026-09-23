@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { ContactShadows, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -85,19 +85,19 @@ function BowlModel({ isDark = false }: { isDark?: boolean }) {
           mesh.geometry.userData.normalized = true;
         }
 
-        // Real transmissive clear glass: FrontSide avoids self-overlapping backfaces of the 2-shell mesh
+        // Real transmissive clear glass with +10% richer presence: FrontSide avoids self-overlapping backfaces of the 2-shell mesh
         mesh.material = new THREE.MeshPhysicalMaterial({
           color: new THREE.Color(isDark ? '#e0f2fe' : '#ffffff'),
           transparent: true,
-          opacity: 0.26,
-          transmission: 0.65,
+          opacity: 0.36,
+          transmission: 0.58,
           roughness: 0.04,
           metalness: 0.0,
           ior: 1.5,
           reflectivity: 1.0,
           clearcoat: 1.0,
           clearcoatRoughness: 0.06,
-          thickness: 0.3,
+          thickness: 0.35,
           depthWrite: false, // Prevents front glass from cutting off inner marbles
           side: THREE.FrontSide,
         });
@@ -312,11 +312,161 @@ interface MarbleScatterProps {
   completedCount: number;
   pieces?: AccumulationPiece[];
   deferredPieceIds?: ReadonlySet<string>;
+  settlePieceIds?: ReadonlySet<string>;
   isDark: boolean;
 }
 
-/** Physically plausible 3D bottom-up settling marble scattering with contact shadows */
-function MarbleScatter({ completedCount, pieces, deferredPieceIds, isDark }: MarbleScatterProps) {
+interface RigidMarbleProps {
+  id: string | number;
+  targetPos: PlacedPosition;
+  rotation: [number, number, number];
+  color: string;
+  isSettling: boolean;
+  shadowTexture: THREE.CanvasTexture;
+  isFloorContact: boolean;
+  shadowY: number;
+}
+
+function RigidMarble({
+  targetPos,
+  rotation,
+  color,
+  isSettling,
+  shadowTexture,
+  isFloorContact,
+  shadowY,
+}: RigidMarbleProps) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const shadowRef = useRef<THREE.Mesh>(null);
+
+  // Physics state for physical drop and settling
+  const physicsRef = useRef<{
+    active: boolean;
+    x: number;
+    y: number;
+    z: number;
+    vy: number;
+  }>({
+    active: false,
+    x: targetPos.x,
+    y: targetPos.y,
+    z: targetPos.z,
+    vy: 0,
+  });
+
+  useEffect(() => {
+    if (isSettling) {
+      physicsRef.current = {
+        active: true,
+        x: targetPos.x * 0.35,
+        y: 0.72, // Top rim aperture of 3D bowl
+        z: targetPos.z * 0.35,
+        vy: -2.8, // Initial downward velocity vector matching flight speed
+      };
+      if (meshRef.current) {
+        meshRef.current.position.set(
+          physicsRef.current.x,
+          physicsRef.current.y,
+          physicsRef.current.z
+        );
+      }
+    }
+  }, [isSettling, targetPos.x, targetPos.y, targetPos.z]);
+
+  useFrame((_, delta) => {
+    const p = physicsRef.current;
+    if (!p.active) {
+      if (meshRef.current) {
+        meshRef.current.position.set(targetPos.x, targetPos.y, targetPos.z);
+      }
+      return;
+    }
+
+    const dt = Math.min(delta, 0.033);
+    // Gravity acceleration inside bowl
+    p.vy -= 14.0 * dt;
+    p.y += p.vy * dt;
+    // Lateral convergence into resting pocket
+    p.x += (targetPos.x - p.x) * Math.min(1, dt * 5.0);
+    p.z += (targetPos.z - p.z) * Math.min(1, dt * 5.0);
+
+    if (meshRef.current) {
+      meshRef.current.position.set(p.x, p.y, p.z);
+      meshRef.current.rotation.x += dt * (Math.abs(p.vy) * 2.0 + 1.2);
+      meshRef.current.rotation.y += dt * 2.5;
+    }
+
+    // Floor / nested marble collision with damped restitution bounce
+    if (p.y <= targetPos.y) {
+      p.y = targetPos.y;
+      p.vy = -p.vy * 0.34;
+      if (Math.abs(p.vy) < 0.18) {
+        p.vy = 0;
+        p.active = false;
+        p.x = targetPos.x;
+        p.y = targetPos.y;
+        p.z = targetPos.z;
+        if (meshRef.current) {
+          meshRef.current.position.set(targetPos.x, targetPos.y, targetPos.z);
+        }
+      }
+    }
+
+    // Contact shadow opacity tracks floor proximity
+    if (shadowRef.current) {
+      const dist = Math.max(0, p.y - targetPos.y);
+      const shadowMat = shadowRef.current.material as THREE.MeshBasicMaterial;
+      if (shadowMat) {
+        shadowMat.opacity = Math.max(0, 0.7 - dist * 1.5);
+      }
+    }
+  });
+
+  return (
+    <>
+      {isFloorContact && (
+        <mesh
+          ref={shadowRef}
+          position={[targetPos.x, shadowY, targetPos.z]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          renderOrder={0}
+        >
+          <planeGeometry args={[SPHERE_RADIUS * 1.6, SPHERE_RADIUS * 1.6]} />
+          <meshBasicMaterial
+            map={shadowTexture}
+            transparent
+            opacity={0.7}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+
+      <mesh
+        ref={meshRef}
+        position={[targetPos.x, targetPos.y, targetPos.z]}
+        rotation={rotation}
+        castShadow
+        receiveShadow
+      >
+        <sphereGeometry args={[SPHERE_RADIUS, 24, 24]} />
+        <meshStandardMaterial
+          color={color}
+          roughness={0.18}
+          metalness={0.12}
+        />
+      </mesh>
+    </>
+  );
+}
+
+/** Physically plausible 3D bottom-up settling marble scattering with contact shadows & real drop handoff */
+function MarbleScatter({
+  completedCount,
+  pieces,
+  deferredPieceIds,
+  settlePieceIds,
+  isDark,
+}: MarbleScatterProps) {
   const visiblePieces = useMemo(() => {
     if (!pieces) return null;
     if (!deferredPieceIds || deferredPieceIds.size === 0) return pieces;
@@ -347,10 +497,11 @@ function MarbleScatter({ completedCount, pieces, deferredPieceIds, isDark }: Mar
       // Check if this piece is resting on or close to the bowl floor
       const floorY = getBowlFloorY(Math.hypot(pos.x, pos.z));
       const isFloorContact = Math.abs(pos.y - floorY) < 0.02;
+      const isSettling = Boolean(piece?.id && settlePieceIds?.has(piece.id));
 
       return {
         id: piece?.id || i,
-        position: [pos.x, pos.y, pos.z] as [number, number, number],
+        pos,
         rotation: [
           Math.abs(hashUnit(seed * 13 + i)) * Math.PI,
           Math.abs(hashUnit(seed * 19 + i)) * Math.PI,
@@ -358,50 +509,26 @@ function MarbleScatter({ completedCount, pieces, deferredPieceIds, isDark }: Mar
         ] as [number, number, number],
         color,
         isFloorContact,
+        isSettling,
         shadowY: floorY - SPHERE_RADIUS + 0.005,
       };
     });
-  }, [count, visiblePieces, positions, isDark]);
+  }, [count, visiblePieces, positions, isDark, settlePieceIds]);
 
   return (
     <group renderOrder={1}>
-      {/* Contact shadow darkening discs under marbles touching the bowl floor */}
-      {marbles.map(
-        (m) =>
-          m.isFloorContact && (
-            <mesh
-              key={`shadow-${m.id}`}
-              position={[m.position[0], m.shadowY, m.position[2]]}
-              rotation={[-Math.PI / 2, 0, 0]}
-              renderOrder={0}
-            >
-              <planeGeometry args={[SPHERE_RADIUS * 1.6, SPHERE_RADIUS * 1.6]} />
-              <meshBasicMaterial
-                map={shadowTexture}
-                transparent
-                opacity={0.7}
-                depthWrite={false}
-              />
-            </mesh>
-          )
-      )}
-
-      {/* Glossy rigid spheres */}
       {marbles.map((m) => (
-        <mesh
+        <RigidMarble
           key={m.id}
-          position={m.position}
+          id={m.id}
+          targetPos={m.pos}
           rotation={m.rotation}
-          castShadow
-          receiveShadow
-        >
-          <sphereGeometry args={[SPHERE_RADIUS, 24, 24]} />
-          <meshStandardMaterial
-            color={m.color}
-            roughness={0.18}
-            metalness={0.12}
-          />
-        </mesh>
+          color={m.color}
+          isSettling={m.isSettling}
+          shadowTexture={shadowTexture}
+          isFloorContact={m.isFloorContact}
+          shadowY={m.shadowY}
+        />
       ))}
     </group>
   );
@@ -411,6 +538,7 @@ interface BowlCanvasProps {
   completedCount: number;
   pieces?: AccumulationPiece[];
   deferredPieceIds?: ReadonlySet<string>;
+  settlePieceIds?: ReadonlySet<string>;
   isDark: boolean;
 }
 
@@ -418,6 +546,7 @@ const BowlCanvasInner: React.FC<BowlCanvasProps> = ({
   completedCount,
   pieces,
   deferredPieceIds,
+  settlePieceIds,
   isDark,
 }) => {
   return (
@@ -457,6 +586,7 @@ const BowlCanvasInner: React.FC<BowlCanvasProps> = ({
           completedCount={completedCount}
           pieces={pieces}
           deferredPieceIds={deferredPieceIds}
+          settlePieceIds={settlePieceIds}
           isDark={isDark}
         />
         <BowlModel isDark={isDark} />
@@ -471,6 +601,7 @@ const BowlCanvas = React.memo(BowlCanvasInner, (prev, next) => {
     prev.completedCount === next.completedCount &&
     prev.pieces === next.pieces &&
     prev.deferredPieceIds === next.deferredPieceIds &&
+    prev.settlePieceIds === next.settlePieceIds &&
     prev.isDark === next.isDark
   );
 });
@@ -488,7 +619,7 @@ function BowlInner({
   celebrating = false,
   onCelebrationDone,
   deferredPieceIds,
-  settlePieceIds: _settlePieceIds,
+  settlePieceIds,
 }: BowlProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -563,6 +694,7 @@ function BowlInner({
           completedCount={resolvedCount}
           pieces={pieces}
           deferredPieceIds={deferredPieceIds}
+          settlePieceIds={settlePieceIds}
           isDark={darkMode}
         />
 

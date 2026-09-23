@@ -1884,20 +1884,17 @@ export default function App() {
   const settlePieceIdSet = useMemo(() => new Set(settlePieceIds), [settlePieceIds]);
 
   const handlePieceFlightComplete = useCallback((flightId: string, pieceId: string) => {
-    // Delay making the piece visible in the bowl by 80ms so the flying marble
-    // fully fades out before the resting piece fades in — prevents the double-piece flash.
     void pulseCompletionHaptic('fallback');
-    window.setTimeout(() => {
-      setPieceFlights((prev) => prev.filter((flight) => flight.id !== flightId));
-      setSettlePieceIds((prev) => (prev.includes(pieceId) ? prev : [...prev, pieceId]));
-      const existing = settleTimersRef.current.get(pieceId);
-      if (existing) window.clearTimeout(existing);
-      const timer = window.setTimeout(() => {
-        settleTimersRef.current.delete(pieceId);
-        setSettlePieceIds((prev) => prev.filter((id) => id !== pieceId));
-      }, 600);
-      settleTimersRef.current.set(pieceId, timer);
-    }, 80);
+    // Synchronous handoff: instant single-frame handoff into 3D WebGL physics at rim aperture
+    setPieceFlights((prev) => prev.filter((flight) => flight.id !== flightId));
+    setSettlePieceIds((prev) => (prev.includes(pieceId) ? prev : [...prev, pieceId]));
+    const existing = settleTimersRef.current.get(pieceId);
+    if (existing) window.clearTimeout(existing);
+    const timer = window.setTimeout(() => {
+      settleTimersRef.current.delete(pieceId);
+      setSettlePieceIds((prev) => prev.filter((id) => id !== pieceId));
+    }, 800);
+    settleTimersRef.current.set(pieceId, timer);
   }, []);
 
   const handleCompletionSoundChange = useCallback((enabled: boolean) => {

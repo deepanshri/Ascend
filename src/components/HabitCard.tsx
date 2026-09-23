@@ -298,8 +298,10 @@ function HabitCardInner({
     }, LONG_PRESS_MS);
   }, [clearLongPressTimer, endSwipeSession, x]);
 
+  const lastPointerCoordRef = useRef<{ x: number; y: number } | null>(null);
+
   const finishSwipe = useCallback(
-    (endOffset?: number, endVelocityX = 0) => {
+    (endOffset?: number, endVelocityX = 0, commitPoint?: { x: number; y: number }) => {
       const springHome = () => {
         dragStartXRef.current = null;
         try {
@@ -329,6 +331,11 @@ function HabitCardInner({
         axis !== 'vertical' &&
         (offset < -SWIPE_COMMIT_PX || (velocityX < -SWIPE_COMMIT_VELOCITY && offset < -20));
 
+      const originCoord = commitPoint ?? {
+        x: startXRef.current + offset,
+        y: startYRef.current,
+      };
+
       if (commitsRight) {
         if (isTodayDoneRef.current) {
           // Intentional "Reset to normal" — undo today's ledger row (momentum votes stay permanent outside grace).
@@ -336,20 +343,12 @@ function HabitCardInner({
         } else if (!isScheduledTodayRef.current) {
           // Off day: settle silently — no complete / momentum.
         } else if (isFallbackActiveRef.current) {
-          const originCoord = {
-            x: startXRef.current + offset,
-            y: startYRef.current,
-          };
           pendingAction = () => {
             setCelebration('fallback');
             void triggerCompletionHaptic();
             scheduleComplete(true, originCoord);
           };
         } else {
-          const originCoord = {
-            x: startXRef.current + offset,
-            y: startYRef.current,
-          };
           pendingAction = () => {
             setCelebration('full');
             setFullPopSeq((seq) => seq + 1);
@@ -398,7 +397,10 @@ function HabitCardInner({
   }, [beginSwipeSession]);
 
   const handleDrag = useCallback(
-    (_e: unknown, info: { offset: { x: number; y: number } }) => {
+    (_e: unknown, info: { offset: { x: number; y: number }; point?: { x: number; y: number } }) => {
+      if (info.point) {
+        lastPointerCoordRef.current = { x: info.point.x, y: info.point.y };
+      }
       if (Math.hypot(info.offset.x, info.offset.y) > 8) {
         clearLongPressTimer();
         hasMovedRef.current = true;
@@ -409,11 +411,12 @@ function HabitCardInner({
   );
 
   const handleDragEnd = useCallback(
-    (_e: unknown, info: { offset: { x: number }; velocity?: { x: number } }) => {
+    (_e: unknown, info: { offset: { x: number }; velocity?: { x: number }; point?: { x: number; y: number } }) => {
       isDraggingRef.current = true;
       x.set(info.offset.x);
       gestureAxisRef.current = 'horizontal';
-      finishSwipe(info.offset.x, info.velocity?.x || 0);
+      const commitPoint = info.point ?? lastPointerCoordRef.current ?? undefined;
+      finishSwipe(info.offset.x, info.velocity?.x || 0, commitPoint);
     },
     [finishSwipe, x]
   );
@@ -424,6 +427,7 @@ function HabitCardInner({
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (e.pointerType === 'mouse' && Date.now() - lastTouchAtRef.current < GHOST_MOUSE_MS) return;
       if (e.pointerType === 'touch') lastTouchAtRef.current = Date.now();
+      lastPointerCoordRef.current = { x: e.clientX, y: e.clientY };
       startXRef.current = e.clientX;
       startYRef.current = e.clientY;
       gestureAxisRef.current = 'none';
