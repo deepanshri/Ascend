@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
-import { mergeQuoteBank } from '../data/quotes';
+import { mergeQuoteBank, resolveRotatingQuoteIndex } from '../data/quotes';
 import {
   type Quote,
   INTEREST_QUOTES,
   DEFAULT_HABIT_QUOTES,
-  filterQuotesByInterests,
   matchesCategory,
   iconForCategory,
   getStoredUserInterests,
@@ -82,36 +81,61 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
   selectedInterests,
   isGuest = false,
 }) => {
+  // Listen for local storage changes if selectedInterests prop is not explicitly passed
+  const [storedInterests, setStoredInterests] = useState<string[]>(() => getStoredUserInterests());
+
+  useEffect(() => {
+    const handleStorage = () => {
+      setStoredInterests(getStoredUserInterests());
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
   // Dynamically resolve active interests: from prop if passed, or from localStorage settings
   const activeInterests = useMemo(() => {
     if (Array.isArray(selectedInterests)) {
       return selectedInterests;
     }
-    return getStoredUserInterests();
-  }, [selectedInterests]);
+    return storedInterests;
+  }, [selectedInterests, storedInterests]);
 
-  const [quotes, setQuotes] = useState<Quote[]>(() =>
-    mergeQuoteBank(isGuest ? DEFAULT_HABIT_QUOTES : filterQuotesByInterests(INTEREST_QUOTES, activeInterests))
-  );
-  const [quoteIndex, setQuoteIndex] = useState(0);
+  const [remoteQuotes, setRemoteQuotes] = useState<Quote[]>([]);
 
+  // Dynamically filter active pool. Strictly enforce that unchecked interests never display quotes.
+  // When all interests are unchecked, fall back smoothly to DEFAULT_HABIT_QUOTES.
+  const availableQuotes = useMemo(() => {
+    if (isGuest || activeInterests.length === 0) {
+      return DEFAULT_HABIT_QUOTES;
+    }
+    const baseBank = remoteQuotes.length > 0 ? remoteQuotes : INTEREST_QUOTES;
+    const filtered = baseBank.filter((q) => matchesCategory(q.category, activeInterests));
+    return filtered.length > 0 ? filtered : DEFAULT_HABIT_QUOTES;
+  }, [remoteQuotes, activeInterests, isGuest]);
+
+  // Interleave with App Feature Tips while preserving strict interest category bounds
   const pool = useMemo(() => {
-    const merged = mergeQuoteBank(Array.isArray(quotes) ? quotes : []);
+    const merged = mergeQuoteBank(availableQuotes);
     return merged.length > 0 ? merged : mergeQuoteBank(DEFAULT_HABIT_QUOTES);
-  }, [quotes]);
+  }, [availableQuotes]);
+
   const poolLength = Math.max(pool.length, 1);
 
-  // Immediately reset index to 0 whenever user toggles interests so active quotes update instantly
+  // Session / daily persistent quote index
+  const [quoteIndex, setQuoteIndex] = useState(() => resolveRotatingQuoteIndex(poolLength));
+
+  // Reset index to 0 whenever user toggles interests so active quotes update instantly
   useEffect(() => {
     setQuoteIndex(0);
   }, [activeInterests]);
 
+  // Background fetch from Supabase if configured and active
   useEffect(() => {
     let cancelled = false;
 
     const loadQuotes = async () => {
       if (isGuest || activeInterests.length === 0) {
-        if (!cancelled) setQuotes(DEFAULT_HABIT_QUOTES);
+        if (!cancelled) setRemoteQuotes([]);
         return;
       }
 
@@ -119,14 +143,10 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
       if (cancelled) return;
 
       if (remoteMatched.length > 0) {
-        setQuotes(remoteMatched);
-        return;
+        setRemoteQuotes(remoteMatched);
       }
-
-      setQuotes(filterQuotesByInterests(INTEREST_QUOTES, activeInterests));
     };
 
-    setQuotes(isGuest ? DEFAULT_HABIT_QUOTES : filterQuotesByInterests(INTEREST_QUOTES, activeInterests));
     void loadQuotes();
 
     return () => {
@@ -134,6 +154,7 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
     };
   }, [activeInterests, isGuest]);
 
+  // Periodic rotation (every 5-6 hours)
   useEffect(() => {
     if (poolLength < 2) return;
     const id = window.setInterval(() => {
@@ -147,7 +168,12 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
     setQuoteIndex((prev) => (prev + 1) % poolLength);
   };
 
-  const currentQuote = pool[quoteIndex % poolLength] || DEFAULT_HABIT_QUOTES[0];
+  // Safe index calculation guaranteed to prevent any array index or out-of-bounds error
+  const safeIndex =
+    pool.length > 0
+      ? ((quoteIndex % poolLength) + poolLength) % poolLength
+      : 0;
+  const currentQuote = pool[safeIndex] || DEFAULT_HABIT_QUOTES[0];
   const isTip = currentQuote.kind === 'tip' || currentQuote.category === 'Tip';
 
   return (

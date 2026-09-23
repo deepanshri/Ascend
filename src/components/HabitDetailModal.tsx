@@ -265,9 +265,19 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-[12.5px]"
             />
             {targetTime && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                Target Time Reached alert scheduled for {formatTargetTimeDisplay(targetTime)} • auto-silences upon completion
-              </p>
+              <div className="mt-1.5 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-[11px] text-slate-600 dark:text-slate-300">
+                <div className="flex items-center space-x-1 font-semibold text-emerald-800 dark:text-blue-300">
+                  <span>Target Time Reached</span>
+                  <span>•</span>
+                  <span>{formatTargetTimeDisplay(targetTime)}</span>
+                </div>
+                <p className="text-[11px] font-medium text-slate-700 dark:text-slate-200 mt-0.5">
+                  {name.trim() || 'Habit'} — time to execute.
+                </p>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                  Auto-silences upon completion today
+                </p>
+              </div>
             )}
           </div>
 

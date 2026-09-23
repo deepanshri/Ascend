@@ -27,24 +27,42 @@ export function reminderExactCopy(taskTitle: string): { title: string; body: str
   };
 }
 
-/** Target time habit reminder */
-export function habitTargetCopy(habit: Habit): { title: string; body: string } {
-  const name = habit.name?.trim() || 'Daily Habit';
-  const title = `Target Time Reached • ${name}`;
-  const body = habit.purposeAnchor?.trim()
-    ? `${name} — "${habit.purposeAnchor.trim()}" (Time to execute)`
-    : `${name} — time to execute. Keep your momentum going!`;
-  return { title, body };
+/**
+ * Target time habit reminder with natural, action-oriented copy.
+ * Directly replaces awkward template strings with clean phrasing:
+ * Title: "Target Time Reached"
+ * Body: "${habit.title} — time to execute."
+ * Works seamlessly with any habit title structure (e.g. "Wake at 5", "Soak something", "Atomic habits").
+ */
+export function habitTargetCopy(
+  habit: Pick<Habit, 'name'> & Partial<Pick<Habit, 'purposeAnchor'>> & { title?: string }
+): { title: string; body: string } {
+  const habitTitle = (habit.title || habit.name || 'Daily Habit').trim();
+  return {
+    title: 'Target Time Reached',
+    body: `${habitTitle} — time to execute.`,
+  };
 }
 
 /** Clean direct phrasing helper for custom habit targets */
-export function formatHabitTargetCopy(habitName: string, purposeAnchor?: string): { title: string; body: string } {
-  const name = habitName.trim() || 'Daily Habit';
-  const title = `Target Time Reached • ${name}`;
-  const body = purposeAnchor?.trim()
-    ? `${name} — "${purposeAnchor.trim()}" (Time to execute)`
-    : `${name} — time to execute.`;
-  return { title, body };
+export function formatHabitTargetCopy(
+  habitName: string,
+  _purposeAnchor?: string
+): { title: string; body: string } {
+  const habitTitle = habitName.trim() || 'Daily Habit';
+  return {
+    title: 'Target Time Reached',
+    body: `${habitTitle} — time to execute.`,
+  };
+}
+
+/** Alternative headline format with bullet divider: Target Time Reached • Wake at 5 */
+export function formatActionHeadline(habitTitle: string): { title: string; body: string } {
+  const title = habitTitle.trim() || 'Daily Habit';
+  return {
+    title: `Target Time Reached • ${title}`,
+    body: `${title} — time to execute.`,
+  };
 }
 
 /** Morning psychology notification */

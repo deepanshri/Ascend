@@ -139,6 +139,7 @@ import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
 import { HabitCard } from './components/HabitCard';
 import { QuoteCard } from './components/QuoteCard';
+import { normalizeCategoryKey } from './utils/quotes';
 import { FriendsFeed } from './components/FriendsFeed';
 import { ScreenHeader, SCREEN_INSET_CLASS, HEADER_ICON_BTN_CLASS } from './components/ScreenHeader';
 import { TabLoadingFallback } from './components/TabLoadingFallback';
@@ -321,7 +322,15 @@ export default function App() {
 
   const handleToggleInterest = (interest: string) => {
     setSelectedInterests((prev) => {
-      const next = prev.includes(interest) ? prev.filter((t) => t !== interest) : [...prev, interest];
+      const targetNorm = normalizeCategoryKey(interest);
+      const isAlreadySelected = prev.some(
+        (t) => normalizeCategoryKey(t) === targetNorm || t.toLowerCase() === interest.toLowerCase()
+      );
+      const next = isAlreadySelected
+        ? prev.filter(
+            (t) => normalizeCategoryKey(t) !== targetNorm && t.toLowerCase() !== interest.toLowerCase()
+          )
+        : [...prev, interest];
       if (session && !session?.isGuest) {
         void persistUserProfile(session, { interests: next }).catch(() => {});
       }

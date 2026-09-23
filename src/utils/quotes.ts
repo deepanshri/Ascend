@@ -15,10 +15,10 @@ export interface Quote {
   kind?: QuoteKind;
 }
 
-export const INTEREST_QUOTES: Quote[] = [
-  // ==========================================
-  // 1. Fitness & Gym (12 quotes)
-  // ==========================================
+// ==========================================
+// 1. Fitness & Gym (12 quotes)
+// ==========================================
+export const FITNESS_QUOTES: Quote[] = [
   {
     text: 'Discipline is doing what you hate to do, but doing it like you love it.',
     author: 'Mike Tyson',
@@ -103,10 +103,12 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Fitness/Gym',
     icon: '💪',
   },
+];
 
-  // ==========================================
-  // 2. Coding & Tech (12 quotes)
-  // ==========================================
+// ==========================================
+// 2. Coding & Tech (12 quotes)
+// ==========================================
+export const CODING_QUOTES: Quote[] = [
   {
     text: 'First, solve the problem. Then, write the code.',
     author: 'John Johnson',
@@ -191,10 +193,12 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Coding/Tech',
     icon: '💻',
   },
+];
 
-  // ==========================================
-  // 3. Focus & Mindset (12 quotes)
-  // ==========================================
+// ==========================================
+// 3. Focus & Mindset (12 quotes)
+// ==========================================
+export const FOCUS_QUOTES: Quote[] = [
   {
     text: 'You have power over your mind - not outside events. Realize this, and you will find strength.',
     author: 'Marcus Aurelius',
@@ -279,10 +283,12 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Focus/Mindset',
     icon: '🧠',
   },
+];
 
-  // ==========================================
-  // 4. Motion Design (12 quotes)
-  // ==========================================
+// ==========================================
+// 4. Motion Design (12 quotes)
+// ==========================================
+export const MOTION_DESIGN_QUOTES: Quote[] = [
   {
     text: 'Good design is as little design as possible.',
     author: 'Dieter Rams',
@@ -367,10 +373,12 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Motion Design',
     icon: '✨',
   },
+];
 
-  // ==========================================
-  // 5. Language Learning (12 quotes)
-  // ==========================================
+// ==========================================
+// 5. Language Learning (12 quotes)
+// ==========================================
+export const LANGUAGE_LEARNING_QUOTES: Quote[] = [
   {
     text: 'If you talk to a man in a language he understands, that goes to his head. If you talk to him in his language, that goes to his heart.',
     author: 'Nelson Mandela',
@@ -455,10 +463,12 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Language Learning',
     icon: '🗣️',
   },
+];
 
-  // ==========================================
-  // 6. Running (12 quotes)
-  // ==========================================
+// ==========================================
+// 6. Running (12 quotes)
+// ==========================================
+export const RUNNING_QUOTES: Quote[] = [
   {
     text: 'Pain is inevitable. Suffering is optional.',
     author: 'Haruki Murakami',
@@ -543,10 +553,12 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Running',
     icon: '🏃',
   },
+];
 
-  // ==========================================
-  // 7. Books & Reading (12 quotes)
-  // ==========================================
+// ==========================================
+// 7. Books & Reading (12 quotes)
+// ==========================================
+export const BOOKS_QUOTES: Quote[] = [
   {
     text: 'You do not rise to the level of your goals. You fall to the level of your systems.',
     author: 'James Clear',
@@ -631,10 +643,12 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Books',
     icon: '📚',
   },
+];
 
-  // ==========================================
-  // 8. Movies & Cinema (12 quotes)
-  // ==========================================
+// ==========================================
+// 8. Movies & Cinema (12 quotes)
+// ==========================================
+export const MOVIES_QUOTES: Quote[] = [
   {
     text: 'It’s not about how hard you hit. It’s about how hard you can get hit and keep moving forward.',
     author: 'Rocky Balboa',
@@ -719,10 +733,12 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Movies',
     icon: '🎬',
   },
+];
 
-  // ==========================================
-  // 9. Anime & Manga (12 quotes)
-  // ==========================================
+// ==========================================
+// 9. Anime & Manga (12 quotes)
+// ==========================================
+export const ANIME_QUOTES: Quote[] = [
   {
     text: 'If you don’t take risks, you can’t create a future.',
     author: 'Monkey D. Luffy',
@@ -807,10 +823,12 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Anime',
     icon: '⚔️',
   },
+];
 
-  // ==========================================
-  // 10. Music & Sound (12 quotes)
-  // ==========================================
+// ==========================================
+// 10. Music & Sound (12 quotes)
+// ==========================================
+export const MUSIC_QUOTES: Quote[] = [
   {
     text: 'Where words fail, music speaks.',
     author: 'Hans Christian Andersen',
@@ -895,10 +913,12 @@ export const INTEREST_QUOTES: Quote[] = [
     category: 'Music',
     icon: '🎵',
   },
+];
 
-  // ==========================================
-  // 11. Gaming & Mastery (12 quotes)
-  // ==========================================
+// ==========================================
+// 11. Gaming & Mastery (12 quotes)
+// ==========================================
+export const GAMING_QUOTES: Quote[] = [
   {
     text: 'Failure is just another checkpoint on the way to mastery.',
     author: 'Gamer Mindset',
@@ -985,6 +1005,23 @@ export const INTEREST_QUOTES: Quote[] = [
   },
 ];
 
+// ==========================================
+// All Curated Interest Quotes Aggregation
+// ==========================================
+export const INTEREST_QUOTES: Quote[] = [
+  ...FITNESS_QUOTES,
+  ...CODING_QUOTES,
+  ...FOCUS_QUOTES,
+  ...MOTION_DESIGN_QUOTES,
+  ...LANGUAGE_LEARNING_QUOTES,
+  ...RUNNING_QUOTES,
+  ...BOOKS_QUOTES,
+  ...MOVIES_QUOTES,
+  ...ANIME_QUOTES,
+  ...MUSIC_QUOTES,
+  ...GAMING_QUOTES,
+];
+
 /**
  * Universal default quotes for discipline and consistency.
  * Guaranteed fallback when user unchecks all interest categories.
@@ -1060,6 +1097,20 @@ export const DEFAULT_HABIT_QUOTES: Quote[] = [
     category: 'Productivity',
     icon: '⚡',
   },
+  {
+    text: 'Luck is what happens when preparation meets opportunity.',
+    author: 'Seneca',
+    source: 'Stoic Letters',
+    category: 'Productivity',
+    icon: '⚡',
+  },
+  {
+    text: 'You have to build calluses on your brain just like how you build calluses on your hands.',
+    author: 'David Goggins',
+    source: 'Can’t Hurt Me',
+    category: 'Productivity',
+    icon: '⚡',
+  },
 ];
 
 export const CATEGORY_ICONS: Record<string, string> = {
@@ -1089,6 +1140,7 @@ export function iconForCategory(category: string): string {
  * Normalizes category keys across aliases (e.g. 'Fitness/Gym' <-> 'Fitness', 'Coding/Tech' <-> 'Coding')
  */
 export function normalizeCategoryKey(cat: string): string {
+  if (!cat || typeof cat !== 'string') return '';
   const c = cat.trim().toLowerCase();
   if (c.includes('fitness') || c.includes('gym')) return 'fitness';
   if (c.includes('coding') || c.includes('tech') || c.includes('code')) return 'coding';
@@ -1109,9 +1161,11 @@ export function normalizeCategoryKey(cat: string): string {
  * Unchecked topics will return false, guaranteeing they never appear.
  */
 export function matchesCategory(quoteCategory: string, userCategories: string[]): boolean {
-  if (!userCategories || userCategories.length === 0) return false;
+  if (!userCategories || !Array.isArray(userCategories) || userCategories.length === 0) return false;
   const quoteKey = normalizeCategoryKey(quoteCategory);
+  if (!quoteKey) return false;
   return userCategories.some((u) => {
+    if (!u || typeof u !== 'string') return false;
     const userKey = normalizeCategoryKey(u);
     return userKey === quoteKey || u.trim().toLowerCase() === quoteCategory.trim().toLowerCase();
   });
@@ -1139,7 +1193,9 @@ export function getStoredUserInterests(): string[] {
     const raw = localStorage.getItem(USER_INTERESTS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item): item is string => typeof item === 'string');
+      }
     }
   } catch {}
   return [];

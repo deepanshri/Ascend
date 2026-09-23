@@ -29,6 +29,7 @@ import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import { persistUserProfile } from '../lib/profile';
 import { AVATAR_OPTIONS, persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from '../data/avatars';
 import type { ProtectionModeStatus } from '../lib/protection';
+import { normalizeCategoryKey } from '../utils/quotes';
 
 interface PersonalViewProps {
   userSession: UserSession;
@@ -211,9 +212,17 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
     if (onToggleInterest) {
       onToggleInterest(tag);
     } else {
-      setLocalSelectedInterests((prev) =>
-        prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-      );
+      setLocalSelectedInterests((prev) => {
+        const targetNorm = normalizeCategoryKey(tag);
+        const exists = prev.some(
+          (t) => normalizeCategoryKey(t) === targetNorm || t.toLowerCase() === tag.toLowerCase()
+        );
+        return exists
+          ? prev.filter(
+              (t) => normalizeCategoryKey(t) !== targetNorm && t.toLowerCase() !== tag.toLowerCase()
+            )
+          : [...prev, tag];
+      });
     }
   };
 
@@ -382,7 +391,10 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
         <div className="pt-1">
           <div className="flex flex-wrap gap-2">
             {PRESET_INTERESTS.map((tag) => {
-              const isSelected = selectedInterests.includes(tag);
+              const tagNorm = normalizeCategoryKey(tag);
+              const isSelected = selectedInterests.some(
+                (s) => normalizeCategoryKey(s) === tagNorm || s.toLowerCase() === tag.toLowerCase()
+              );
               return (
                 <button
                   key={tag}
