@@ -26,8 +26,6 @@ class WidgetActionReceiver : BroadcastReceiver() {
                     WidgetViews.updateAll(context)
                 }
             }
-            Intent.ACTION_DATE_CHANGED,
-            Intent.ACTION_TIMEZONE_CHANGED,
             WidgetContract.ACTION_REFRESH -> {
                 WidgetViews.updateAll(context)
             }
@@ -35,6 +33,9 @@ class WidgetActionReceiver : BroadcastReceiver() {
     }
 
     private fun openApp(context: Context, route: String) {
+        if (!route.startsWith("ascend://app/")) {
+            return
+        }
         val launch = Intent(context, MainActivity::class.java).apply {
             this.action = Intent.ACTION_VIEW
             data = Uri.parse(route)

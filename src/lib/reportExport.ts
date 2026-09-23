@@ -4,7 +4,12 @@ import { fetchMomentumEventsFromTable } from './momentumEvents';
 import { countIdentityVotes, resolveMomentumEventDate } from '../utils/momentum';
 
 function csvCell(value: unknown): string {
-  const text = value == null ? '' : String(value);
+  let text = value == null ? '' : String(value);
+  // Neutralize CSV formula injection (OWASP):
+  // If the cell begins with =, +, -, @, tab, or carriage return, prefix with a single quote (')
+  if (/^[\s]*[=+\-@\t\r]/.test(text)) {
+    text = `'${text}`;
+  }
   return `"${text.replace(/"/g, '""')}"`;
 }
 

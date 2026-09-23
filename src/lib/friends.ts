@@ -11,7 +11,7 @@ export type FriendStatus = 'pending' | 'accepted';
 export interface ProfileDirectoryHit {
   id: string;
   username: string;
-  email: string;
+  email?: string;
   displayName: string;
 }
 
@@ -225,7 +225,7 @@ export async function searchProfiles(query: string): Promise<ProfileDirectoryHit
       .map((row: { id?: string; username?: string; email?: string; display_name?: string }) => ({
         id: String(row.id || ''),
         username: String(row.username || ''),
-        email: String(row.email || ''),
+        email: row.email ? String(row.email) : undefined,
         displayName: displayNameFromProfile(row),
       }))
       .filter((row: ProfileDirectoryHit) => Boolean(row.id));
@@ -242,12 +242,30 @@ interface ProfileLite {
 async function loadProfileMap(ids: string[]): Promise<Map<string, ProfileLite>> {
   const names = new Map<string, ProfileLite>();
   if (!supabase || ids.length === 0) return names;
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_profiles_lite', {
+      profile_ids: ids,
+    });
+    if (!rpcError && Array.isArray(rpcData)) {
+      rpcData.forEach((row: { id?: string; username?: string; display_name?: string; avatar_url?: string }) => {
+        if (row?.id) {
+          names.set(String(row.id), {
+            name: displayNameFromProfile(row),
+            avatarUrl: resolveAvatarId(typeof row.avatar_url === 'string' ? row.avatar_url : ''),
+          });
+        }
+      });
+      return names;
+    }
+  } catch {
+    // Fall back to direct query if RPC not yet deployed
+  }
   let { data, error } = await supabase
     .from('profiles')
-    .select('id, username, email, display_name, avatar_url')
+    .select('id, username, display_name, avatar_url')
     .in('id', ids);
   if (error && /avatar_url/i.test(error.message)) {
-    const retry = await supabase.from('profiles').select('id, username, email, display_name').in('id', ids);
+    const retry = await supabase.from('profiles').select('id, username, display_name').in('id', ids);
     data = retry.data as typeof data;
     error = retry.error;
   }
@@ -369,6 +387,16 @@ export async function sendFriendRequest(userId: string, friendId: string): Promi
 export async function respondToFriendRequest(edgeId: string, status: 'accepted' | 'declined'): Promise<boolean> {
   if (!supabase) return false;
   try {
+    // 1. Prefer secure RPC which enforces recipient authorization and reciprocal edges atomically
+    const { data: rpcData, error: rpcError } = await supabase.rpc('respond_to_friend_request', {
+      edge_id: edgeId,
+      new_status: status,
+    });
+    if (!rpcError && rpcData && typeof rpcData === 'object' && (rpcData as { ok?: boolean }).ok) {
+      return true;
+    }
+
+    // 2. Fallback to direct table mutation if migration 023 is not yet applied to remote
     if (status === 'declined') {
       const { error } = await supabase.from(FRIENDSHIPS_TABLE).delete().eq('id', edgeId);
       return !error;
@@ -377,6 +405,7 @@ export async function respondToFriendRequest(edgeId: string, status: 'accepted' 
       .from(FRIENDSHIPS_TABLE)
       .update({ status: 'accepted' })
       .eq('id', edgeId)
+      .eq('status', 'pending')
       .select('user_id, friend_id')
       .maybeSingle();
     if (!error && data?.user_id && data?.friend_id) {
@@ -535,6 +564,20 @@ export async function retractAffirmationGlow(fromUserId: string, eventId: string
 async function loadLiveHabitIds(friendIds: string[]): Promise<Set<string>> {
   const ids = new Set<string>();
   if (!supabase || friendIds.length === 0) return ids;
+  try {
+    // Prefer secure RPC returning only active IDs without exposing private habit content
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_friend_active_habit_ids', {
+      friend_ids: friendIds,
+    });
+    if (!rpcError && Array.isArray(rpcData)) {
+      rpcData.forEach((row: { id?: string }) => {
+        if (row?.id) ids.add(String(row.id));
+      });
+      return ids;
+    }
+  } catch {
+    // Fall back to direct query if RPC not yet deployed
+  }
   const { data } = await supabase.from('habits').select('id, user_id').in('user_id', friendIds);
   (data || []).forEach((row) => {
     if (row.id) ids.add(String(row.id));
@@ -732,35 +775,54 @@ export async function fetchFriendIdentityLedger(
   });
 
   try {
-    // Select identity fields only — never `name` / titles / schedules.
-    const [{ data: habitRows }, { data: events }] = await Promise.all([
-      supabase
-        .from('habits')
-        .select('identity_statement, purpose_anchor, is_keystone, archived, is_archived')
-        .eq('user_id', friendId),
-      supabase
-        .from('momentum_events')
-        .select('habit_id, timestamp')
-        .eq('user_id', friendId)
-        .in('event_type', ['full', 'fallback'])
-        .gte('timestamp', `${startIso}T00:00:00`)
-        .lt('timestamp', `${endIso}T23:59:59.999`)
-        .limit(400),
-    ]);
+    // 1. Try secure RPC to get friend's identity statement and active habit count without leaking titles
+    let identityStatement = 'Building consistency, one vote at a time.';
+    let activeHabitCount = 0;
+    let rpcSuccess = false;
 
-    const activeHabits = (habitRows || []).filter(
-      (row) => !row.archived && !row.is_archived
-    );
-    const keystone = activeHabits.find(
-      (row) => row.is_keystone && String(row.identity_statement || '').trim()
-    );
-    const anyStatement = activeHabits.find((row) => String(row.identity_statement || '').trim());
-    const purpose = activeHabits.find((row) => String(row.purpose_anchor || '').trim());
-    const identityStatement =
-      String(keystone?.identity_statement || '').trim() ||
-      String(anyStatement?.identity_statement || '').trim() ||
-      String(purpose?.purpose_anchor || '').trim() ||
-      'Building consistency, one vote at a time.';
+    try {
+      const { data: summaryData, error: summaryError } = await supabase.rpc('get_friend_identity_summary', {
+        p_friend_id: friendId,
+      });
+      if (!summaryError && Array.isArray(summaryData) && summaryData.length > 0) {
+        const summary = summaryData[0] as { identity_statement?: string; active_habit_count?: number };
+        if (summary.identity_statement) identityStatement = summary.identity_statement;
+        if (typeof summary.active_habit_count === 'number') activeHabitCount = summary.active_habit_count;
+        rpcSuccess = true;
+      }
+    } catch {
+      // RPC not yet deployed
+    }
+
+    const { data: events } = await supabase
+      .from('momentum_events')
+      .select('habit_id, timestamp')
+      .eq('user_id', friendId)
+      .in('event_type', ['full', 'fallback'])
+      .gte('timestamp', `${startIso}T00:00:00`)
+      .lt('timestamp', `${endIso}T23:59:59.999`)
+      .limit(400);
+
+    if (!rpcSuccess) {
+      // Fallback path if migration 023 is not yet applied
+      const { data: habitRows } = await supabase
+        .from('habits')
+        .select('identity_statement, is_keystone, archived, is_archived')
+        .eq('user_id', friendId);
+
+      const activeHabits = (habitRows || []).filter(
+        (row) => !row.archived && !row.is_archived
+      );
+      activeHabitCount = activeHabits.length;
+      const keystone = activeHabits.find(
+        (row) => row.is_keystone && String(row.identity_statement || '').trim()
+      );
+      const anyStatement = activeHabits.find((row) => String(row.identity_statement || '').trim());
+      identityStatement =
+        String(keystone?.identity_statement || '').trim() ||
+        String(anyStatement?.identity_statement || '').trim() ||
+        'Building consistency, one vote at a time.';
+    }
 
     const completedPairs = new Set<string>();
     (events || []).forEach((row) => {
@@ -768,7 +830,7 @@ export async function fetchFriendIdentityLedger(
       const iso = String(row.timestamp || '').slice(0, 10);
       if (habitId && iso) completedPairs.add(`${habitId}|${iso}`);
     });
-    const possible = Math.max(1, activeHabits.length * days);
+    const possible = Math.max(1, activeHabitCount * days);
     const completionRatio = Math.min(
       100,
       Math.round((completedPairs.size / possible) * 100)
