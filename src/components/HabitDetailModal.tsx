@@ -266,7 +266,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
             />
             {targetTime && (
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                Daily reminder scheduled for {formatTargetTimeDisplay(targetTime)}
+                Target Time Reached alert scheduled for {formatTargetTimeDisplay(targetTime)} • auto-silences upon completion
               </p>
             )}
           </div>
