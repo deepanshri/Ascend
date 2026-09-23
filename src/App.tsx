@@ -2014,6 +2014,7 @@ export default function App() {
   const handleCloseLedgerModal = useCallback(() => setIsLedgerModalOpen(false), []);
   const handleOpenPasswordModal = useCallback(() => setIsPasswordModalOpen(true), []);
   const handleClosePasswordModal = useCallback(() => setIsPasswordModalOpen(false), []);
+  const handleOpenExamShieldModal = useCallback(() => setIsExamShieldModalOpen(true), []);
 
 
   useEffect(() => {
@@ -2367,7 +2368,7 @@ export default function App() {
               todayIndex={todayDayIndex}
               renderHabit={renderHabit}
               examShieldActive={examShieldActive}
-              onOpenExamShield={() => setIsExamShieldModalOpen(true)}
+              onOpenExamShield={handleOpenExamShieldModal}
             >
               {quoteCardElement}
             </HomeView>

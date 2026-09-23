@@ -161,5 +161,26 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   );
 };
 
-export const HomeView = React.memo(HomeViewInner);
+function homeViewPropsAreEqual(prev: HomeViewProps, next: HomeViewProps): boolean {
+  return (
+    prev.isDark === next.isDark &&
+    prev.momentumScore === next.momentumScore &&
+    prev.momentumPulse === next.momentumPulse &&
+    prev.celebrating === next.celebrating &&
+    prev.todayIndex === next.todayIndex &&
+    prev.examShieldActive === next.examShieldActive &&
+    prev.pieces === next.pieces &&
+    prev.bowlFill === next.bowlFill &&
+    prev.habits === next.habits &&
+    prev.deferredPieceIds === next.deferredPieceIds &&
+    prev.settlePieceIds === next.settlePieceIds &&
+    prev.onCycleDaysChange === next.onCycleDaysChange &&
+    prev.onCelebrationDone === next.onCelebrationDone &&
+    prev.onOpenExamShield === next.onOpenExamShield &&
+    prev.renderHabit === next.renderHabit &&
+    prev.children === next.children
+  );
+}
+
+export const HomeView = React.memo(HomeViewInner, homeViewPropsAreEqual);
 

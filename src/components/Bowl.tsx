@@ -407,6 +407,74 @@ function MarbleScatter({ completedCount, pieces, deferredPieceIds, isDark }: Mar
   );
 }
 
+interface BowlCanvasProps {
+  completedCount: number;
+  pieces?: AccumulationPiece[];
+  deferredPieceIds?: ReadonlySet<string>;
+  isDark: boolean;
+}
+
+const BowlCanvasInner: React.FC<BowlCanvasProps> = ({
+  completedCount,
+  pieces,
+  deferredPieceIds,
+  isDark,
+}) => {
+  return (
+    <Canvas
+      shadows
+      camera={{ position: [0, 2.5, 4.5], fov: 45 }}
+      dpr={[1, 1.5]}
+      gl={{
+        alpha: true,
+        antialias: true,
+        powerPreference: 'high-performance',
+      }}
+      className="h-full w-full pointer-events-none"
+    >
+      <ambientLight intensity={0.4} />
+      <directionalLight
+        position={[2, 5, 3]}
+        intensity={1.1}
+        color="#ffffff"
+        castShadow
+        shadow-mapSize-width={512}
+        shadow-mapSize-height={512}
+        shadow-camera-near={1}
+        shadow-camera-far={12}
+        shadow-camera-left={-2}
+        shadow-camera-right={2}
+        shadow-camera-top={2}
+        shadow-camera-bottom={-2}
+        shadow-bias={-0.001}
+        shadow-normalBias={0.02}
+      />
+      <directionalLight position={[-3, 3, 2]} intensity={0.45} color="#ffffff" />
+      <directionalLight position={[0, 4, -3]} intensity={0.3} color="#f1f5f9" />
+      <Suspense fallback={null}>
+        <StudioEnvironment />
+        <MarbleScatter
+          completedCount={completedCount}
+          pieces={pieces}
+          deferredPieceIds={deferredPieceIds}
+          isDark={isDark}
+        />
+        <BowlModel isDark={isDark} />
+        <ContactShadows position={[0, -0.45, 0]} opacity={0.45} scale={4} blur={1.5} far={1} />
+      </Suspense>
+    </Canvas>
+  );
+};
+
+const BowlCanvas = React.memo(BowlCanvasInner, (prev, next) => {
+  return (
+    prev.completedCount === next.completedCount &&
+    prev.pieces === next.pieces &&
+    prev.deferredPieceIds === next.deferredPieceIds &&
+    prev.isDark === next.isDark
+  );
+});
+
 function BowlInner({
   completedCount,
   pieces,
@@ -491,48 +559,12 @@ function BowlInner({
         />
 
         {/* Real-Time 3D WebGL Canvas */}
-        <Canvas
-          shadows
-          camera={{ position: [0, 2.5, 4.5], fov: 45 }}
-          dpr={[1, 1.5]}
-          gl={{
-            alpha: true,
-            antialias: true,
-            powerPreference: 'high-performance',
-          }}
-          className="h-full w-full pointer-events-none"
-        >
-          <ambientLight intensity={0.4} />
-          <directionalLight
-            position={[2, 5, 3]}
-            intensity={1.1}
-            color="#ffffff"
-            castShadow
-            shadow-mapSize-width={512}
-            shadow-mapSize-height={512}
-            shadow-camera-near={1}
-            shadow-camera-far={12}
-            shadow-camera-left={-2}
-            shadow-camera-right={2}
-            shadow-camera-top={2}
-            shadow-camera-bottom={-2}
-            shadow-bias={-0.001}
-            shadow-normalBias={0.02}
-          />
-          <directionalLight position={[-3, 3, 2]} intensity={0.45} color="#ffffff" />
-          <directionalLight position={[0, 4, -3]} intensity={0.3} color="#f1f5f9" />
-          <Suspense fallback={null}>
-            <StudioEnvironment />
-            <MarbleScatter
-              completedCount={resolvedCount}
-              pieces={pieces}
-              deferredPieceIds={deferredPieceIds}
-              isDark={darkMode}
-            />
-            <BowlModel isDark={darkMode} />
-            <ContactShadows position={[0, -0.45, 0]} opacity={0.45} scale={4} blur={1.5} far={1} />
-          </Suspense>
-        </Canvas>
+        <BowlCanvas
+          completedCount={resolvedCount}
+          pieces={pieces}
+          deferredPieceIds={deferredPieceIds}
+          isDark={darkMode}
+        />
 
         {/* Cycle-complete celebration glow */}
         {celebrating && (
