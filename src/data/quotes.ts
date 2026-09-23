@@ -14,6 +14,15 @@ export const QUOTE_ROTATION_MS = Math.round(5.5 * 60 * 60 * 1000);
 export const LAST_QUOTE_ROTATION_TIMESTAMP_KEY = 'last_quote_rotation_timestamp';
 export const CURRENT_QUOTE_INDEX_KEY = 'current_quote_index';
 
+export {
+  INTEREST_QUOTES,
+  DEFAULT_HABIT_QUOTES,
+  filterQuotesByInterests,
+  matchesCategory,
+  normalizeCategoryKey,
+  getStoredUserInterests,
+} from '../utils/quotes';
+
 export const FEATURE_TIPS: Quote[] = [
   {
     text: 'Momentum grows with consistency — 1 vote today is better than 0, even fallback habits count.',
