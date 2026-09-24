@@ -211,6 +211,8 @@ export default function App() {
   });
   const sessionRef = useRef<UserSession | null>(session);
   sessionRef.current = session;
+  /** Ensures the post-login OS permission dialog fires at most once per app session. */
+  const hasRequestedPermissionsRef = useRef(false);
   const derivedHabitsRef = useRef<Habit[]>([]);
   const todayDayIndexRef = useRef(3);
   const handleCompleteTodayRef = useRef<(habitId: string, isFallback?: boolean, originCoord?: { x: number; y: number }) => void>(() => {});
@@ -559,6 +561,22 @@ export default function App() {
 
   const isTabActive = useCallback((tab: ActiveTab) => safeActiveTab === tab, [safeActiveTab]);
   const [visitedTabs, setVisitedTabs] = useState<Set<ActiveTab>>(() => new Set(['home']));
+  const [hasRenderedTasks, setHasRenderedTasks] = useState(false);
+  const [hasRenderedReports, setHasRenderedReports] = useState(false);
+  const [hasRenderedPersonal, setHasRenderedPersonal] = useState(false);
+  const [hasRenderedSettings, setHasRenderedSettings] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'reminders') setHasRenderedTasks(true);
+    else if (activeTab === 'report') setHasRenderedReports(true);
+    else if (activeTab === 'personal') setHasRenderedPersonal(true);
+    else if (activeTab === 'settings') setHasRenderedSettings(true);
+  }, [activeTab]);
+
+  if (activeTab === 'reminders' && !hasRenderedTasks) setHasRenderedTasks(true);
+  if (activeTab === 'report' && !hasRenderedReports) setHasRenderedReports(true);
+  if (activeTab === 'personal' && !hasRenderedPersonal) setHasRenderedPersonal(true);
+  if (activeTab === 'settings' && !hasRenderedSettings) setHasRenderedSettings(true);
 
   useEffect(() => {
     setVisitedTabs((prev) => {
@@ -789,7 +807,10 @@ export default function App() {
       };
       setSession(restoredSession);
       setStoredSession(restoredSession);
-      void requestNotificationPermissions();
+      if (!hasRequestedPermissionsRef.current) {
+        hasRequestedPermissionsRef.current = true;
+        void requestNotificationPermissions();
+      }
     };
 
     void authService.restoreExistingSession().then((result) => {
@@ -1723,7 +1744,10 @@ export default function App() {
     setSession(newSession);
     setStoredSession(newSession);
     setActiveTab('home');
-    void requestNotificationPermissions();
+    if (!hasRequestedPermissionsRef.current) {
+      hasRequestedPermissionsRef.current = true;
+      void requestNotificationPermissions();
+    }
     if (interests && interests.length > 0) {
       setSelectedInterests(interests);
       if (newSession && !newSession?.isGuest) {
@@ -2402,149 +2426,157 @@ export default function App() {
             </HomeView>
           </main>
 
-        <div
-          aria-hidden={!isTabActive('reminders')}
-          className={tabPaneClassName(isTabActive('reminders'))}
-        >
-          <Suspense fallback={<TabLoadingFallback />}>
-            <RemindersView
-              reminders={reminders ?? []}
-              focusReminderId={widgetFocusReminderId}
-              openCreate={widgetOpenCreateTask}
-              onOpenCreateConsumed={() => setWidgetOpenCreateTask(false)}
-              onAddReminder={handleAddReminder}
-              onUpdateReminder={handleUpdateReminder}
-              onToggleComplete={stableToggleReminder}
-              onSetReminderCompleted={stableSetReminderCompleted}
-              onDeleteReminder={stableDeleteReminder}
-              onSnoozeReminder={stableSnoozeReminder}
-              userSession={session}
-              onRemindersHydrated={(remote) => {
-                const next = Array.isArray(remote) ? remote : [];
-                setReminders((prev) => mergeRemindersByUpdatedAt(prev, next));
-                notificationScheduler.bootReschedulePendingAlerts(next);
-              }}
-              onSyncReminders={() => {
-                const seq = ++reminderSyncSeqRef.current;
-                remindersSyncService.syncReminders(reminders ?? [], session).then((res) => {
-                  if (seq !== reminderSyncSeqRef.current) return;
-                  setReminders((prev) => mergeRemindersByUpdatedAt(prev, Array.isArray(res.reminders) ? res.reminders : []));
-                });
-              }}
-              onScroll={handleMainScroll}
-              onOpenSettings={handleOpenSettingsTab}
-            />
-          </Suspense>
-        </div>
+        {hasRenderedTasks && (
+          <div
+            aria-hidden={!isTabActive('reminders')}
+            className={activeTab === 'reminders' ? 'block h-full' : 'hidden'}
+          >
+            <Suspense fallback={<TabLoadingFallback />}>
+              <RemindersView
+                reminders={reminders ?? []}
+                focusReminderId={widgetFocusReminderId}
+                openCreate={widgetOpenCreateTask}
+                onOpenCreateConsumed={() => setWidgetOpenCreateTask(false)}
+                onAddReminder={handleAddReminder}
+                onUpdateReminder={handleUpdateReminder}
+                onToggleComplete={stableToggleReminder}
+                onSetReminderCompleted={stableSetReminderCompleted}
+                onDeleteReminder={stableDeleteReminder}
+                onSnoozeReminder={stableSnoozeReminder}
+                userSession={session}
+                onRemindersHydrated={(remote) => {
+                  const next = Array.isArray(remote) ? remote : [];
+                  setReminders((prev) => mergeRemindersByUpdatedAt(prev, next));
+                  notificationScheduler.bootReschedulePendingAlerts(next);
+                }}
+                onSyncReminders={() => {
+                  const seq = ++reminderSyncSeqRef.current;
+                  remindersSyncService.syncReminders(reminders ?? [], session).then((res) => {
+                    if (seq !== reminderSyncSeqRef.current) return;
+                    setReminders((prev) => mergeRemindersByUpdatedAt(prev, Array.isArray(res.reminders) ? res.reminders : []));
+                  });
+                }}
+                onScroll={handleMainScroll}
+                onOpenSettings={handleOpenSettingsTab}
+              />
+            </Suspense>
+          </div>
+        )}
 
-        <div
-          aria-hidden={!isTabActive('report')}
-          className={tabPaneClassName(isTabActive('report'))}
-        >
-          <Suspense fallback={<TabLoadingFallback />}>
-            <ReportView
-              isActive={isTabActive('report')}
-              habits={activeHabits ?? []}
-              evidenceList={ledgerEvidence}
-              identityVoteCount={displayedIdentityVotes}
-              userId={session?.id}
-              isGuest={session?.isGuest}
-              userEmail={session?.email}
-              userName={session?.name}
-              onOpenLedger={handleOpenLedgerModal}
-              onOpenSettings={handleOpenSettingsTab}
-              frictionAudits={frictionAudits ?? []}
-              onScroll={handleMainScroll}
-              isDark={isDark}
-              momentumScore={todayMomentumScore}
-              momentumEvents={momentumEvents ?? []}
-              completionEvents={completionEvents ?? []}
-              selectedDayIso={currentSelectedDate}
-              onSelectDayIso={setCurrentSelectedDate}
-              cycleDays={cycleDays}
-              cycleStartIso={bowlEpoch.startIso}
-            />
-          </Suspense>
-        </div>
+        {hasRenderedReports && (
+          <div
+            aria-hidden={!isTabActive('report')}
+            className={activeTab === 'report' ? 'block h-full' : 'hidden'}
+          >
+            <Suspense fallback={<TabLoadingFallback />}>
+              <ReportView
+                isActive={isTabActive('report')}
+                habits={activeHabits ?? []}
+                evidenceList={ledgerEvidence}
+                identityVoteCount={displayedIdentityVotes}
+                userId={session?.id}
+                isGuest={session?.isGuest}
+                userEmail={session?.email}
+                userName={session?.name}
+                onOpenLedger={handleOpenLedgerModal}
+                onOpenSettings={handleOpenSettingsTab}
+                frictionAudits={frictionAudits ?? []}
+                onScroll={handleMainScroll}
+                isDark={isDark}
+                momentumScore={todayMomentumScore}
+                momentumEvents={momentumEvents ?? []}
+                completionEvents={completionEvents ?? []}
+                selectedDayIso={currentSelectedDate}
+                onSelectDayIso={setCurrentSelectedDate}
+                cycleDays={cycleDays}
+                cycleStartIso={bowlEpoch.startIso}
+              />
+            </Suspense>
+          </div>
+        )}
 
-        <div
-          aria-hidden={!isTabActive('personal')}
-          className={tabPaneClassName(isTabActive('personal'))}
-        >
-          <Suspense fallback={<TabLoadingFallback />}>
-            <PersonalView
-              userSession={session}
-              evidenceList={ledgerEvidence}
-              identityVoteCount={displayedIdentityVotes}
-              selectedInterests={selectedInterests ?? []}
-              onToggleInterest={handleToggleInterest}
-              examShieldActive={examShieldActive}
-              examShieldStatus={examShieldStatus}
-              onToggleExamShield={handleToggleExamShield}
-              vacationModeActive={vacationModeActive}
-              vacationStatus={vacationStatus}
-              onToggleVacationMode={handleToggleVacationMode}
-              momentumScore={momentumScore}
-              onOpenSettings={handleOpenSettingsTab}
-              onOpenLedger={handleOpenLedgerModal}
-              onSyncNow={async () => {
-                if (!session || session?.isGuest) {
-                  throw new Error('Please sign in to sync');
-                }
-                const result = await runAuthenticatedSync(session);
-                if (!result.ok) {
-                  throw new Error(result.error || 'Sync failed');
-                }
-              }}
-              onChangePassword={handleOpenPasswordModal}
-              onUpdateAvatar={(avatarUrl) => {
-                setSession((prev) => {
-                  if (!prev) return prev;
-                  const next = { ...prev, avatarUrl };
-                  setStoredSession(next);
-                  return next;
-                });
-              }}
-              onLogout={handleLogout}
-              onUpdateName={(newName) => {
-                setSession((prev) => (prev ? { ...prev, name: newName } : prev));
-              }}
-              onScroll={handleMainScroll}
-            />
-          </Suspense>
-        </div>
+        {hasRenderedPersonal && (
+          <div
+            aria-hidden={!isTabActive('personal')}
+            className={activeTab === 'personal' ? 'block h-full' : 'hidden'}
+          >
+            <Suspense fallback={<TabLoadingFallback />}>
+              <PersonalView
+                userSession={session}
+                evidenceList={ledgerEvidence}
+                identityVoteCount={displayedIdentityVotes}
+                selectedInterests={selectedInterests ?? []}
+                onToggleInterest={handleToggleInterest}
+                examShieldActive={examShieldActive}
+                examShieldStatus={examShieldStatus}
+                onToggleExamShield={handleToggleExamShield}
+                vacationModeActive={vacationModeActive}
+                vacationStatus={vacationStatus}
+                onToggleVacationMode={handleToggleVacationMode}
+                momentumScore={momentumScore}
+                onOpenSettings={handleOpenSettingsTab}
+                onOpenLedger={handleOpenLedgerModal}
+                onSyncNow={async () => {
+                  if (!session || session?.isGuest) {
+                    throw new Error('Please sign in to sync');
+                  }
+                  const result = await runAuthenticatedSync(session);
+                  if (!result.ok) {
+                    throw new Error(result.error || 'Sync failed');
+                  }
+                }}
+                onChangePassword={handleOpenPasswordModal}
+                onUpdateAvatar={(avatarUrl) => {
+                  setSession((prev) => {
+                    if (!prev) return prev;
+                    const next = { ...prev, avatarUrl };
+                    setStoredSession(next);
+                    return next;
+                  });
+                }}
+                onLogout={handleLogout}
+                onUpdateName={(newName) => {
+                  setSession((prev) => (prev ? { ...prev, name: newName } : prev));
+                }}
+                onScroll={handleMainScroll}
+              />
+            </Suspense>
+          </div>
+        )}
 
-        <div
-          aria-hidden={!isTabActive('settings')}
-          className={tabPaneClassName(isTabActive('settings'))}
-        >
-          <Suspense fallback={<TabLoadingFallback />}>
-            <SettingsView
-              habits={habits ?? []}
-              evidenceList={ledgerEvidence}
-              completionEvents={completionEvents ?? []}
-              momentumEvents={momentumEvents ?? []}
-              theme={theme}
-              onThemeChange={setTheme}
-              notificationWindows={notificationWindows}
-              onToggleNotificationWindow={handleToggleNotificationWindow}
-              completionSound={completionSound}
-              onCompletionSoundChange={handleCompletionSoundChange}
-              hapticVibration={hapticVibration}
-              onHapticVibrationChange={handleHapticVibrationChange}
-              onResetData={handleResetData}
-              onRestoreHabit={handleRestoreHabit}
-              onDeleteHabit={handleDeleteHabit}
-              onImportJSON={handleImportJSON}
-              onDeleteAccount={handleDeleteAccount}
-              onClearCache={handleClearCache}
-              onScroll={handleMainScroll}
-              onOpenSettings={handleOpenHomeTab}
-              selectedInterests={selectedInterests}
-              onToggleInterest={handleToggleInterest}
-            />
-          </Suspense>
-        </div>
+        {hasRenderedSettings && (
+          <div
+            aria-hidden={!isTabActive('settings')}
+            className={activeTab === 'settings' ? 'block h-full' : 'hidden'}
+          >
+            <Suspense fallback={<TabLoadingFallback />}>
+              <SettingsView
+                habits={habits ?? []}
+                evidenceList={ledgerEvidence}
+                completionEvents={completionEvents ?? []}
+                momentumEvents={momentumEvents ?? []}
+                theme={theme}
+                onThemeChange={setTheme}
+                notificationWindows={notificationWindows}
+                onToggleNotificationWindow={handleToggleNotificationWindow}
+                completionSound={completionSound}
+                onCompletionSoundChange={handleCompletionSoundChange}
+                hapticVibration={hapticVibration}
+                onHapticVibrationChange={handleHapticVibrationChange}
+                onResetData={handleResetData}
+                onRestoreHabit={handleRestoreHabit}
+                onDeleteHabit={handleDeleteHabit}
+                onImportJSON={handleImportJSON}
+                onDeleteAccount={handleDeleteAccount}
+                onClearCache={handleClearCache}
+                onScroll={handleMainScroll}
+                onOpenSettings={handleOpenHomeTab}
+                selectedInterests={selectedInterests}
+                onToggleInterest={handleToggleInterest}
+              />
+            </Suspense>
+          </div>
+        )}
         </div>
 
 

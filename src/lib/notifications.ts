@@ -178,15 +178,35 @@ async function cancelPsychologyNotifications(): Promise<void> {
   }
 }
 
+// Module-level inflight guard: prevents concurrent calls from racing auth paths
+// from showing the OS dialog more than once per app session.
+let _permissionRequestInFlight: Promise<boolean> | null = null;
+
 export async function requestNotificationPermissions(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
 
-  try {
-    const requested = await LocalNotifications.requestPermissions();
-    return requested.display === 'granted';
-  } catch {
-    return false;
-  }
+  // If a request is already in flight, piggyback on it instead of firing again.
+  if (_permissionRequestInFlight) return _permissionRequestInFlight;
+
+  _permissionRequestInFlight = (async () => {
+    try {
+      // Check current status first — only prompt if the OS hasn't decided yet.
+      const status = await LocalNotifications.checkPermissions();
+      if (status.display === 'granted') return true;
+      if (status.display !== 'prompt') return false;
+
+      const result = await LocalNotifications.requestPermissions();
+      return result.display === 'granted';
+    } catch {
+      return false;
+    } finally {
+      // Release the lock after a short delay so same-tick duplicate callers
+      // are coalesced, but subsequent calls (e.g. after a settings change) go through.
+      setTimeout(() => { _permissionRequestInFlight = null; }, 2000);
+    }
+  })();
+
+  return _permissionRequestInFlight;
 }
 
 export async function initializeReminderNotifications(): Promise<boolean> {
@@ -392,9 +412,9 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
     return hydrated;
   }
 
-  // Explicit permission prompt on schedule / toggle-on.
-  const requested = await LocalNotifications.requestPermissions();
-  if (requested.display !== 'granted') return hydrated;
+  // Explicit permission prompt on schedule / toggle-on (uses idempotent guard).
+  const granted = await requestNotificationPermissions();
+  if (!granted) return hydrated;
 
   const target = parseReminderTarget(hydrated);
   if (!target) return hydrated;
