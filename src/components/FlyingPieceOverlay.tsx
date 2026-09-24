@@ -3,6 +3,7 @@ import { animate, motion, useMotionValue } from 'motion/react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { playCompletionSound } from '../utils/feedback';
+import { BOWL_COLORS, normalizeHabitColor } from '../utils/colors';
 
 /** Organic 120 FPS flight duration into the bowl rim opening. */
 const FLIGHT_MS = 680;
@@ -19,6 +20,7 @@ export interface PieceFlight {
   to: { x: number; y: number };
   isDark: boolean;
   direction?: 'left' | 'right';
+  color?: string;
 }
 
 interface FlyingPieceOverlayProps {
@@ -63,14 +65,16 @@ const FlightMarble: React.FC<{
 
   const isFallback = flight.kind === 'fallback';
 
-  // Strict adherence to locked Blue/Green/Orange palette
-  const sphereColor = flight.isDark
+  // Strict adherence to locked Blue/Green/Orange palette with darkened dark green
+  const sphereColor = flight.color
+    ? normalizeHabitColor(flight.color)
+    : flight.isDark
     ? isFallback
-      ? '#60a5fa' // blue-400
-      : '#2563eb' // blue-600
+      ? BOWL_COLORS.light_blue
+      : BOWL_COLORS.blue
     : isFallback
-    ? '#34d399' // emerald-400
-    : '#059669'; // emerald-600
+    ? BOWL_COLORS.light_green
+    : BOWL_COLORS.dark_green;
 
   const glowColor = flight.isDark
     ? isFallback
@@ -78,7 +82,7 @@ const FlightMarble: React.FC<{
       : 'rgba(37, 99, 235, 0.55)'
     : isFallback
     ? 'rgba(52, 211, 153, 0.45)'
-    : 'rgba(5, 150, 105, 0.55)';
+    : 'rgba(6, 78, 59, 0.55)';
 
   useEffect(() => {
     let finished = false;

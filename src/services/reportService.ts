@@ -27,11 +27,15 @@ export interface BowlFill {
   isOverflowing: boolean;
 }
 
+import type { Habit } from '../types';
+import { resolveHabitPieceColor } from '../utils/colors';
+
 export interface AccumulationPiece {
   id: string;
   habitId: string;
   isoDate: string;
   kind: 'full' | 'fallback';
+  color?: string;
 }
 
 export interface CompletedCycleSummary {
@@ -250,9 +254,11 @@ export function accumulationPiecesFromLogs(
   startIso: string,
   endIso: string,
   origin: Date = new Date(),
-  minTimestamp = 0
+  minTimestamp = 0,
+  habits?: Iterable<Habit>
 ): AccumulationPiece[] {
   const allow = new Set(activeHabitIds);
+  const habitMap = habits ? new Map(Array.from(habits).map((h) => [h.id, h])) : null;
   const byKey = new Map<string, AccumulationPiece & { timestamp: number }>();
 
   for (const event of events) {
@@ -263,11 +269,15 @@ export function accumulationPiecesFromLogs(
     const id = `${event.habitId}::${iso}`;
     const prev = byKey.get(id);
     if (prev && event.timestamp < prev.timestamp) continue;
+    const isFallback = event.type === 'fallback_micro';
+    const habit = habitMap?.get(event.habitId);
+    const color = habit ? resolveHabitPieceColor(habit, isFallback) : undefined;
     byKey.set(id, {
       id,
       habitId: event.habitId,
       isoDate: iso,
-      kind: event.type === 'fallback_micro' ? 'fallback' : 'full',
+      kind: isFallback ? 'fallback' : 'full',
+      color,
       timestamp: event.timestamp,
     });
   }

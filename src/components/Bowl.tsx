@@ -6,6 +6,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { AnimatePresence, motion } from 'motion/react';
 import { CYCLE_DAY_OPTIONS, clampCycleDays, type AccumulationPiece, type CycleDays } from '../services/reportService';
 import { tapPress } from '../lib/motionPresets';
+import { BOWL_COLORS, normalizeHabitColor } from '../utils/colors';
 
 // Preload the 3D bowl model at module scope for instant rendering
 useGLTF.preload('/assets/bowl.glb');
@@ -486,13 +487,18 @@ function MarbleScatter({
       const pos = positions[i] || { x: 0, y: -0.05, z: 0 };
 
       const isFallback = piece?.kind === 'fallback';
-      const color = isDark
+      // 1-to-1 exact habit color mapping:
+      // If piece has an explicit color (e.g. piece.color), use it directly.
+      // Otherwise fall back to dark green / light green / blue palette.
+      const color = piece?.color
+        ? normalizeHabitColor(piece.color)
+        : isDark
         ? isFallback
-          ? '#60a5fa'
-          : '#2563eb'
+          ? BOWL_COLORS.light_blue
+          : BOWL_COLORS.blue
         : isFallback
-        ? '#34d399'
-        : '#059669';
+        ? BOWL_COLORS.light_green
+        : BOWL_COLORS.dark_green;
 
       // Check if this piece is resting on or close to the bowl floor
       const floorY = getBowlFloorY(Math.hypot(pos.x, pos.z));

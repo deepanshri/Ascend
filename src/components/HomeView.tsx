@@ -4,6 +4,7 @@ import { MomentumPill } from './MomentumPill';
 import type { AccumulationPiece, BowlFill, CycleDays } from '../services/reportService';
 import type { Habit } from '../types';
 import { getTodayDayIndex } from '../utils/dates';
+import { resolveHabitPieceColor } from '../utils/colors';
 
 interface HomeViewProps {
   pieces: AccumulationPiece[];
@@ -91,6 +92,20 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
     return { activeHabits: active, sessionCompletedHabits: completed };
   }, [habits, initialCompletedIds]);
 
+  // Exact 1-to-1 marble mapping: map historical completions directly to their habit's assigned color
+  const habitMap = useMemo(() => new Map((habits || []).map((h) => [h.id, h])), [habits]);
+
+  const mappedPieces = useMemo(() => {
+    return safePieces.map((piece) => {
+      const habit = habitMap.get(piece.habitId);
+      const color = piece.color || resolveHabitPieceColor(habit, piece.kind === 'fallback', darkMode);
+      return {
+        ...piece,
+        color,
+      };
+    });
+  }, [safePieces, habitMap, darkMode]);
+
   return (
     <div className="mt-0 flex w-full flex-col items-center pt-1">
       <div className="relative z-10 mb-1 flex flex-col items-center justify-center">
@@ -113,8 +128,8 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
 
       <div className="mx-auto mt-0 flex w-full flex-col items-center justify-center">
         <Bowl
-          completedCount={safePieces.length}
-          pieces={safePieces}
+          completedCount={mappedPieces.length}
+          pieces={mappedPieces}
           fillPercent={fillPercent}
           isOverflowing={isOverflowing}
           isDark={darkMode}

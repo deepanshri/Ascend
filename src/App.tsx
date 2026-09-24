@@ -108,6 +108,7 @@ import {
   type CycleDays,
   type AccumulationPiece,
 } from './services/reportService';
+import { resolveHabitPieceColor } from './utils/colors';
 import { HomeView } from './components/HomeView';
 import { useHabits, withHabitTimeOfDay } from './hooks/useHabits';
 import { hydrateHabitTimeOfDay, resolveHabitTimeOfDay } from './utils/timeOfDay';
@@ -788,6 +789,7 @@ export default function App() {
       };
       setSession(restoredSession);
       setStoredSession(restoredSession);
+      void requestNotificationPermissions();
     };
 
     void authService.restoreExistingSession().then((result) => {
@@ -927,7 +929,8 @@ export default function App() {
         bowlWindow.startIso,
         bowlWindow.endIso,
         calendarOrigin,
-        bowlEpoch.resetAt
+        bowlEpoch.resetAt,
+        activeHabits
       ),
     [
       completionEvents,
@@ -1427,7 +1430,8 @@ export default function App() {
         try {
           const swipeDir = isMicro ? 'left' : 'right';
           const points = measureCompletionFlight(habitId, swipeDir, originCoord);
-          if (!points) return;
+          const targetHabit = habits.find((h) => h.id === habitId);
+          const flightColor = resolveHabitPieceColor(targetHabit, isMicro, isDark);
           const flight: PieceFlight = {
             id: `fly-${pieceId}-${Date.now()}`,
             pieceId,
@@ -1436,6 +1440,7 @@ export default function App() {
             to: points.to,
             isDark,
             direction: swipeDir,
+            color: flightColor,
           };
           setPieceFlights((prev) => [...prev.slice(-4), flight]);
         } catch {
@@ -1722,6 +1727,7 @@ export default function App() {
     setSession(newSession);
     setStoredSession(newSession);
     setActiveTab('home');
+    void requestNotificationPermissions();
     if (interests && interests.length > 0) {
       setSelectedInterests(interests);
       if (newSession && !newSession?.isGuest) {
@@ -2400,11 +2406,10 @@ export default function App() {
             </HomeView>
           </main>
 
-        {visitedTabs.has('reminders') ? (
-          <div
-            aria-hidden={!isTabActive('reminders')}
-            className={tabPaneClassName(isTabActive('reminders'))}
-          >
+        <div
+          aria-hidden={!isTabActive('reminders')}
+          className={tabPaneClassName(isTabActive('reminders'))}
+        >
           <Suspense fallback={<TabLoadingFallback />}>
             <RemindersView
               reminders={reminders ?? []}
@@ -2434,14 +2439,12 @@ export default function App() {
               onOpenSettings={handleOpenSettingsTab}
             />
           </Suspense>
-          </div>
-        ) : null}
+        </div>
 
-        {visitedTabs.has('report') ? (
-          <div
-            aria-hidden={!isTabActive('report')}
-            className={tabPaneClassName(isTabActive('report'))}
-          >
+        <div
+          aria-hidden={!isTabActive('report')}
+          className={tabPaneClassName(isTabActive('report'))}
+        >
           <Suspense fallback={<TabLoadingFallback />}>
             <ReportView
               isActive={isTabActive('report')}
@@ -2466,14 +2469,12 @@ export default function App() {
               cycleStartIso={bowlEpoch.startIso}
             />
           </Suspense>
-          </div>
-        ) : null}
+        </div>
 
-        {visitedTabs.has('personal') ? (
-          <div
-            aria-hidden={!isTabActive('personal')}
-            className={tabPaneClassName(isTabActive('personal'))}
-          >
+        <div
+          aria-hidden={!isTabActive('personal')}
+          className={tabPaneClassName(isTabActive('personal'))}
+        >
           <Suspense fallback={<TabLoadingFallback />}>
             <PersonalView
               userSession={session}
@@ -2515,14 +2516,12 @@ export default function App() {
               onScroll={handleMainScroll}
             />
           </Suspense>
-          </div>
-        ) : null}
+        </div>
 
-        {visitedTabs.has('settings') ? (
-          <div
-            aria-hidden={!isTabActive('settings')}
-            className={tabPaneClassName(isTabActive('settings'))}
-          >
+        <div
+          aria-hidden={!isTabActive('settings')}
+          className={tabPaneClassName(isTabActive('settings'))}
+        >
           <Suspense fallback={<TabLoadingFallback />}>
             <SettingsView
               habits={habits ?? []}
@@ -2549,8 +2548,7 @@ export default function App() {
               onToggleInterest={handleToggleInterest}
             />
           </Suspense>
-          </div>
-        ) : null}
+        </div>
         </div>
 
 
