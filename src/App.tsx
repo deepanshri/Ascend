@@ -1425,28 +1425,24 @@ export default function App() {
         /* never block completion on feedback failure */
       }
       const pieceId = `${habitId}::${loggedDate}`;
-      // Measure after paint so optimistic card/bowl layout is ready.
-      requestAnimationFrame(() => {
-        try {
-          const swipeDir = isMicro ? 'left' : 'right';
-          const points = measureCompletionFlight(habitId, swipeDir, originCoord);
-          const targetHabit = habits.find((h) => h.id === habitId);
-          const flightColor = resolveHabitPieceColor(targetHabit, isMicro, isDark);
-          const flight: PieceFlight = {
-            id: `fly-${pieceId}-${Date.now()}`,
-            pieceId,
-            kind: rewardKind,
-            from: points.from,
-            to: points.to,
-            isDark,
-            direction: swipeDir,
-            color: flightColor,
-          };
-          setPieceFlights((prev) => [...prev.slice(-4), flight]);
-        } catch {
-          /* ignore measurement failures */
-        }
-      });
+      try {
+        const swipeDir = isMicro ? 'left' : 'right';
+        const points = measureCompletionFlight(habitId, swipeDir, originCoord);
+        const flightColor = targetHabit?.color || resolveHabitPieceColor(targetHabit, isMicro, isDark);
+        const flight: PieceFlight = {
+          id: `fly-${pieceId}-${Date.now()}`,
+          pieceId,
+          kind: rewardKind,
+          from: points.from,
+          to: points.to,
+          isDark,
+          direction: swipeDir,
+          color: flightColor,
+        };
+        setPieceFlights((prev) => [...prev.slice(-4), flight]);
+      } catch {
+        /* ignore measurement failures */
+      }
     }
   };
 

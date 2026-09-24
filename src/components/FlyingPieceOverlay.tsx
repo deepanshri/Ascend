@@ -5,8 +5,8 @@ import * as THREE from 'three';
 import { playCompletionSound } from '../utils/feedback';
 import { BOWL_COLORS, normalizeHabitColor } from '../utils/colors';
 
-/** Organic 120 FPS flight duration into the bowl rim opening. */
-const FLIGHT_MS = 680;
+/** Organic 120 FPS flight duration into the bowl rim opening (synchronized 600ms). */
+const FLIGHT_MS = 600;
 const PIECE_PX = 28;
 const MAX_FLIGHTS = 4;
 
@@ -31,6 +31,7 @@ interface FlyingPieceOverlayProps {
 /** Pure 3D WebGL rotating marble matching the geometry and material of bowl marbles */
 function FlyingSphereMesh({ color }: { color: string }) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const resolvedColor = useMemo(() => new THREE.Color(normalizeHabitColor(color)), [color]);
 
   useFrame((_, delta) => {
     if (meshRef.current) {
@@ -43,7 +44,7 @@ function FlyingSphereMesh({ color }: { color: string }) {
     <mesh ref={meshRef}>
       <sphereGeometry args={[0.82, 32, 32]} />
       <meshStandardMaterial
-        color={color}
+        color={resolvedColor}
         roughness={0.18}
         metalness={0.12}
       />
@@ -66,23 +67,25 @@ const FlightMarble: React.FC<{
   const isFallback = flight.kind === 'fallback';
 
   // Strict adherence to locked Blue/Green/Orange palette with darkened dark green
-  const sphereColor = flight.color
-    ? normalizeHabitColor(flight.color)
-    : flight.isDark
-    ? isFallback
-      ? BOWL_COLORS.light_blue
-      : BOWL_COLORS.blue
-    : isFallback
-    ? BOWL_COLORS.light_green
-    : BOWL_COLORS.dark_green;
+  const sphereColor = normalizeHabitColor(
+    flight.color ||
+      (flight.isDark
+        ? isFallback
+          ? BOWL_COLORS.light_blue
+          : BOWL_COLORS.blue
+        : isFallback
+        ? BOWL_COLORS.light_green
+        : BOWL_COLORS.dark_green)
+  );
 
-  const glowColor = flight.isDark
-    ? isFallback
-      ? 'rgba(96, 165, 250, 0.45)'
-      : 'rgba(37, 99, 235, 0.55)'
-    : isFallback
-    ? 'rgba(52, 211, 153, 0.45)'
-    : 'rgba(6, 78, 59, 0.55)';
+  const glowColor = useMemo(() => {
+    const hex = sphereColor.toLowerCase();
+    if (hex === BOWL_COLORS.dark_green || hex === '#064e3b') return 'rgba(6, 78, 59, 0.55)';
+    if (hex === BOWL_COLORS.light_green || hex === '#34d399') return 'rgba(52, 211, 153, 0.45)';
+    if (hex === BOWL_COLORS.orange || hex === '#ea580c') return 'rgba(234, 88, 12, 0.55)';
+    if (hex === BOWL_COLORS.light_blue || hex === '#60a5fa') return 'rgba(96, 165, 250, 0.45)';
+    return 'rgba(37, 99, 235, 0.55)';
+  }, [sphereColor]);
 
   useEffect(() => {
     let finished = false;
@@ -235,14 +238,13 @@ export function measureCompletionFlight(
   habitId: string,
   direction?: 'left' | 'right',
   customOrigin?: { x: number; y: number }
-): { from: { x: number; y: number }; to: { x: number; y: number } } | null {
+): { from: { x: number; y: number }; to: { x: number; y: number } } {
   const card = document.getElementById(`habit-card-${habitId}`);
   const bowlFrame = document.getElementById('accumulation-bowl-frame');
   const bowl = bowlFrame || document.getElementById('accumulation-bowl');
-  if (!card || !bowl) return null;
 
-  const a = card.getBoundingClientRect();
-  const b = (bowlFrame || bowl).getBoundingClientRect();
+  const screenW = typeof window !== 'undefined' ? window.innerWidth : 390;
+  const screenH = typeof window !== 'undefined' ? window.innerHeight : 844;
 
   let fromX: number;
   let fromY: number;
@@ -250,9 +252,8 @@ export function measureCompletionFlight(
   if (customOrigin && Number.isFinite(customOrigin.x) && Number.isFinite(customOrigin.y)) {
     fromX = customOrigin.x;
     fromY = customOrigin.y;
-  } else {
-    // If swiped right: release point is towards the right side of the card
-    // If swiped left: release point is towards the left side of the card
+  } else if (card) {
+    const a = card.getBoundingClientRect();
     if (direction === 'left') {
       fromX = a.left + 48;
       fromY = a.top + a.height * 0.5;
@@ -260,14 +261,25 @@ export function measureCompletionFlight(
       fromX = a.right - 48;
       fromY = a.top + a.height * 0.5;
     }
+  } else {
+    fromX = direction === 'left' ? screenW * 0.25 : screenW * 0.75;
+    fromY = screenH * 0.65;
   }
 
-  // Target precisely the top rim aperture of the 3D bowl in screen space
-  const rimJitterX = (Math.random() - 0.5) * 16;
+  // Target precisely the top rim aperture of the 3D bowl in screen space (25-30% down from top)
+  const rimJitterX = (Math.random() - 0.5) * 12;
   const rimJitterY = (Math.random() - 0.5) * 6;
 
-  const toX = b.left + b.width * 0.5 + rimJitterX;
-  const toY = b.top + b.height * 0.20 + rimJitterY;
+  let toX = screenW * 0.5 + rimJitterX;
+  let toY = screenH * 0.28 + rimJitterY;
+
+  if (bowlFrame || bowl) {
+    const b = (bowlFrame || bowl)!.getBoundingClientRect();
+    if (b.width > 0 && b.height > 0) {
+      toX = b.left + b.width * 0.5 + rimJitterX;
+      toY = b.top + b.height * 0.45 + rimJitterY;
+    }
+  }
 
   return {
     from: { x: fromX, y: fromY },

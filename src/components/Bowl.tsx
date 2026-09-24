@@ -474,9 +474,9 @@ function MarbleScatter({
     return pieces.filter((p) => !deferredPieceIds.has(p.id));
   }, [pieces, deferredPieceIds]);
 
-  const count = completedCount !== undefined
-    ? completedCount
-    : (visiblePieces ? visiblePieces.length : 0);
+  const count = visiblePieces !== null
+    ? visiblePieces.length
+    : (completedCount !== undefined ? completedCount : 0);
   const positions = useMemo(() => getPlacedPositions(count), [count]);
   const shadowTexture = useMemo(() => getContactShadowTexture(), []);
 
