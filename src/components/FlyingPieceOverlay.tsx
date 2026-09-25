@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect, useRef } from 'react';
 import { animate, motion, useMotionValue } from 'motion/react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { playCompletionSound } from '../utils/feedback';
 import { getMarbleColor } from '../utils/colors';
@@ -142,85 +142,26 @@ function screenDeltaToWorldVel(
   };
 }
 
-/** Pure 3D WebGL marble — color locked from flight.isFallback at throw time. */
-function FlyingSphereMesh({
-  isFallback,
-  isDark,
-  colorHex,
+/** Pure 3D WebGL marble mesh rendered inside the persistent Canvas scene. */
+function SingleFlyingMarble({
+  flight,
+  onDone,
 }: {
-  isFallback: boolean;
-  isDark: boolean;
-  colorHex?: string;
+  flight: PieceFlight;
+  onDone: (handoff: FlightHandoffVelocity) => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.MeshPhysicalMaterial>(null);
-  const isFallbackRef = useRef(isFallback);
-  isFallbackRef.current = isFallback;
-  const isDarkRef = useRef(isDark);
-  isDarkRef.current = isDark;
+  const { viewport, size } = useThree();
 
-  const resolveHex = () =>
-    colorHex || getMarbleColor(isDarkRef.current, isFallbackRef.current);
-
-  useEffect(() => {
-    const syncThrowColor = () => {
-      const mat = materialRef.current;
-      if (!mat) return;
-      mat.color.set(colorHex || getMarbleColor(isDarkRef.current, isFallbackRef.current));
-    };
-    const syncTheme = () => {
-      const mat = materialRef.current;
-      if (!mat) return;
-      mat.color.set(getMarbleColor(getThemeIsDark(), isFallbackRef.current));
-    };
-    syncThrowColor();
-    const raf = requestAnimationFrame(syncThrowColor);
-    const unsub = subscribeTheme(syncTheme);
-    return () => {
-      cancelAnimationFrame(raf);
-      unsub();
-    };
-  }, [colorHex, isFallback, isDark]);
-
-  useFrame((_, delta) => {
-    if (meshRef.current) {
-      meshRef.current.rotation.x += delta * 4.8;
-      meshRef.current.rotation.y += delta * 6.5;
-    }
-  });
-
-  const initialColor = resolveHex();
-
-  return (
-    <mesh ref={meshRef}>
-      <sphereGeometry args={[0.82, 24, 24]} />
-      <meshPhysicalMaterial
-        ref={materialRef}
-        color={initialColor}
-        roughness={MARBLE_PHYSICAL_MATERIAL.roughness}
-        metalness={MARBLE_PHYSICAL_MATERIAL.metalness}
-        clearcoat={MARBLE_PHYSICAL_MATERIAL.clearcoat}
-        clearcoatRoughness={MARBLE_PHYSICAL_MATERIAL.clearcoatRoughness}
-      />
-    </mesh>
-  );
-}
-
-const FlightMarble: React.FC<{
-  flight: PieceFlight;
-  onDone: (handoff: FlightHandoffVelocity) => void;
-}> = ({ flight, onDone }) => {
-  const x = useMotionValue(flight.from.x);
-  const y = useMotionValue(flight.from.y);
-  const scale = useMotionValue(0.5);
-  const opacity = useMotionValue(1);
-
+  const isFallback = Boolean(flight.isFallback) || flight.kind === 'fallback';
+  const isDark = Boolean(flight.isDark);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
   const handoffRef = useRef<FlightHandoffVelocity>({ ...HANDOFF_DEFAULT_VEL });
 
-  const isFallback = Boolean(flight.isFallback) || flight.kind === 'fallback';
-  const isDark = Boolean(flight.isDark);
+  const progressRef = useRef(0);
+  const scaleFactorRef = useRef(0.5);
 
   useEffect(() => {
     let finished = false;
@@ -248,7 +189,6 @@ const FlightMarble: React.FC<{
     }
     const rand1 = (seed & 0xffff) / 0xffff;
 
-    // Hover directly above the rim opening, then fall straight down into it.
     const hoverLift = HOVER_LIFT_MIN + rand1 * HOVER_LIFT_SPAN;
     const rim = targetTo;
     const hover = { x: rim.x, y: rim.y - hoverLift };
@@ -257,7 +197,6 @@ const FlightMarble: React.FC<{
     const pNear = flightPositionAt(p0, hover, rim, TERMINAL_SAMPLE_T);
     const pEnd = flightPositionAt(p0, hover, rim, 1);
     const dtTerminal = (1 - TERMINAL_SAMPLE_T) * durationSec;
-    // Vertical drop → nearly zero lateral world velocity at handoff.
     handoffRef.current = screenDeltaToWorldVel(
       pEnd.x - pNear.x,
       pEnd.y - pNear.y,
@@ -266,25 +205,22 @@ const FlightMarble: React.FC<{
     handoffRef.current.vx *= 0.2;
     handoffRef.current.vz *= 0.2;
 
+    if (meshRef.current) {
+      (meshRef.current as any)._flightTrajectory = { p0, hover, rim };
+    }
+
     try {
       launchControls = animate(0, 1, {
         duration: durationSec,
         ease: 'linear',
         onUpdate: (t) => {
-          const pos = flightPositionAt(p0, hover, rim, t);
-
-          let curScale: number;
+          progressRef.current = t;
           if (t < 0.22) {
             const su = t / 0.22;
-            curScale = 0.5 + 0.5 * Math.sin(su * Math.PI * 0.5);
+            scaleFactorRef.current = 0.5 + 0.5 * Math.sin(su * Math.PI * 0.5);
           } else {
-            curScale = 1.0;
+            scaleFactorRef.current = 1.0;
           }
-
-          x.set(pos.x);
-          y.set(pos.y);
-          scale.set(curScale);
-          opacity.set(1);
         },
         onComplete: finish,
       });
@@ -295,48 +231,60 @@ const FlightMarble: React.FC<{
     return () => {
       launchControls?.stop();
     };
-  }, [flight.id, flight.from, flight.to, opacity, scale, x, y]);
+  }, [flight.id, flight.from, flight.to]);
+
+  useEffect(() => {
+    const syncThrowColor = () => {
+      const mat = materialRef.current;
+      if (!mat) return;
+      mat.color.set(flight.color || getMarbleColor(isDark, isFallback));
+    };
+    const syncTheme = () => {
+      const mat = materialRef.current;
+      if (!mat) return;
+      mat.color.set(getMarbleColor(getThemeIsDark(), isFallback));
+    };
+    syncThrowColor();
+    const unsub = subscribeTheme(syncTheme);
+    return () => unsub();
+  }, [flight.color, isFallback, isDark]);
+
+  useFrame((_, delta) => {
+    if (!meshRef.current) return;
+    const traj = (meshRef.current as any)._flightTrajectory;
+    if (!traj) return;
+
+    const pos = flightPositionAt(traj.p0, traj.hover, traj.rim, progressRef.current);
+
+    const worldX = (pos.x / size.width - 0.5) * viewport.width;
+    const worldY = -(pos.y / size.height - 0.5) * viewport.height;
+
+    meshRef.current.position.set(worldX, worldY, 0);
+
+    const baseRadius = (14 / size.width) * viewport.width;
+    const finalScale = baseRadius * scaleFactorRef.current;
+    meshRef.current.scale.setScalar(finalScale);
+
+    meshRef.current.rotation.x += delta * 4.8;
+    meshRef.current.rotation.y += delta * 6.5;
+  });
+
+  const initialColor = flight.color || getMarbleColor(isDark, isFallback);
 
   return (
-    <motion.div
-      aria-hidden="true"
-      className="pointer-events-none fixed will-change-transform"
-      style={{
-        zIndex: 9999,
-        width: PIECE_PX,
-        height: PIECE_PX,
-        marginLeft: -PIECE_PX / 2,
-        marginTop: -PIECE_PX / 2,
-        left: 0,
-        top: 0,
-        x,
-        y,
-        scale,
-        opacity,
-        transform: 'translate3d(0, 0, 0)',
-      }}
-    >
-      {/* No CSS glow — WebGL color must match bowl marble with zero 2D tint */}
-      <Canvas
-        gl={MARBLE_CANVAS_GL}
-        dpr={MARBLE_CANVAS_DPR}
-        camera={FLIGHT_CAMERA}
-        onCreated={({ gl }) => configureMarbleRenderer(gl)}
-        className="pointer-events-none h-full w-full"
-      >
-        <MarbleLightRig />
-        <Suspense fallback={null}>
-          <StudioEnvironment />
-          <FlyingSphereMesh
-            isFallback={isFallback}
-            isDark={isDark}
-            colorHex={flight.color}
-          />
-        </Suspense>
-      </Canvas>
-    </motion.div>
+    <mesh ref={meshRef}>
+      <sphereGeometry args={[1, 24, 24]} />
+      <meshPhysicalMaterial
+        ref={materialRef}
+        color={initialColor}
+        roughness={MARBLE_PHYSICAL_MATERIAL.roughness}
+        metalness={MARBLE_PHYSICAL_MATERIAL.metalness}
+        clearcoat={MARBLE_PHYSICAL_MATERIAL.clearcoat}
+        clearcoatRoughness={MARBLE_PHYSICAL_MATERIAL.clearcoatRoughness}
+      />
+    </mesh>
   );
-};
+}
 
 export const FlyingPieceOverlay: React.FC<FlyingPieceOverlayProps> = ({
   flights,
@@ -345,15 +293,31 @@ export const FlyingPieceOverlay: React.FC<FlyingPieceOverlayProps> = ({
   const visible = (flights || []).slice(-MAX_FLIGHTS);
 
   return (
-    <>
-      {visible.map((flight) => (
-        <FlightMarble
-          key={flight.id}
-          flight={flight}
-          onDone={(handoff) => onFlightComplete?.(flight.id, flight.pieceId, handoff)}
-        />
-      ))}
-    </>
+    <div
+      aria-hidden="true"
+      className="fixed inset-0 pointer-events-none"
+      style={{ zIndex: 9999 }}
+    >
+      <Canvas
+        gl={MARBLE_CANVAS_GL}
+        dpr={MARBLE_CANVAS_DPR}
+        camera={{ position: [0, 0, 5], fov: 45 }}
+        onCreated={({ gl }) => configureMarbleRenderer(gl)}
+        className="pointer-events-none h-full w-full"
+      >
+        <MarbleLightRig />
+        <Suspense fallback={null}>
+          <StudioEnvironment />
+          {visible.map((flight) => (
+            <SingleFlyingMarble
+              key={flight.id}
+              flight={flight}
+              onDone={(handoff) => onFlightComplete?.(flight.id, flight.pieceId, handoff)}
+            />
+          ))}
+        </Suspense>
+      </Canvas>
+    </div>
   );
 };
 
