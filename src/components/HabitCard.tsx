@@ -365,9 +365,8 @@ function HabitCardInner({
         axis !== 'vertical' &&
         (offset < -SWIPE_COMMIT_PX || (velocityX < -SWIPE_COMMIT_VELOCITY && offset < -20));
 
-      // Prefer the exact pointer position at drag-end; fall back to card centre
-      // (the old startX + offset math could overshoot when elastic drag snaps).
-      const originCoord = commitPoint ?? getCardCenter();
+      // Always anchor launch origin to the card DOM rect center
+      const originCoord = getCardCenter();
 
       if (commitsRight) {
         if (isTodayDoneRef.current) {

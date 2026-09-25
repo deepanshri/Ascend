@@ -341,20 +341,15 @@ export function measureCompletionFlight(
   let fromX: number;
   let fromY: number;
 
-  if (customOrigin && Number.isFinite(customOrigin.x) && Number.isFinite(customOrigin.y)) {
+  if (customOrigin && Number.isFinite(customOrigin.x) && Number.isFinite(customOrigin.y) && customOrigin.x !== 0 && customOrigin.y !== 0) {
     fromX = customOrigin.x;
     fromY = customOrigin.y;
   } else if (card) {
     const a = card.getBoundingClientRect();
-    if (direction === 'left') {
-      fromX = a.left + 48;
-      fromY = a.top + a.height * 0.5;
-    } else {
-      fromX = a.right - 48;
-      fromY = a.top + a.height * 0.5;
-    }
+    fromX = a.left + a.width * 0.5;
+    fromY = a.top + a.height * 0.5;
   } else {
-    fromX = direction === 'left' ? screenW * 0.25 : screenW * 0.75;
+    fromX = screenW * 0.5;
     fromY = screenH * 0.65;
   }
 
@@ -362,15 +357,15 @@ export function measureCompletionFlight(
   const rimJitterX = (Math.random() - 0.5) * 10;
 
   let toX = screenW * 0.5 + rimJitterX;
-  // Fallback: upper third of the viewport ≈ rim when bowl DOM is missing.
-  let toY = screenH * 0.18;
+  // Fallback: bowl rim visual height ≈ 35% of screen height
+  let toY = screenH * 0.35;
 
   if (bowlFrame || bowl) {
     const b = (bowlFrame || bowl)!.getBoundingClientRect();
     if (b.width > 0 && b.height > 0) {
       toX = b.left + b.width * 0.5 + rimJitterX;
-      // Rim aperture (~top 10% of the bowl frame), not mid-body (was 0.45).
-      toY = b.top + Math.min(20, b.height * 0.1);
+      // Rim aperture (~top 20% of the bowl frame)
+      toY = b.top + b.height * 0.2;
     }
   }
 
