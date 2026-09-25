@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
@@ -239,6 +239,9 @@ export default function App() {
     try {
       const saved = localStorage.getItem('ascend_theme') as ThemeMode;
       if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+      if (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')) {
+        return 'dark';
+      }
     } catch {}
     return 'light';
   });
@@ -261,13 +264,16 @@ export default function App() {
     } catch {}
   }, []);
 
-  // Sync html.dark immediately (also covers first paint + system preference flips)
-  useEffect(() => {
+  // Sync html.dark immediately prior to DOM paint (also covers first paint + system preference flips)
+  useLayoutEffect(() => {
     applyDocumentTheme(isDark);
   }, [isDark]);
 
   const handleThemeChange = useCallback(
     (next: ThemeMode) => {
+      try {
+        localStorage.setItem('ascend_theme', next);
+      } catch {}
       const dark = resolveThemeIsDark(next, systemPrefersDark);
       // 0ms visual switch via CSS — before React re-renders the tree
       applyDocumentTheme(dark);
@@ -1472,11 +1478,14 @@ setMomentumEvents((prev) =>
     // Defer remote append briefly so a grace undo can drop the local row with zero penalty.
     // Island pulse only when a new vote is appended — pill still no-ops if the rounded score is flat.
     if (!alreadyVotedMomentum) {
+      const baseWeight = habitWeight(targetHabit);
+      const eventWeight = isMicro ? baseWeight * 0.5 : baseWeight;
       const momentumEvent = createMomentumEvent(
         targetHabit,
         isMicro ? 'fallback' : 'full',
         loggedDate,
-        newEvent.timestamp
+        newEvent.timestamp,
+        eventWeight
       );
       setMomentumEvents((prev) => mergeMomentumEvents(prev, [momentumEvent]));
       const existing = pendingGraceMomentumRef.current.get(habitId);

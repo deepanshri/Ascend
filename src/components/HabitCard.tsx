@@ -548,7 +548,8 @@ function HabitCardInner({
       ref={cardRef}
       data-tour={isTourTarget ? 'habit-card' : undefined}
       onContextMenu={handleContextMenu}
-      className={`relative select-none touch-pan-y transition-opacity duration-200 gpu-smooth ${
+      style={{ contain: 'paint' }}
+      className={`relative select-none touch-pan-y overflow-hidden contain-paint gpu-smooth ${
         isLongPressed
           ? 'opacity-0 pointer-events-none'
           : isOtherLongPressed
@@ -556,7 +557,7 @@ function HabitCardInner({
           : 'z-10'
       }`}
     >
-      <div className="relative rounded-2xl overflow-hidden bg-surface">
+      <div className="relative rounded-2xl overflow-hidden bg-surface contain-paint" style={{ contain: 'paint' }}>
         <motion.div
           className={`absolute inset-0 text-white flex items-center justify-start px-5 font-bold rounded-2xl ${
             isTodayDone

@@ -9,7 +9,16 @@ let dark = false;
 const listeners = new Set<ThemeListener>();
 
 try {
-  dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+  if (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')) {
+    dark = true;
+  } else if (typeof localStorage !== 'undefined') {
+    const saved = localStorage.getItem('ascend_theme');
+    if (saved === 'dark') {
+      dark = true;
+    } else if (saved === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      dark = true;
+    }
+  }
 } catch {
   dark = false;
 }
@@ -28,7 +37,11 @@ export function subscribeTheme(listener: ThemeListener): () => void {
 /** Apply html.dark + notify WebGL leaves. Call synchronously on user toggle. */
 export function applyDocumentTheme(nextDark: boolean): void {
   if (typeof document !== 'undefined') {
-    document.documentElement.classList.toggle('dark', nextDark);
+    if (nextDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
     document.documentElement.style.colorScheme = nextDark ? 'dark' : 'light';
   }
   if (dark === nextDark) return;

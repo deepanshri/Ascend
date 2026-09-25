@@ -68,9 +68,15 @@ export function applyRollingMomentumStep(
   eventWeight: number,
   decayFactor: number = MOMENTUM_DECAY_FACTOR
 ): number {
+  if (eventScore <= 0) {
+    const nextScore = prevScore * (1 - decayFactor);
+    return clampMomentum(nextScore);
+  }
   const increment = eventScore * eventWeight;
   const observation = (increment / WORK_HABIT_WEIGHT) * 100;
-  const nextScore = prevScore * (1 - decayFactor) + observation * decayFactor;
+  const blended = prevScore * (1 - decayFactor) + observation * decayFactor;
+  // Positive completion must NEVER decrease momentum score
+  const nextScore = Math.max(prevScore + 0.5, blended);
   return clampMomentum(nextScore);
 }
 
@@ -137,9 +143,10 @@ export function createMomentumEvent(
   timestamp: number = Date.now(),
   weight?: number
 ): MomentumEvent {
+  const habitId = habit.id;
   return {
-    id: newMomentumEventId(),
-    habitId: habit.id,
+    id: `evt_${habitId}_${loggedDate}_${eventType}`,
+    habitId,
     eventType,
     weight: weight !== undefined ? weight : habitWeight({ category: habit.category } as Habit),
     timestamp,
@@ -161,27 +168,37 @@ export function momentumEventsFromCompletionLog(
     .filter((event) => event.type === 'full' || event.type === 'fallback_micro')
     .map((event) => {
       const habit = byId.get(event.habitId);
+      const iso = resolveEventIsoDate(event, origin);
+      const eventType = event.type === 'fallback_micro' ? 'fallback' : 'full';
       return {
-        id: isUuid(event.id) ? event.id : newMomentumEventId(),
+        id: `evt_${event.habitId}_${iso}_${eventType}`,
         habitId: event.habitId,
-        eventType: event.type === 'fallback_micro' ? 'fallback' : 'full',
+        eventType,
         weight: habit ? habitWeight(habit) : SELF_IMPROVEMENT_HABIT_WEIGHT,
         timestamp: event.timestamp,
-        loggedDate: resolveEventIsoDate(event, origin),
+        loggedDate: iso,
         timeOfDay: event.timeOfDay ?? (habit ? resolveHabitTimeOfDay(habit) : undefined),
       } satisfies MomentumEvent;
     })
     .sort((a, b) => a.timestamp - b.timestamp);
 }
 
-/** Union by id. Existing rows are never dropped or overwritten. */
+/**
+ * Merge momentum events by (habitId, loggedDate) / id.
+ * If an event with the same habitId and loggedDate exists, replace it rather than stacking duplicate decay rows.
+ */
 export function mergeMomentumEvents(local: MomentumEvent[], incoming: MomentumEvent[]): MomentumEvent[] {
-  const byId = new Map<string, MomentumEvent>();
-  local.forEach((event) => byId.set(event.id, event));
-  incoming.forEach((event) => {
-    if (!byId.has(event.id)) byId.set(event.id, event);
-  });
-  return Array.from(byId.values()).sort((a, b) => a.timestamp - b.timestamp);
+  const byKey = new Map<string, MomentumEvent>();
+
+  const put = (event: MomentumEvent) => {
+    const iso = resolveMomentumEventDate(event);
+    const key = iso && event.habitId ? `${event.habitId}::${iso}` : event.id;
+    byKey.set(key, event);
+  };
+
+  local.forEach(put);
+  incoming.forEach(put);
+  return Array.from(byKey.values()).sort((a, b) => a.timestamp - b.timestamp);
 }
 
 /**
@@ -584,6 +601,7 @@ export function calculateMomentumScore(
   const legacyProtectionActive = Boolean(options.examShield || options.vacationMode);
   const asOf = options.asOf;
   const habitById = options.habits ? new Map(options.habits.map((habit) => [habit.id, habit])) : null;
+  const todayIso = toISODate();
 
   const unexpiredEvents = asOf !== undefined
     ? events.filter((e) => e.timestamp <= asOf)
@@ -601,18 +619,21 @@ export function calculateMomentumScore(
       eventsByDate.set(date, []);
     }
     eventsByDate.get(date)!.push(event);
-    if (event.eventType === 'missed') {
+    // Never treat today as a missed day while the day is active
+    if (event.eventType === 'missed' && date !== todayIso) {
       datesWithMissed.add(date);
     }
   }
 
   type TimelineStep =
     | { type: 'daily'; timestamp: number; dailyObservation: number; delta: number }
-    | { type: 'event'; timestamp: number; scoreVal: number; weight: number; delta: number };
+    | { type: 'event'; timestamp: number; scoreVal: number; weight: number; delta: number; isToday: boolean };
 
   const timelineSteps: TimelineStep[] = [];
 
   for (const [date, dateEvents] of eventsByDate.entries()) {
+    const isToday = date === todayIso;
+
     if (datesWithMissed.has(date)) {
       // Deduplicate by habitId: take latest event for each habit on this date
       const habitEvents = new Map<string, MomentumEvent>();
@@ -645,7 +666,7 @@ export function calculateMomentumScore(
       const dailyObservation = activeWeightSum > 0
         ? (completedWeightSum / activeWeightSum) * 100
         : 0;
-      const stepDelta = activeWeightSum > 0 ? decayFactor : 0;
+      const stepDelta = isToday ? 0 : (activeWeightSum > 0 ? decayFactor : 0);
 
       timelineSteps.push({
         type: 'daily',
@@ -661,7 +682,8 @@ export function calculateMomentumScore(
           timestamp: event.timestamp,
           scoreVal: eventScore(event.eventType),
           weight: event.weight,
-          delta: decayFactor,
+          delta: isToday ? 0 : decayFactor,
+          isToday,
         });
       }
     }
@@ -672,9 +694,19 @@ export function calculateMomentumScore(
   let prevScore = 0;
   for (const step of timelineSteps) {
     if (step.type === 'daily') {
-      prevScore = clampMomentum(prevScore * (1 - step.delta) + step.dailyObservation * step.delta);
+      if (step.delta === 0) {
+        prevScore = clampMomentum(prevScore + Math.max(0, step.dailyObservation * 0.05));
+      } else {
+        prevScore = clampMomentum(prevScore * (1 - step.delta) + step.dailyObservation * step.delta);
+      }
     } else {
-      prevScore = applyRollingMomentumStep(prevScore, step.scoreVal, step.weight, step.delta);
+      if (step.isToday) {
+        const increment = step.scoreVal * step.weight;
+        const add = Math.max(1, increment * 1.5);
+        prevScore = clampMomentum(prevScore + add);
+      } else {
+        prevScore = applyRollingMomentumStep(prevScore, step.scoreVal, step.weight, step.delta);
+      }
     }
   }
 

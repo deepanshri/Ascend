@@ -84,6 +84,14 @@ html, body, #root {
 }
 
 #app-root,
+#mobile-viewport,
+.tab-pane,
+body,
+html {
+  transition: none !important;
+}
+
+#app-root,
 #mobile-viewport {
   width: 100%;
   height: 100%;

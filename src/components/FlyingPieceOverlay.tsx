@@ -255,10 +255,19 @@ export default function FlyingPieceOverlay({
   return (
     <div className="fixed inset-0 pointer-events-none z-50" style={{ touchAction: 'none' }}>
       <Canvas
-        style={{ pointerEvents: 'none' }}
-        gl={MARBLE_CANVAS_GL}
+        style={{ pointerEvents: 'none', background: 'transparent' }}
+        gl={{
+          alpha: true,
+          antialias: true,
+          preserveDrawingBuffer: false,
+          powerPreference: 'high-performance',
+        }}
         dpr={MARBLE_CANVAS_DPR}
         camera={FLIGHT_CAMERA}
+        onCreated={({ gl }) => {
+          gl.setClearColor(0x000000, 0);
+          configureMarbleRenderer(gl);
+        }}
       >
         <Suspense fallback={null}>
           <MarbleLightRig />

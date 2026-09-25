@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Bowl } from './Bowl';
 import { MomentumPill } from './MomentumPill';
 import type { AccumulationPiece, BowlFill, CycleDays } from '../services/reportService';
