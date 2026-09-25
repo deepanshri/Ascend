@@ -53,23 +53,97 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   const cycleDays = Number.isFinite(bowlFill?.cycleDays) ? bowlFill.cycleDays : 7;
   const isOverflowing = Boolean(bowlFill?.isOverflowing);
 
-  // Dynamically split habits into Active vs Completed sections based on today's status
+  const checkDay = todayIndex ?? getTodayDayIndex();
+
+  // Visual snapshot of completed habit IDs (delayed by 5000ms on state changes)
+  const [visualCompletedIds, setVisualCompletedIds] = useState<Set<string>>(() => {
+    const set = new Set<string>();
+    if (habits) {
+      for (const habit of habits) {
+        if (Boolean(habit.days?.[checkDay])) {
+          set.add(habit.id);
+        }
+      }
+    }
+    return set;
+  });
+
+  const initializedRef = useRef(false);
+  useEffect(() => {
+    if (!initializedRef.current && habits && habits.length > 0) {
+      initializedRef.current = true;
+      const initialSet = new Set<string>();
+      for (const habit of habits) {
+        if (Boolean(habit.days?.[checkDay])) {
+          initialSet.add(habit.id);
+        }
+      }
+      setVisualCompletedIds(initialSet);
+    }
+  }, [habits, checkDay]);
+
+  // Maintain 5000ms deferred reordering timers when actual completion changes
+  const pendingTimersRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    if (!habits) return;
+    const timers = pendingTimersRef.current;
+
+    for (const habit of habits) {
+      const isActualDone = Boolean(habit.days?.[checkDay]);
+      const isVisualDone = visualCompletedIds.has(habit.id);
+
+      if (isActualDone !== isVisualDone) {
+        if (!timers.has(habit.id)) {
+          const timerId = window.setTimeout(() => {
+            timers.delete(habit.id);
+            setVisualCompletedIds((prev) => {
+              const next = new Set(prev);
+              if (isActualDone) {
+                next.add(habit.id);
+              } else {
+                next.delete(habit.id);
+              }
+              return next;
+            });
+          }, 5000);
+          timers.set(habit.id, timerId);
+        }
+      } else {
+        // State reverted within 5000ms — cancel pending timer
+        if (timers.has(habit.id)) {
+          window.clearTimeout(timers.get(habit.id));
+          timers.delete(habit.id);
+        }
+      }
+    }
+  }, [habits, checkDay, visualCompletedIds]);
+
+  useEffect(() => {
+    return () => {
+      for (const timerId of pendingTimersRef.current.values()) {
+        window.clearTimeout(timerId);
+      }
+      pendingTimersRef.current.clear();
+    };
+  }, []);
+
+  // Split habits array into Active vs Completed sections based on visualCompletedIds
   const { activeHabits, sessionCompletedHabits } = useMemo(() => {
     if (!habits || habits.length === 0) {
       return { activeHabits: [], sessionCompletedHabits: [] };
     }
-    const checkDay = todayIndex ?? getTodayDayIndex();
     const active: Habit[] = [];
     const completed: Habit[] = [];
     for (const habit of habits) {
-      if (Boolean(habit.days?.[checkDay])) {
+      if (visualCompletedIds.has(habit.id)) {
         completed.push(habit);
       } else {
         active.push(habit);
       }
     }
     return { activeHabits: active, sessionCompletedHabits: completed };
-  }, [habits, todayIndex]);
+  }, [habits, visualCompletedIds]);
 
   return (
     <div className="mt-0 flex w-full flex-col items-center pt-1">

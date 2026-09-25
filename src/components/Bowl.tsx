@@ -392,15 +392,16 @@ function RigidMarble({
       const vx = Number.isFinite(handoffVel.vx) ? handoffVel.vx : HANDOFF_DEFAULT_VEL.vx;
       const vy = Number.isFinite(handoffVel.vy) ? handoffVel.vy : HANDOFF_DEFAULT_VEL.vy;
       const vz = Number.isFinite(handoffVel.vz) ? handoffVel.vz : HANDOFF_DEFAULT_VEL.vz;
+      const spawnZ = 0.12 + Math.random() * 0.1;
       physicsRef.current = {
         active: true,
-        // Spawn near the opening center so the 3D drop continues the vertical fall.
+        // Spawn near the opening center in the foreground (+Z) so the 3D drop lands in front
         x: targetPos.x * 0.2,
         y: HANDOFF_RIM_Y,
-        z: targetPos.z * 0.2,
+        z: spawnZ,
         vx,
         vy: Math.min(vy, HANDOFF_DEFAULT_VEL.vy),
-        vz,
+        vz: Math.max(0, vz),
       };
       if (meshRef.current) {
         meshRef.current.position.set(
@@ -445,37 +446,20 @@ function RigidMarble({
     // Collide with the bowl interior floor at the current (x, z), not only the final slot.
     const floorY = Math.max(getBowlFloorY(Math.hypot(p.x, p.z)), targetPos.y);
 
+    if (p.y <= floorY) {
+      p.y = floorY;
+      p.vy = 0;
+      p.vx *= 0.6;
+      p.vz *= 0.6;
+      if (Math.abs(p.x - targetPos.x) < 0.02 && Math.abs(p.z - targetPos.z) < 0.02) {
+        p.active = false;
+      }
+    }
+
     if (meshRef.current) {
       meshRef.current.position.set(p.x, p.y, p.z);
       meshRef.current.rotation.x += dt * (Math.abs(p.vy) * 2.0 + 1.2);
       meshRef.current.rotation.y += dt * 2.5;
-    }
-
-    if (p.y <= floorY) {
-      p.y = floorY;
-      p.vy = -p.vy * 0.34;
-      p.vx *= 0.55;
-      p.vz *= 0.55;
-      if (Math.abs(p.vy) < 0.18) {
-        p.vy = 0;
-        p.vx = 0;
-        p.vz = 0;
-        p.active = false;
-        p.x = targetPos.x;
-        p.y = targetPos.y;
-        p.z = targetPos.z;
-        if (meshRef.current) {
-          meshRef.current.position.set(targetPos.x, targetPos.y, targetPos.z);
-        }
-      }
-    }
-
-    if (shadowRef.current) {
-      const dist = Math.max(0, p.y - targetPos.y);
-      const shadowMat = shadowRef.current.material as THREE.MeshBasicMaterial;
-      if (shadowMat) {
-        shadowMat.opacity = Math.max(0, 0.7 - dist * 1.5);
-      }
     }
   });
 
@@ -515,6 +499,8 @@ function RigidMarble({
           metalness={MARBLE_PHYSICAL_MATERIAL.metalness}
           clearcoat={MARBLE_PHYSICAL_MATERIAL.clearcoat}
           clearcoatRoughness={MARBLE_PHYSICAL_MATERIAL.clearcoatRoughness}
+          depthTest={true}
+          depthWrite={true}
         />
       </mesh>
     </>

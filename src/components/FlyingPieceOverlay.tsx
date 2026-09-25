@@ -19,15 +19,8 @@ import { getThemeIsDark, subscribeTheme } from '../lib/themeStore';
 
 const PIECE_PX = 28;
 const MAX_FLIGHTS = 4;
-/** Rise mostly upward to cruise altitude (avoids sweeping through the glass). */
-const RISE_END = 0.38;
-/** Finish above the rim opening before the vertical drop. */
-const APPROACH_END = 0.7;
-/** Sample window for terminal velocity (last 5% — vertical drop only). */
+/** Sample window for terminal velocity (last 5% — handoff to bowl physics). */
 const TERMINAL_SAMPLE_T = 0.95;
-/** Screen-space lift above the rim handoff point before the vertical drop. */
-const HOVER_LIFT_MIN = 52;
-const HOVER_LIFT_SPAN = 28;
 
 export interface FlightHandoffVelocity {
   vx: number;
@@ -50,6 +43,8 @@ export interface PieceFlight {
   direction?: 'left' | 'right';
   /** Hex from getMarbleColor(isDark, isFallback) at throw time. */
   color?: string;
+  /** Relative horizontal touch point on card (0 = left, 1 = right). */
+  touchRatio?: number;
 }
 
 interface FlyingPieceOverlayProps {
@@ -65,60 +60,21 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
-/** Approx half-width of the bowl frame in CSS px — used only to stay outside the glass. */
-const BOWL_CLEAR_HALF_W = 92;
-
-function riseSideX(p0x: number, rimX: number): number {
-  return p0x <= rimX ? rimX - BOWL_CLEAR_HALF_W : rimX + BOWL_CLEAR_HALF_W;
-}
-
 /**
- * 1) Rise to altitude outside the bowl silhouette
- * 2) Cruise horizontally above the bowl to the hover point
- * 3) Ease-in vertical drop into the rim opening
+ * Smooth quadratic Bezier curve:
+ * P(t) = (1-t)^2 * P_start + 2*(1-t)*t * P_control + t^2 * P_target
  */
 function flightPositionAt(
-  p0: { x: number; y: number },
-  hover: { x: number; y: number },
-  rim: { x: number; y: number },
+  pStart: { x: number; y: number },
+  pControl: { x: number; y: number },
+  pTarget: { x: number; y: number },
   t: number
 ): { x: number; y: number } {
-  const sideX = riseSideX(p0.x, rim.x);
-  // Where the cruise starts after a full rise — continuous with the rise end pose.
-  const cruiseStartX =
-    p0.y > rim.y ? lerp(sideX, hover.x, 0.35) : lerp(p0.x, hover.x, 0.35);
-
-  if (t <= RISE_END) {
-    const u = t / RISE_END;
-    const eased = 1 - (1 - u) * (1 - u);
-    const y = lerp(p0.y, hover.y, eased);
-    let x: number;
-    if (p0.y > rim.y && y > rim.y) {
-      // Ascending past the glass: hold clear of the bowl column.
-      x = lerp(p0.x, sideX, Math.min(1, eased * 1.4));
-      if (Math.abs(x - rim.x) < BOWL_CLEAR_HALF_W) x = sideX;
-    } else if (p0.y > rim.y) {
-      // Crossed above the rim this frame — ease from clear side toward hover.
-      x = lerp(sideX, hover.x, eased * 0.35);
-    } else {
-      // Already above the rim at launch — no lateral jump.
-      x = lerp(p0.x, hover.x, eased * 0.35);
-    }
-    return { x, y };
-  }
-  if (t <= APPROACH_END) {
-    const u = (t - RISE_END) / (APPROACH_END - RISE_END);
-    const eased = u * u * (3 - 2 * u);
-    return {
-      x: lerp(cruiseStartX, hover.x, eased),
-      y: hover.y,
-    };
-  }
-  const u = (t - APPROACH_END) / (1 - APPROACH_END);
-  const eased = u * u;
+  const clampedT = Math.max(0, Math.min(1, t));
+  const u = 1 - clampedT;
   return {
-    x: rim.x,
-    y: lerp(hover.y, rim.y, eased),
+    x: u * u * pStart.x + 2 * u * clampedT * pControl.x + clampedT * clampedT * pTarget.x,
+    y: u * u * pStart.y + 2 * u * clampedT * pControl.y + clampedT * clampedT * pTarget.y,
   };
 }
 
@@ -138,7 +94,7 @@ function screenDeltaToWorldVel(
   return {
     vx: sx * 0.55,
     vy: Math.min(vy, HANDOFF_DEFAULT_VEL.vy),
-    vz: syScreen * 0.12,
+    vz: Math.max(0, syScreen * 0.12),
   };
 }
 
@@ -161,7 +117,6 @@ function SingleFlyingMarble({
   const handoffRef = useRef<FlightHandoffVelocity>({ ...HANDOFF_DEFAULT_VEL });
 
   const progressRef = useRef(0);
-  const scaleFactorRef = useRef(0.5);
 
   useEffect(() => {
     let finished = false;
@@ -179,23 +134,34 @@ function SingleFlyingMarble({
       /* audio failure must never block animation */
     }
 
-    const startFrom = flight.from;
-    const targetTo = flight.to;
+    const pStart = flight.from;
+    const pTarget = flight.to;
     const durationSec = FLIGHT_DURATION_MS / 1000;
+    const touchRatio = Number.isFinite(flight.touchRatio) ? flight.touchRatio! : 0.5;
 
-    let seed = 0;
-    for (let i = 0; i < flight.id.length; i++) {
-      seed = (seed * 31 + flight.id.charCodeAt(i)) & 0xffffffff;
+    let pControl: { x: number; y: number };
+    if (touchRatio < 0.35) {
+      // Left Swipe: curve outward to the left
+      pControl = {
+        x: Math.min(pStart.x, pTarget.x) - 90,
+        y: Math.min(pStart.y, pTarget.y) - 100,
+      };
+    } else if (touchRatio > 0.65) {
+      // Right Swipe: curve outward to the right
+      pControl = {
+        x: Math.max(pStart.x, pTarget.x) + 90,
+        y: Math.min(pStart.y, pTarget.y) - 100,
+      };
+    } else {
+      // Middle Swipe: centered arc
+      pControl = {
+        x: (pStart.x + pTarget.x) / 2,
+        y: Math.min(pStart.y, pTarget.y) - 130,
+      };
     }
-    const rand1 = (seed & 0xffff) / 0xffff;
 
-    const hoverLift = HOVER_LIFT_MIN + rand1 * HOVER_LIFT_SPAN;
-    const rim = targetTo;
-    const hover = { x: rim.x, y: rim.y - hoverLift };
-    const p0 = startFrom;
-
-    const pNear = flightPositionAt(p0, hover, rim, TERMINAL_SAMPLE_T);
-    const pEnd = flightPositionAt(p0, hover, rim, 1);
+    const pNear = flightPositionAt(pStart, pControl, pTarget, TERMINAL_SAMPLE_T);
+    const pEnd = flightPositionAt(pStart, pControl, pTarget, 1);
     const dtTerminal = (1 - TERMINAL_SAMPLE_T) * durationSec;
     handoffRef.current = screenDeltaToWorldVel(
       pEnd.x - pNear.x,
@@ -203,10 +169,10 @@ function SingleFlyingMarble({
       dtTerminal
     );
     handoffRef.current.vx *= 0.2;
-    handoffRef.current.vz *= 0.2;
+    handoffRef.current.vz = Math.max(0, handoffRef.current.vz * 0.2);
 
     if (meshRef.current) {
-      (meshRef.current as any)._flightTrajectory = { p0, hover, rim };
+      (meshRef.current as any)._flightTrajectory = { pStart, pControl, pTarget };
     }
 
     try {
@@ -215,12 +181,6 @@ function SingleFlyingMarble({
         ease: 'linear',
         onUpdate: (t) => {
           progressRef.current = t;
-          if (t < 0.22) {
-            const su = t / 0.22;
-            scaleFactorRef.current = 0.5 + 0.5 * Math.sin(su * Math.PI * 0.5);
-          } else {
-            scaleFactorRef.current = 1.0;
-          }
         },
         onComplete: finish,
       });
@@ -254,16 +214,18 @@ function SingleFlyingMarble({
     const traj = (meshRef.current as any)._flightTrajectory;
     if (!traj) return;
 
-    const pos = flightPositionAt(traj.p0, traj.hover, traj.rim, progressRef.current);
+    const progress = progressRef.current;
+    const pos = flightPositionAt(traj.pStart, traj.pControl, traj.pTarget, progress);
 
     const worldX = (pos.x / size.width - 0.5) * viewport.width;
     const worldY = -(pos.y / size.height - 0.5) * viewport.height;
+    const worldZ = lerp(0, 0.15, progress);
 
-    meshRef.current.position.set(worldX, worldY, 0);
+    meshRef.current.position.set(worldX, worldY, worldZ);
 
-    const baseRadius = (14 / size.width) * viewport.width;
-    const finalScale = baseRadius * scaleFactorRef.current;
-    meshRef.current.scale.setScalar(finalScale);
+    // Marble scale is strictly constant from spawn to landing
+    const fixedWorldRadius = (14 / size.width) * viewport.width;
+    meshRef.current.scale.setScalar(fixedWorldRadius);
 
     meshRef.current.rotation.x += delta * 4.8;
     meshRef.current.rotation.y += delta * 6.5;
@@ -286,40 +248,34 @@ function SingleFlyingMarble({
   );
 }
 
-export const FlyingPieceOverlay: React.FC<FlyingPieceOverlayProps> = ({
+export default function FlyingPieceOverlay({
   flights,
   onFlightComplete,
-}) => {
-  const visible = (flights || []).slice(-MAX_FLIGHTS);
-
+}: FlyingPieceOverlayProps) {
   return (
-    <div
-      aria-hidden="true"
-      className="fixed inset-0 pointer-events-none"
-      style={{ zIndex: 9999 }}
-    >
+    <div className="fixed inset-0 pointer-events-none z-50" style={{ touchAction: 'none' }}>
       <Canvas
+        style={{ pointerEvents: 'none' }}
         gl={MARBLE_CANVAS_GL}
         dpr={MARBLE_CANVAS_DPR}
-        camera={{ position: [0, 0, 5], fov: 45 }}
-        onCreated={({ gl }) => configureMarbleRenderer(gl)}
-        className="pointer-events-none h-full w-full"
+        camera={FLIGHT_CAMERA}
       >
-        <MarbleLightRig />
         <Suspense fallback={null}>
+          <MarbleLightRig />
           <StudioEnvironment />
-          {visible.map((flight) => (
+
+          {flights.map((flight) => (
             <SingleFlyingMarble
               key={flight.id}
               flight={flight}
-              onDone={(handoff) => onFlightComplete?.(flight.id, flight.pieceId, handoff)}
+              onDone={(handoff) => onFlightComplete(flight.id, flight.pieceId, handoff)}
             />
           ))}
         </Suspense>
       </Canvas>
     </div>
   );
-};
+}
 
 /**
  * Resolve card swipe point → bowl rim opening (handoff).
@@ -329,8 +285,8 @@ export const FlyingPieceOverlay: React.FC<FlyingPieceOverlayProps> = ({
 export function measureCompletionFlight(
   habitId: string,
   direction?: 'left' | 'right',
-  customOrigin?: { x: number; y: number }
-): { from: { x: number; y: number }; to: { x: number; y: number } } {
+  customOrigin?: { x: number; y: number; touchRatio?: number }
+): { from: { x: number; y: number }; to: { x: number; y: number }; touchRatio: number } {
   const card = document.getElementById(`habit-card-${habitId}`);
   const bowlFrame = document.getElementById('accumulation-bowl-frame');
   const bowl = bowlFrame || document.getElementById('accumulation-bowl');
@@ -340,6 +296,20 @@ export function measureCompletionFlight(
 
   let fromX: number;
   let fromY: number;
+  let touchRatio = 0.5;
+
+  if (card) {
+    const a = card.getBoundingClientRect();
+    if (customOrigin && Number.isFinite(customOrigin.touchRatio)) {
+      touchRatio = customOrigin.touchRatio!;
+    } else if (customOrigin && Number.isFinite(customOrigin.x) && a.width > 0) {
+      touchRatio = (customOrigin.x - a.left) / a.width;
+    }
+  } else if (customOrigin && Number.isFinite(customOrigin.touchRatio)) {
+    touchRatio = customOrigin.touchRatio!;
+  }
+
+  touchRatio = Math.max(0, Math.min(1, touchRatio));
 
   if (customOrigin && Number.isFinite(customOrigin.x) && Number.isFinite(customOrigin.y) && customOrigin.x !== 0 && customOrigin.y !== 0) {
     fromX = customOrigin.x;
@@ -372,5 +342,6 @@ export function measureCompletionFlight(
   return {
     from: { x: fromX, y: fromY },
     to: { x: toX, y: toY },
+    touchRatio,
   };
 }

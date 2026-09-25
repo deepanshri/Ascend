@@ -47,7 +47,7 @@ interface HabitCardProps {
   onCompleteToday: (
     habitId: string,
     isFallback?: boolean,
-    originCoord?: { x: number; y: number; marbleColor?: string }
+    originCoord?: { x: number; y: number; marbleColor?: string; touchRatio?: number }
   ) => void;
   onToggleFallbackMode: (habitId: string) => void;
   onResetToday: (habitId: string) => void;
@@ -199,7 +199,7 @@ function HabitCardInner({
   }, []);
 
   const scheduleComplete = useCallback(
-    (isFallback: boolean, originCoord?: { x: number; y: number }) => {
+    (isFallback: boolean, originCoord?: { x: number; y: number; touchRatio?: number }) => {
       clearPendingComplete();
       setOptimisticDone(true);
       void triggerCompletionHaptic();
@@ -215,6 +215,7 @@ function HabitCardInner({
         x: resolved.x,
         y: resolved.y,
         marbleColor,
+        touchRatio: originCoord?.touchRatio ?? 0.5,
       });
       pendingCompleteRef.current = {
         isFallback: fallback,
@@ -234,16 +235,19 @@ function HabitCardInner({
   }, [clearPendingComplete]);
 
   const handlePillClick = useCallback(
-    (e: React.MouseEvent, action: (coord: { x: number; y: number }) => void) => {
+    (e: React.MouseEvent, action: (coord: { x: number; y: number; touchRatio?: number }) => void) => {
       e.stopPropagation();
       if (tapLockRef.current || commitLockRef.current || gesturesLockedRef.current) {
         return;
       }
       tapLockRef.current = true;
       commitLockRef.current = true;
-      // Use card centre — the pill is a tiny 24 × 24 button and e.clientX/Y would
-      // launch the marble from its corner instead of the habit card's visual centre.
-      const coord = getCardCenter();
+      const rect = cardRef.current?.getBoundingClientRect();
+      let touchRatio = 0.5;
+      if (rect && rect.width > 0 && e.clientX > 0) {
+        touchRatio = (e.clientX - rect.left) / rect.width;
+      }
+      const coord = { ...getCardCenter(), touchRatio };
       try {
         action(coord);
       } finally {
@@ -365,8 +369,13 @@ function HabitCardInner({
         axis !== 'vertical' &&
         (offset < -SWIPE_COMMIT_PX || (velocityX < -SWIPE_COMMIT_VELOCITY && offset < -20));
 
-      // Always anchor launch origin to the card DOM rect center
-      const originCoord = getCardCenter();
+      // Always anchor launch origin to the card DOM rect center with horizontal touch ratio
+      const rect = cardRef.current?.getBoundingClientRect();
+      let touchRatio = 0.5;
+      if (rect && rect.width > 0 && startXRef.current > 0) {
+        touchRatio = (startXRef.current - rect.left) / rect.width;
+      }
+      const originCoord = { ...getCardCenter(), touchRatio };
 
       if (commitsRight) {
         if (isTodayDoneRef.current) {
@@ -545,11 +554,9 @@ function HabitCardInner({
           : isOtherLongPressed
           ? 'opacity-30 pointer-events-none'
           : 'z-10'
-      } ${celebration === 'full' ? 'habit-complete-glow' : ''} ${
-        celebration === 'fallback' ? 'habit-fallback-ripple' : ''
       }`}
     >
-      <div className="relative rounded-2xl overflow-hidden">
+      <div className="relative rounded-2xl overflow-hidden bg-surface">
         <motion.div
           className={`absolute inset-0 text-white flex items-center justify-start px-5 font-bold rounded-2xl ${
             isTodayDone
@@ -666,8 +673,6 @@ function HabitCardInner({
                 className={`relative bg-surface text-ink rounded-2xl p-4 border flex flex-col justify-between transition-[border-color,background-color,box-shadow] duration-200 ease-out ${
                   isLongPressed
                     ? 'scale-[1.025] shadow-2xl ring-2 ring-accent border-accent'
-                    : celebration === 'fallback'
-                    ? 'shadow-sm border-orange-500 ring-1 ring-orange-500 bg-orange-100 dark:bg-orange-950'
                     : isFallbackActive && !isTodayDone
                     ? 'shadow-sm border-accent ring-1 ring-accent bg-accent-soft active:scale-[0.995]'
                     : habit.isKeystone || keystoneBoosted

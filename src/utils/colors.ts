@@ -29,10 +29,10 @@ export type BowlColorKey = keyof typeof BOWL_COLORS;
  * Dark  + Fallback → Light Blue   #60a5fa
  */
 export function getMarbleColor(isDark: boolean, isFallback: boolean): string {
-  if (!isDark) {
-    return isFallback ? '#4ade80' : '#16a34a';
+  if (isDark) {
+    return isFallback ? '#60a5fa' : '#2563eb'; // Light Blue (Fallback) : Dark Blue (Normal)
   }
-  return isFallback ? '#60a5fa' : '#2563eb';
+  return isFallback ? '#4ade80' : '#16a34a'; // Light Green (Fallback) : Dark Green (Normal)
 }
 
 /**

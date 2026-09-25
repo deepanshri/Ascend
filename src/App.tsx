@@ -162,8 +162,7 @@ const PersonalView = React.lazy(() => import('./components/PersonalView').then((
 const SettingsView = React.lazy(() => import('./components/SettingsView').then((m) => ({ default: m.SettingsView })));
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { HabitLongPressOverlay } from './components/HabitLongPressOverlay';
-import {
-  FlyingPieceOverlay,
+import FlyingPieceOverlay, {
   measureCompletionFlight,
   type FlightHandoffVelocity,
   type PieceFlight,
@@ -1543,6 +1542,7 @@ setMomentumEvents((prev) =>
           isDark: themeDark,
           direction: swipeDir,
           color: flightColor,
+          touchRatio: points.touchRatio,
         };
         setPieceFlights((prev) => [...prev.slice(-4), flight]);
       } catch {
