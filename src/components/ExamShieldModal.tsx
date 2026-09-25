@@ -18,6 +18,7 @@ export const ExamShieldModal: React.FC<ExamShieldModalProps> = ({
   onConfirmActivate,
   status,
 }) => {
+  const isActive = Boolean(status?.active);
   const daysUsed = status?.daysUsed ?? 0;
   const daysCap = status?.daysCap ?? 14;
   const daysRemaining = Math.max(0, daysCap - daysUsed);
@@ -37,7 +38,7 @@ export const ExamShieldModal: React.FC<ExamShieldModalProps> = ({
           </div>
           <div>
             <h2 className="text-[17px] font-black text-slate-900 dark:text-white leading-tight">
-              Activate Exam Shield
+              {isActive ? 'Deactivate Exam Shield' : 'Activate Exam Shield'}
             </h2>
             <div className="flex items-center space-x-1.5 mt-0.5 text-[11px] text-emerald-700 dark:text-blue-400 font-semibold">
               <Shield className="w-3.5 h-3.5" />
@@ -102,7 +103,7 @@ export const ExamShieldModal: React.FC<ExamShieldModalProps> = ({
           }}
           className="flex-1 py-2.5 bg-[#23C15D] dark:bg-blue-600 text-white font-bold rounded-2xl shadow-sm hover:bg-emerald-600 dark:hover:bg-blue-500 transition cursor-pointer text-[13px]"
         >
-          Activate Shield
+          {isActive ? 'Deactivate Shield' : 'Activate Shield'}
         </motion.button>
       </div>
     </MotionModal>

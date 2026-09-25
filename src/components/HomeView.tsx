@@ -101,8 +101,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
         {examShieldActive && (
           <div
             id="home-exam-shield-banner"
-            onClick={onOpenExamShield}
-            className="mt-1.5 px-3 py-1 rounded-full bg-[#E8F8EE]/90 dark:bg-blue-950/80 border border-[#23C15D]/40 dark:border-blue-800 text-[11px] font-semibold text-[#165B33] dark:text-blue-300 flex items-center space-x-1.5 shadow-xs cursor-pointer select-none"
+            className="mt-1.5 px-3 py-1 rounded-full bg-[#E8F8EE]/90 dark:bg-blue-950/80 border border-[#23C15D]/40 dark:border-blue-800 text-[11px] font-semibold text-[#165B33] dark:text-blue-300 flex items-center space-x-1.5 shadow-xs pointer-events-none select-none"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-[#23C15D] dark:bg-blue-400 animate-pulse" />
             <span>Exam Shield Active · Momentum decay is frozen (δ = 0)</span>
