@@ -188,6 +188,16 @@ function HabitCardInner({
     }
   }, []);
 
+  /** Card-centre coordinates — canonical launch point for flying marbles. */
+  const getCardCenter = useCallback((): { x: number; y: number } => {
+    const rect = cardRef.current?.getBoundingClientRect();
+    if (rect && rect.width > 0) {
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }
+    // Last-resort: wherever the pointer was when the gesture began.
+    return { x: startXRef.current, y: startYRef.current };
+  }, []);
+
   const scheduleComplete = useCallback(
     (isFallback: boolean, originCoord?: { x: number; y: number }) => {
       clearPendingComplete();
@@ -196,9 +206,14 @@ function HabitCardInner({
       // Exact same boolean used for flight color and App → habit_logs type.
       const fallback = Boolean(isFallback);
       const marbleColor = getMarbleColor(getThemeIsDark(), fallback);
+      // Resolve origin: prefer explicit coord, fall back to card centre (never 0,0).
+      const resolved =
+        originCoord && originCoord.x !== 0 && originCoord.y !== 0
+          ? originCoord
+          : getCardCenter();
       onCompleteTodayRef.current(habitRef.current.id, fallback, {
-        x: originCoord?.x ?? 0,
-        y: originCoord?.y ?? 0,
+        x: resolved.x,
+        y: resolved.y,
         marbleColor,
       });
       pendingCompleteRef.current = {
@@ -208,7 +223,7 @@ function HabitCardInner({
         }, COMPLETE_GRACE_MS),
       };
     },
-    [clearPendingComplete]
+    [clearPendingComplete, getCardCenter]
   );
 
   const undoOrResetToday = useCallback(() => {
@@ -226,7 +241,9 @@ function HabitCardInner({
       }
       tapLockRef.current = true;
       commitLockRef.current = true;
-      const coord = { x: e.clientX, y: e.clientY };
+      // Use card centre — the pill is a tiny 24 × 24 button and e.clientX/Y would
+      // launch the marble from its corner instead of the habit card's visual centre.
+      const coord = getCardCenter();
       try {
         action(coord);
       } finally {
@@ -236,7 +253,7 @@ function HabitCardInner({
         }, TAP_DEBOUNCE_MS);
       }
     },
-    []
+    [getCardCenter]
   );
 
   const clearLongPressTimer = useCallback(() => {
@@ -348,10 +365,9 @@ function HabitCardInner({
         axis !== 'vertical' &&
         (offset < -SWIPE_COMMIT_PX || (velocityX < -SWIPE_COMMIT_VELOCITY && offset < -20));
 
-      const originCoord = commitPoint ?? {
-        x: startXRef.current + offset,
-        y: startYRef.current,
-      };
+      // Prefer the exact pointer position at drag-end; fall back to card centre
+      // (the old startX + offset math could overshoot when elastic drag snaps).
+      const originCoord = commitPoint ?? getCardCenter();
 
       if (commitsRight) {
         if (isTodayDoneRef.current) {
@@ -413,7 +429,7 @@ function HabitCardInner({
         });
       }, SWIPE_COMMIT_DEFER_MS);
     },
-    [endSwipeSession, scheduleComplete, undoOrResetToday, x]
+    [endSwipeSession, getCardCenter, scheduleComplete, undoOrResetToday, x]
   );
 
   const handleDragStart = useCallback(() => {

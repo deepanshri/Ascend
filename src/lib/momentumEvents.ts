@@ -183,14 +183,15 @@ let supportsTimeOfDayColumn = true;
 export async function pushMomentumEventsRemote(
   userId: string | null | undefined,
   events: MomentumEvent[]
-): Promise<void> {
-  if (!canSync(userId) || !userId || events.length === 0 || !supabase) return;
+): Promise<boolean> {
+  if (!canSync(userId) || !userId || !supabase) return false;
+  if (events.length === 0) return true;
   const filtered = events.filter((event) => !isSeedHabitId(event.habitId) && isUuid(event.id));
-  if (filtered.length === 0) return;
+  if (filtered.length === 0) return true;
 
   if (!isOnline()) {
     for (const event of filtered) enqueue({ userId, event });
-    return;
+    return false;
   }
 
   const rawRows = filtered.map((e) => toMomentumEventRow(userId, e));
@@ -209,9 +210,12 @@ export async function pushMomentumEventsRemote(
     if (error) {
       console.warn('Batch momentum events push note:', error.message);
       for (const event of filtered) enqueue({ userId, event });
+      return false;
     }
+    return true;
   } catch {
     for (const event of filtered) enqueue({ userId, event });
+    return false;
   }
 }
 

@@ -1,4 +1,4 @@
-import { Habit, HabitCategory, HabitCompletionEvent } from '../types';
+  import { Habit, HabitCategory, HabitCompletionEvent } from '../types';
 import { parseTimeOfDay, resolveHabitTimeOfDay } from '../utils/timeOfDay';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { habitCategoryBadge } from '../utils/categories';
@@ -189,10 +189,14 @@ export async function fetchHabitsFromTable(userId?: string | null): Promise<{
     }
 
     const habits = omitDeletedHabits(
-      (data as Record<string, unknown>[] | null || [])
-        .map(rowToHabit)
-        .filter((habit): habit is Habit => habit !== null && !habit.archived && !isSeedHabitId(habit.id))
-    );
+  (data as Record<string, unknown>[] | null || [])
+    .map(rowToHabit)
+    .filter(
+      (habit): habit is Habit =>
+        habit !== null &&
+        !isSeedHabitId(habit.id)
+    )
+);
 
     return { ok: true, habits };
   } catch (err) {
@@ -201,9 +205,13 @@ export async function fetchHabitsFromTable(userId?: string | null): Promise<{
   }
 }
 
-export async function fetchActiveHabits(userId?: string | null): Promise<Habit[]> {
+export async function fetchActiveHabits(
+  userId?: string | null
+): Promise<Habit[]> {
   const result = await fetchHabitsFromTable(userId);
-  return result.ok ? result.habits : [];
+  return result.ok
+    ? result.habits.filter((habit) => !habit.archived)
+    : [];
 }
 
 export async function persistHabitsToTable(userId: string, habits: Habit[]): Promise<boolean> {
@@ -314,40 +322,18 @@ export async function deleteHabitCascade(
   userId: string | null | undefined,
   habitId: string
 ): Promise<void> {
-  rememberDeletedHabit(habitId);
   if (!canSync(userId) || !supabase) return;
   try {
-    // Prefer RPC: removes habit_logs, momentum_events, affirmation_glows, habits.
-    const { error: rpcError } = await supabase.rpc('delete_habit_cascade', {
-      p_habit_id: habitId,
-    });
-    if (!rpcError) return;
-
-    console.warn('delete_habit_cascade RPC unavailable, falling back:', rpcError.message);
-
-    const logs = await supabase
-      .from('habit_logs')
-      .delete()
-      .eq('user_id', userId as string)
-      .eq('habit_id', habitId);
-    if (logs.error) console.warn('habit_logs cascade delete failed:', logs.error.message);
-
-    // Best-effort: append-only trigger may block until migration 015 is applied.
-    const events = await supabase
-      .from('momentum_events')
-      .delete()
-      .eq('user_id', userId as string)
-      .eq('habit_id', habitId);
-    if (events.error) console.warn('momentum_events cascade delete failed:', events.error.message);
-
-    const habits = await supabase
+    // User-facing deletion is an archive: historical logs, momentum events and
+    // ledger evidence remain immutable and available to reports.
+    const { error } = await supabase
       .from('habits')
-      .delete()
+      .update({ archived: true, is_archived: true, updated_at: new Date().toISOString() })
       .eq('user_id', userId as string)
       .eq('id', habitId);
-    if (habits.error) console.warn('habits cascade delete failed:', habits.error.message);
+    if (error) console.warn('Habit archive failed:', error.message);
   } catch (err) {
-    console.warn('Habit cascade delete offline:', err);
+    console.warn('Habit archive offline:', err);
   }
 }
 

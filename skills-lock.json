@@ -36,6 +36,12 @@
       "sourceType": "github",
       "skillPath": "skills/security-audit/SKILL.md",
       "computedHash": "e6b2e317de75da97e9de18d842982994803f3a67a4a6d8154a82323dc3de8528"
+    },
+    "supabase": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/supabase/SKILL.md",
+      "computedHash": "9d45a22644459dcd64a67c98301a3fa4901d369be0824d892919344bfe0c9014"
     }
   }
 }

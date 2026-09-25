@@ -1,4 +1,4 @@
-import { Habit, HabitCompletionEvent, CompletionType, MomentumEvent, MomentumEventType } from '../types';
+import { Habit, HabitCompletionEvent, CompletionType, MomentumEvent, MomentumEventType, ProtectionWindow } from '../types';
 import { isSeedHabitId } from '../data/initialHabits';
 import { isSupabaseConfigured, supabase, fetchSequentialMomentumEvents } from '../lib/supabase';
 import {
@@ -498,6 +498,11 @@ export interface RollingMomentumOptions {
   asOf?: number;
   decayFactor?: number;
   habits?: Habit[];
+  protectionWindows?: readonly ProtectionWindow[];
+}
+
+function isProtectedOnDate(isoDate: string, windows: readonly ProtectionWindow[] | undefined): boolean {
+  return Boolean(windows?.some((window) => window.startsOn <= isoDate && isoDate <= window.endsOn));
 }
 
 /**
@@ -576,7 +581,7 @@ export function calculateMomentumScore(
   options: RollingMomentumOptions = {}
 ): number {
   const decayFactor = options.decayFactor ?? MOMENTUM_DECAY_FACTOR;
-  const protectionActive = Boolean(options.examShield || options.vacationMode);
+  const legacyProtectionActive = Boolean(options.examShield || options.vacationMode);
   const asOf = options.asOf;
   const habitById = options.habits ? new Map(options.habits.map((habit) => [habit.id, habit])) : null;
 
@@ -630,7 +635,8 @@ export function calculateMomentumScore(
           completedWeightSum += scoreVal * event.weight;
           activeWeightSum += event.weight;
         } else if (event.eventType === 'missed') {
-          if (!protectionActive && !unscheduledMiss) {
+          const protectedOnThisDate = isProtectedOnDate(date, options.protectionWindows);
+          if (!legacyProtectionActive && !protectedOnThisDate && !unscheduledMiss) {
             activeWeightSum += event.weight;
           }
         }

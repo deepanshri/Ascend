@@ -113,7 +113,7 @@ export async function fetchUserProfile(
 export async function persistUserProfile(
   session: UserSession,
   patch: Partial<Pick<UserProfile, 'interests' | 'has_completed_tutorial' | 'avatar_url'>>
-): Promise<void> {
+): Promise<boolean> {
   const nextPatch = { ...patch };
   if (typeof nextPatch.avatar_url === 'string') {
     nextPatch.avatar_url = resolveAvatarId(nextPatch.avatar_url);
@@ -148,10 +148,10 @@ export async function persistUserProfile(
   });
 
   if (!isSupabaseConfigured || !supabase || session?.isGuest) {
-    return;
+    return false;
   }
 
-  await syncProfilePatch(session.id, {
+  return syncProfilePatch(session.id, {
     ...nextPatch,
     has_completed_tutorial:
       typeof nextPatch.has_completed_tutorial === 'boolean'

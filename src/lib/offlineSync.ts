@@ -287,14 +287,15 @@ export async function syncHabitLogDelete(
   if (!ok) enqueueLog({ kind: 'delete', userId, habitId, loggedDate, dayIndex });
 }
 
-export async function syncProfilePatch(userId: string, patch: ProfilePatch): Promise<void> {
-  if (!canSync(userId)) return;
+export async function syncProfilePatch(userId: string, patch: ProfilePatch): Promise<boolean> {
+  if (!canSync(userId)) return false;
   if (!isOnline()) {
     enqueueProfile({ userId, patch });
-    return;
+    return false;
   }
   const ok = await pushProfileRemote(userId, patch);
   if (!ok) enqueueProfile({ userId, patch });
+  return ok;
 }
 
 export async function flushOfflineQueue(): Promise<void> {

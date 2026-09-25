@@ -11,6 +11,17 @@ export type ScheduleType = 'daily' | 'specific_days' | 'interval' | 'weekly_targ
 export type CompletionType = 'full' | 'fallback_micro';
 
 export type MomentumEventType = 'full' | 'fallback' | 'missed' | 'reversal';
+export type ProtectionMode = 'exam_shield' | 'vacation';
+
+/** A durable, dated protection interval used when replaying momentum history. */
+export interface ProtectionWindow {
+  id: string;
+  userId: string;
+  mode: ProtectionMode;
+  startsOn: string;
+  endsOn: string;
+  deactivatedOn?: string | null;
+}
 
 /** Append-only swipe / miss record. Historical rows are never overwritten. */
 export interface MomentumEvent {

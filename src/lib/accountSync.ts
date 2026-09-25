@@ -9,6 +9,7 @@ import {
   upsertHabitLog,
 } from '../utils/momentum';
 import { fetchMomentumEventsFromTable, pushMomentumEventsRemote } from './momentumEvents';
+import { pushHabitLogRemote } from './offlineSync';
 import { mergeHabitsByUpdatedAt } from './syncMerge';
 import { getTodayDayIndex, toISODate } from '../utils/dates';
 import { isSupabaseConfigured, supabase } from './supabase';
@@ -39,17 +40,18 @@ function withoutSeedHabits(habits: Habit[]): Habit[] {
   return habits.filter((habit) => !isSeedHabitId(habit.id));
 }
 
-async function pushLocalLogs(userId: string, events: HabitCompletionEvent[]): Promise<void> {
-  if (!events.length) return;
-  await Promise.all(events.map((event) => upsertHabitLog(userId, event)));
+async function pushLocalLogs(userId: string, events: HabitCompletionEvent[]): Promise<boolean> {
+  if (!events.length) return true;
+  const results = await Promise.all(events.map((event) => pushHabitLogRemote(userId, event)));
+  return results.every(Boolean);
 }
 
 export async function persistMomentumHistory(
   userId: string,
   score: number,
   dayIndex: number = getTodayDayIndex()
-): Promise<void> {
-  if (!isSupabaseConfigured || !supabase || !userId || userId.startsWith('guest_')) return;
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !userId || userId.startsWith('guest_')) return false;
   try {
     const recordedDate = toISODate();
     const { error } = await supabase.from('momentum_history').upsert(
@@ -60,9 +62,14 @@ export async function persistMomentumHistory(
       },
       { onConflict: 'user_id,recorded_date' }
     );
-    if (error) console.warn('momentum_history upsert failed:', error.message);
+    if (error) {
+      console.warn('momentum_history upsert failed:', error.message);
+      return false;
+    }
+    return true;
   } catch (err) {
     console.warn('momentum_history upsert offline:', err);
+    return false;
   }
 }
 
@@ -89,7 +96,7 @@ export async function syncAuthenticatedAccount(
   const interests = profile.interests.length > 0 ? profile.interests : input.interests;
   const hasCompletedTutorial = profile.has_completed_tutorial || input.hasCompletedTutorial;
   // Sticky: once completed locally or remotely, never push false back to profiles.
-  await persistUserProfile(session, {
+  const profilePersisted = await persistUserProfile(session, {
     interests,
     has_completed_tutorial: Boolean(hasCompletedTutorial),
   });
@@ -100,7 +107,7 @@ export async function syncAuthenticatedAccount(
   if (!remoteHabitsResult.ok) {
     return {
       habits: omitDeletedHabits(withoutSeedHabits(input.habits)),
-      completionEvents: omitDeletedHabitRefs(input.completionEvents),
+      completionEvents: input.completionEvents,
       momentumEvents: input.momentumEvents,
       ok: false,
       error: remoteHabitsResult.error || 'Could not read habits from Supabase',
@@ -122,20 +129,29 @@ export async function syncAuthenticatedAccount(
   }
 
   const remoteLogs = await fetchHabitLogsFromTable(session.id);
-  const mergedLogs = omitDeletedHabitRefs(
-    mergeCompletionEvents(input.completionEvents, remoteLogs).filter(
-      (event) => !isSeedHabitId(event.habitId)
-    )
-  );
-  await pushLocalLogs(session.id, mergedLogs);
+  const mergedLogs = mergeCompletionEvents(
+  input.completionEvents,
+  remoteLogs
+).filter((event) => !isSeedHabitId(event.habitId));
+  const logsPersisted = await pushLocalLogs(session.id, mergedLogs);
 
   const remoteMomentum = await fetchMomentumEventsFromTable(session.id);
   const mergedMomentum = mergeMomentumEvents(input.momentumEvents, remoteMomentum).filter(
     (event) => !isSeedHabitId(event.habitId)
   );
-  await pushMomentumEventsRemote(session.id, mergedMomentum);
+  const momentumPersisted = await pushMomentumEventsRemote(session.id, mergedMomentum);
 
-  await persistMomentumHistory(session.id, input.momentumScore);
+  const historyPersisted = await persistMomentumHistory(session.id, input.momentumScore);
+
+  if (!profilePersisted || !logsPersisted || !momentumPersisted || !historyPersisted) {
+    return {
+      habits: mergedHabits,
+      completionEvents: mergedLogs,
+      momentumEvents: mergedMomentum,
+      ok: false,
+      error: 'Some account data could not be confirmed in Supabase. Check your connection and retry sync.',
+    };
+  }
 
   return {
     habits: mergedHabits,

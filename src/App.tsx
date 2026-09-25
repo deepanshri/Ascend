@@ -15,6 +15,7 @@ import {
   FrictionAudit,
   HabitCompletionEvent,
   MomentumEvent,
+  ProtectionWindow,
 } from './types';
 import { isSeedHabitId } from './data/initialHabits';
 import {
@@ -128,6 +129,7 @@ import {
   toggleVacation,
 } from './lib/protection';
 import { canEnableKeystone, countActiveKeystones, MAX_KEYSTONE_HABITS } from './lib/keystone';
+import { closeProtectionWindow, fetchProtectionWindows, recordProtectionWindow } from './lib/protectionWindows';
 import {
   createMissedFrictionAudit,
   enqueueFrictionPrompts,
@@ -279,6 +281,7 @@ export default function App() {
   );
 
   const [protection, setProtection] = useState(() => loadProtectionState());
+  const [protectionWindows, setProtectionWindows] = useState<ProtectionWindow[]>([]);
   const examShieldActive = protection.examShield.active;
   const vacationModeActive = protection.vacation.active;
   const examShieldStatus = getExamShieldStatus(protection);
@@ -295,6 +298,18 @@ export default function App() {
   useEffect(() => {
     saveProtectionState(protection);
   }, [protection]);
+
+  useEffect(() => {
+    if (!session?.id || session.isGuest) {
+      setProtectionWindows([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchProtectionWindows(session.id).then((windows) => {
+      if (!cancelled) setProtectionWindows(windows);
+    });
+    return () => { cancelled = true; };
+  }, [session?.id, session?.isGuest]);
 
   const [notificationWindows, setNotificationWindows] = useState<PsychologyNotificationWindows>(
     () => loadNotificationWindows()
@@ -765,20 +780,66 @@ export default function App() {
   });
 
   const handleToggleExamShield = () => {
-    if (!examShieldActive) {
-      // Do not immediately activate - require explanatory confirmation first
-      setIsExamShieldModalOpen(true);
-      return;
+  if (!examShieldActive) {
+    setIsExamShieldModalOpen(true);
+    return;
+  }
+
+  setProtection((prev) => {
+    const result = toggleExamShield(prev);
+    const today = toISODate(calendarOrigin);
+
+    if (
+      result.ok &&
+      prev.examShield.active &&
+      !result.state.examShield.active
+    ) {
+      const active = [...protectionWindows]
+        .reverse()
+        .find(
+          (window) =>
+            window.mode === 'exam_shield' &&
+            window.endsOn >= today &&
+            !window.deactivatedOn
+        );
+
+      if (active) {
+        const closed = {
+          ...active,
+          endsOn: today,
+          deactivatedOn: today,
+        };
+
+        setProtectionWindows((windows) =>
+          windows.map((window) =>
+            window.id === active.id ? closed : window
+          )
+        );
+
+        void closeProtectionWindow(
+          session?.id,
+          active.id,
+          today
+        ).catch(() => {});
+      }
     }
-    setProtection((prev) => {
-      const result = toggleExamShield(prev);
-      return result.state;
-    });
-  };
+
+    return result.state;
+  });
+};
 
   const handleConfirmActivateExamShield = () => {
     setProtection((prev) => {
       const result = toggleExamShield(prev);
+      if (result.ok && result.state.examShield.active && !prev.examShield.active) {
+        const startsOn = result.state.examShield.startedOn || toISODate(calendarOrigin);
+        const endsOn = result.state.examShield.endsOn || startsOn;
+        const window: ProtectionWindow = {
+          id: crypto.randomUUID(), userId: session?.id || '', mode: 'exam_shield', startsOn, endsOn,
+        };
+        setProtectionWindows((windows) => [...windows, window]);
+        void recordProtectionWindow(session?.id, window).catch(() => {});
+      }
       return result.state;
     });
   };
@@ -786,6 +847,23 @@ export default function App() {
   const handleToggleVacationMode = () => {
     setProtection((prev) => {
       const result = toggleVacation(prev);
+      const today = toISODate(calendarOrigin);
+      if (result.ok && result.state.vacation.active && !prev.vacation.active) {
+        const window: ProtectionWindow = {
+          id: crypto.randomUUID(), userId: session?.id || '', mode: 'vacation',
+          startsOn: result.state.vacation.startedOn || today,
+          endsOn: result.state.vacation.endsOn || today,
+        };
+        setProtectionWindows((windows) => [...windows, window]);
+        void recordProtectionWindow(session?.id, window).catch(() => {});
+      } else if (result.ok && prev.vacation.active && !result.state.vacation.active) {
+        const active = [...protectionWindows].reverse().find((window) => window.mode === 'vacation' && window.endsOn >= today);
+        if (active) {
+          const closed = { ...active, endsOn: today, deactivatedOn: today };
+          setProtectionWindows((windows) => windows.map((window) => window.id === active.id ? closed : window));
+          void closeProtectionWindow(session?.id, active.id, today).catch(() => {});
+        }
+      }
       return result.state;
     });
   };
@@ -1067,41 +1145,38 @@ export default function App() {
   // When viewing today, reuse one calculation instead of scanning the log twice.
   const todayMomentumScore = useMemo(() => {
     return calculateMomentumScore(momentumEvents, {
-      examShield: examShieldActive,
-      vacationMode: vacationModeActive,
       habits,
+      protectionWindows,
     });
-  }, [momentumEvents, examShieldActive, vacationModeActive, habits]);
+  }, [momentumEvents, habits, protectionWindows]);
 
   const momentumScore = useMemo(() => {
     if (isViewingToday) return todayMomentumScore;
     return calculateMomentumScore(momentumEvents, {
-      examShield: examShieldActive,
-      vacationMode: vacationModeActive,
       asOf: endOfIsoDate(currentSelectedDate),
       habits,
+      protectionWindows,
     });
   }, [
     isViewingToday,
     todayMomentumScore,
     momentumEvents,
-    examShieldActive,
-    vacationModeActive,
     currentSelectedDate,
     habits,
+    protectionWindows,
   ]);
 
   const displayedIdentityVotes = useMemo(
     () => displayedIdentityVoteCount(
       momentumEvents,
       evidenceList,
-      habits.map((habit) => habit.id)
+      undefined
     ),
-    [momentumEvents, evidenceList, habits]
+    [momentumEvents, evidenceList]
   );
   const ledgerEvidence = useMemo(
-    () => ledgerEvidenceForHabits(evidenceList, habits.map((habit) => habit.id)),
-    [evidenceList, habits]
+    () => evidenceList,
+    [evidenceList]
   );
 
   const completionEventsRef = useRef(completionEvents);
@@ -1142,10 +1217,11 @@ export default function App() {
       getLatestHabits: () => habitsRef.current,
     });
     setHabits((prev) => mergeHabitsByUpdatedAt(prev, result.habits));
-    setCompletionEvents(omitDeletedHabitRefs(result.completionEvents));
-    setMomentumEvents((prev) =>
-      omitDeletedHabitRefs(mergeMomentumEvents(prev, result.momentumEvents)),
-    );
+    setCompletionEvents(result.completionEvents);
+
+setMomentumEvents((prev) =>
+  mergeMomentumEvents(prev, result.momentumEvents)
+);
     if (result.ok) {
       hydratedUserIdRef.current = targetSession.id;
     }
@@ -1182,7 +1258,7 @@ export default function App() {
     if (!session || session?.isGuest) return;
     if (hydratedUserIdRef.current !== session.id) return;
     void persistHabitsToTable(session.id, habits).then((ok) => {
-      applySyncStatus(ok ? 'synced' : 'error');
+      if (!ok) applySyncStatus('error');
     }).catch(() => {
       applySyncStatus('error');
     });
@@ -1603,16 +1679,10 @@ export default function App() {
     );
   };
 
-  // Delete habit (optimistic) + purge every local trace so Report Analysis cannot resurface it
+  // Delete is a soft archive: keep the immutable historical trail for reports and ledger.
   const handleDeleteHabit = (habitId: string) => {
-    rememberDeletedHabit(habitId);
     void cancelHabitTargetTimeNotification(habitId);
-    setHabits((prev) => prev.filter((h) => h.id !== habitId));
-    setCompletionEvents((prev) => prev.filter((e) => e.habitId !== habitId));
-    setMomentumEvents((prev) => prev.filter((e) => e.habitId !== habitId));
-    setEvidenceList((prev) => prev.filter((item) => item.habitId !== habitId));
-    setFrictionAudits((prev) => prev.filter((item) => item.habitId !== habitId));
-    setPendingFriction((prev) => prev.filter((item) => item.habitId !== habitId));
+    setHabits((prev) => prev.map((habit) => habit.id === habitId ? touchHabit({ ...habit, archived: true }) : habit));
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
     if (detailHabit && detailHabit.id === habitId) {
       setDetailHabit(null);
@@ -2496,7 +2566,7 @@ export default function App() {
             <Suspense fallback={<TabLoadingFallback />}>
               <ReportView
                 isActive={isTabActive('report')}
-                habits={activeHabits ?? []}
+                habits={derivedHabits ?? []}
                 evidenceList={ledgerEvidence}
                 identityVoteCount={displayedIdentityVotes}
                 userId={session?.id}
