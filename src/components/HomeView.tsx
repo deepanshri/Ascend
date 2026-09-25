@@ -53,43 +53,23 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   const cycleDays = Number.isFinite(bowlFill?.cycleDays) ? bowlFill.cycleDays : 7;
   const isOverflowing = Boolean(bowlFill?.isOverflowing);
 
-  // Session-captured set of habit IDs that were ALREADY completed when the app opened
-  const [initialCompletedIds, setInitialCompletedIds] = useState<Set<string> | null>(null);
-
-  // Capture initial completion state ONCE per session when habits data is first loaded
-  useEffect(() => {
-    if (initialCompletedIds === null && habits && habits.length > 0) {
-      const completedSet = new Set<string>();
-      const checkDay = todayIndex ?? getTodayDayIndex();
-      for (const habit of habits) {
-        if (Boolean(habit.days?.[checkDay])) {
-          completedSet.add(habit.id);
-        }
-      }
-      setInitialCompletedIds(completedSet);
-    }
-  }, [habits, todayIndex, initialCompletedIds]);
-
-  // Split habits array into Active vs Completed sections based strictly on initial mount status
+  // Dynamically split habits into Active vs Completed sections based on today's status
   const { activeHabits, sessionCompletedHabits } = useMemo(() => {
     if (!habits || habits.length === 0) {
       return { activeHabits: [], sessionCompletedHabits: [] };
     }
-    if (!initialCompletedIds) {
-      // Prior to initial snapshot settling, keep habits in active list
-      return { activeHabits: habits, sessionCompletedHabits: [] };
-    }
+    const checkDay = todayIndex ?? getTodayDayIndex();
     const active: Habit[] = [];
     const completed: Habit[] = [];
     for (const habit of habits) {
-      if (initialCompletedIds.has(habit.id)) {
+      if (Boolean(habit.days?.[checkDay])) {
         completed.push(habit);
       } else {
         active.push(habit);
       }
     }
     return { activeHabits: active, sessionCompletedHabits: completed };
-  }, [habits, initialCompletedIds]);
+  }, [habits, todayIndex]);
 
   return (
     <div className="mt-0 flex w-full flex-col items-center pt-1">

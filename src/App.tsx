@@ -1141,18 +1141,22 @@ export default function App() {
     return derivedHabits.find((h) => h.id === longPressedHabitId) || null;
   }, [derivedHabits, longPressedHabitId]);
 
-  // Rolling momentum from the append-only events log.
-  // When viewing today, reuse one calculation instead of scanning the log twice.
+  // Rolling momentum from the append-only events log merged with live completion events.
+  const todayMomentumEvents = useMemo(() => {
+    const logEvents = momentumEventsFromCompletionLog(completionEvents, habits, calendarOrigin);
+    return mergeMomentumEvents(momentumEvents, logEvents);
+  }, [momentumEvents, completionEvents, habits, calendarOrigin]);
+
   const todayMomentumScore = useMemo(() => {
-    return calculateMomentumScore(momentumEvents, {
+    return calculateMomentumScore(todayMomentumEvents, {
       habits,
       protectionWindows,
     });
-  }, [momentumEvents, habits, protectionWindows]);
+  }, [todayMomentumEvents, habits, protectionWindows]);
 
   const momentumScore = useMemo(() => {
     if (isViewingToday) return todayMomentumScore;
-    return calculateMomentumScore(momentumEvents, {
+    return calculateMomentumScore(todayMomentumEvents, {
       asOf: endOfIsoDate(currentSelectedDate),
       habits,
       protectionWindows,
@@ -1160,7 +1164,7 @@ export default function App() {
   }, [
     isViewingToday,
     todayMomentumScore,
-    momentumEvents,
+    todayMomentumEvents,
     currentSelectedDate,
     habits,
     protectionWindows,
