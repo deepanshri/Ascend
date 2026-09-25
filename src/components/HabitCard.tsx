@@ -4,6 +4,8 @@ import { Habit } from '../types';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
+import { getMarbleColor } from '../utils/colors';
+import { getThemeIsDark } from '../lib/themeStore';
 import {
   SWIPE_COMMIT_PX as SWIPE_COMMIT_THRESHOLD,
   SWIPE_COMMIT_VELOCITY,
@@ -42,7 +44,11 @@ interface HabitCardProps {
   isOtherLongPressed?: boolean;
   isFallbackActive?: boolean;
   isTourTarget?: boolean;
-  onCompleteToday: (habitId: string, isFallback?: boolean, originCoord?: { x: number; y: number }) => void;
+  onCompleteToday: (
+    habitId: string,
+    isFallback?: boolean,
+    originCoord?: { x: number; y: number; marbleColor?: string }
+  ) => void;
   onToggleFallbackMode: (habitId: string) => void;
   onResetToday: (habitId: string) => void;
   onLongPress: (habit: Habit, rect?: DOMRect) => void;
@@ -121,6 +127,11 @@ function HabitCardInner({
   const isTodayDoneRef = useRef(false);
   const isFallbackActiveRef = useRef(isFallbackActive);
   isFallbackActiveRef.current = isFallbackActive;
+  /** Optimistic flag — set on left-swipe activate before App re-renders isFallbackActive. */
+  const optimisticFallbackRef = useRef(isFallbackActive);
+  useEffect(() => {
+    optimisticFallbackRef.current = isFallbackActive;
+  }, [isFallbackActive]);
   const isScheduledTodayRef = useRef(true);
 
   const onCompleteTodayRef = useRef(onCompleteToday);
@@ -182,10 +193,16 @@ function HabitCardInner({
       clearPendingComplete();
       setOptimisticDone(true);
       void triggerCompletionHaptic();
-      // Instant local complete (marble + island); grace only covers undo.
-      onCompleteTodayRef.current(habitRef.current.id, isFallback, originCoord);
+      // Exact same boolean used for flight color and App → habit_logs type.
+      const fallback = Boolean(isFallback);
+      const marbleColor = getMarbleColor(getThemeIsDark(), fallback);
+      onCompleteTodayRef.current(habitRef.current.id, fallback, {
+        x: originCoord?.x ?? 0,
+        y: originCoord?.y ?? 0,
+        marbleColor,
+      });
       pendingCompleteRef.current = {
-        isFallback,
+        isFallback: fallback,
         timer: window.setTimeout(() => {
           pendingCompleteRef.current = null;
         }, COMPLETE_GRACE_MS),
@@ -342,13 +359,15 @@ function HabitCardInner({
           pendingAction = () => undoOrResetToday();
         } else if (!isScheduledTodayRef.current) {
           // Off day: settle silently — no complete / momentum.
-        } else if (isFallbackActiveRef.current) {
+        } else if (optimisticFallbackRef.current || isFallbackActiveRef.current) {
+          // Fallback mode (optimistic or prop): complete as micro → light marble.
           pendingAction = () => {
             setCelebration('fallback');
             void triggerCompletionHaptic();
             scheduleComplete(true, originCoord);
           };
         } else {
+          // Normal full completion → solid marble.
           pendingAction = () => {
             setCelebration('full');
             setFullPopSeq((seq) => seq + 1);
@@ -359,12 +378,17 @@ function HabitCardInner({
       } else if (commitsLeft) {
         if (isTodayDoneRef.current) {
           pendingAction = () => undoOrResetToday();
-        } else if (isFallbackActiveRef.current) {
-          pendingAction = () => onToggleFallbackModeRef.current(habitId);
+        } else if (optimisticFallbackRef.current || isFallbackActiveRef.current) {
+          pendingAction = () => {
+            optimisticFallbackRef.current = false;
+            onToggleFallbackModeRef.current(habitId);
+          };
         } else if (!isScheduledTodayRef.current) {
           // Off day: settle silently.
         } else {
           pendingAction = () => {
+            // Switch into fallback mode (optimistic so an immediate right-swipe is micro).
+            optimisticFallbackRef.current = true;
             setCelebration('fallback');
             onToggleFallbackModeRef.current(habitId);
           };

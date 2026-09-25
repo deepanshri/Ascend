@@ -48,6 +48,7 @@ import {
 import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso, scheduledHabitsForDayIndex } from './utils/schedule';
 import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome, hideNativeSplash } from './lib/nativeChrome';
+import { applyDocumentTheme, getThemeIsDark, resolveThemeIsDark } from './lib/themeStore';
 import {
   getStoredSession,
   setStoredSession,
@@ -108,7 +109,7 @@ import {
   type CycleDays,
   type AccumulationPiece,
 } from './services/reportService';
-import { resolveHabitPieceColor } from './utils/colors';
+import { getMarbleColor } from './utils/colors';
 import { HomeView } from './components/HomeView';
 import { useHabits, withHabitTimeOfDay } from './hooks/useHabits';
 import { hydrateHabitTimeOfDay, resolveHabitTimeOfDay } from './utils/timeOfDay';
@@ -146,7 +147,7 @@ import { ScreenHeader, SCREEN_INSET_CLASS, HEADER_ICON_BTN_CLASS } from './compo
 import { TabLoadingFallback } from './components/TabLoadingFallback';
 import { ExamShieldModal } from './components/ExamShieldModal';
 
-const AddHabitModal = React.lazy(() => import('./components/AddHabitModal').then((m) => ({ default: m.AddHabitModal })));
+import { AddHabitModal } from './components/AddHabitModal';
 const HabitDetailModal = React.lazy(() => import('./components/HabitDetailModal').then((m) => ({ default: m.HabitDetailModal })));
 const DeleteHabitConfirmModal = React.lazy(() => import('./components/DeleteHabitConfirmModal').then((m) => ({ default: m.DeleteHabitConfirmModal })));
 const IdentityLedgerModal = React.lazy(() => import('./components/IdentityLedgerModal').then((m) => ({ default: m.IdentityLedgerModal })));
@@ -162,6 +163,7 @@ import { HabitLongPressOverlay } from './components/HabitLongPressOverlay';
 import {
   FlyingPieceOverlay,
   measureCompletionFlight,
+  type FlightHandoffVelocity,
   type PieceFlight,
 } from './components/FlyingPieceOverlay';
 import {
@@ -215,7 +217,7 @@ export default function App() {
   const hasRequestedPermissionsRef = useRef(false);
   const derivedHabitsRef = useRef<Habit[]>([]);
   const todayDayIndexRef = useRef(3);
-  const handleCompleteTodayRef = useRef<(habitId: string, isFallback?: boolean, originCoord?: { x: number; y: number }) => void>(() => {});
+  const handleCompleteTodayRef = useRef<(habitId: string, isFallback?: boolean, originCoord?: { x: number; y: number; marbleColor?: string }) => void>(() => {});
   const handleResetTodayRef = useRef<(habitId: string) => void>(() => {});
   const handleToggleFallbackModeRef = useRef<(habitId: string) => void>(() => {});
   const handleToggleKeystoneRef = useRef<(habitId: string, next: boolean) => void>(() => {});
@@ -258,10 +260,23 @@ export default function App() {
     } catch {}
   }, []);
 
+  // Sync html.dark immediately (also covers first paint + system preference flips)
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDark);
-    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+    applyDocumentTheme(isDark);
   }, [isDark]);
+
+  const handleThemeChange = useCallback(
+    (next: ThemeMode) => {
+      const dark = resolveThemeIsDark(next, systemPrefersDark);
+      // 0ms visual switch via CSS — before React re-renders the tree
+      applyDocumentTheme(dark);
+      void applyNativeChrome(dark).catch(() => {});
+      startTransition(() => {
+        setTheme(next);
+      });
+    },
+    [systemPrefersDark]
+  );
 
   const [protection, setProtection] = useState(() => loadProtectionState());
   const examShieldActive = protection.examShield.active;
@@ -503,6 +518,9 @@ export default function App() {
   const [bowlCelebrating, setBowlCelebrating] = useState(false);
   const [pieceFlights, setPieceFlights] = useState<PieceFlight[]>([]);
   const [settlePieceIds, setSettlePieceIds] = useState<string[]>([]);
+  const [settleHandoffs, setSettleHandoffs] = useState<Map<string, FlightHandoffVelocity>>(
+    () => new Map()
+  );
   const [completionSound, setCompletionSound] = useState(() => isCompletionSoundEnabled());
   const [hapticVibration, setHapticVibration] = useState(() => isHapticVibrationEnabled());
   const settleTimersRef = useRef<Map<string, number>>(new Map());
@@ -883,11 +901,6 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    const dark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
-    void applyNativeChrome(dark).catch(() => {});
-  }, [theme, systemPrefersDark]);
-
-  useEffect(() => {
     const timer = window.setTimeout(() => {
       void hideNativeSplash().catch(() => {});
     }, 1500);
@@ -1235,13 +1248,8 @@ export default function App() {
 
     let cancelled = false;
     void (async () => {
-      const [remoteHabits, cycleLogs, remoteMomentum] = await Promise.all([
-        fetchActiveHabits(session.id),
-        fetchHabitLogsForDateRange(session.id, startIso, endIso),
-        fetchMomentumEventsFromTable(session.id),
-      ]);
+      const cycleLogs = await fetchHabitLogsForDateRange(session.id, startIso, endIso);
       if (cancelled) return;
-      setHabits((prev) => omitDeletedHabits(mergeHabitsByUpdatedAt(prev, remoteHabits)));
       const userCycleLogs = omitDeletedHabitRefs(
         cycleLogs.filter((event) => !isSeedHabitId(event.habitId))
       );
@@ -1252,19 +1260,6 @@ export default function App() {
               prev.filter((event) => !isSeedHabitId(event.habitId)),
               userCycleLogs,
               calendarOrigin
-            )
-          )
-        );
-      }
-      const userMomentum = omitDeletedHabitRefs(
-        remoteMomentum.filter((event) => !isSeedHabitId(event.habitId))
-      );
-      if (userMomentum.length > 0) {
-        setMomentumEvents((prev) =>
-          omitDeletedHabitRefs(
-            mergeMomentumEvents(
-              prev.filter((event) => !isSeedHabitId(event.habitId)),
-              userMomentum
             )
           )
         );
@@ -1354,14 +1349,19 @@ export default function App() {
   };
 
   // GESTURE / TAP ACTION: Complete Today (Full 100% or Fallback Micro 50%)
-  const handleCompleteToday = (habitId: string, isFallback: boolean = false, originCoord?: { x: number; y: number }) => {
+  const handleCompleteToday = (
+    habitId: string,
+    isFallback: boolean = false,
+    originCoord?: { x: number; y: number; marbleColor?: string }
+  ) => {
     if (!isViewingToday) return;
     const targetHabit = habits.find((h) => h.id === habitId);
     if (!targetHabit) return;
     // Off-day: schedule feature blocks completion (no ledger / momentum / pulse).
     if (!isHabitScheduledOnDayIndex(targetHabit, todayDayIndex, calendarOrigin)) return;
 
-    const isMicro = isFallback || activeFallbackIds.includes(habitId);
+    // Explicit callback flag wins; activeFallbackIds covers mode-then-complete flow.
+    const isMicro = Boolean(isFallback) || activeFallbackIds.includes(habitId);
     const loggedDate = toISODate(calendarOrigin);
     const alreadyCompletedToday = hasTodayLedgerEntry(completionEvents, habitId, loggedDate, calendarOrigin);
     const alreadyVotedMomentum = hasMomentumVoteOnIso(momentumEvents, habitId, loggedDate);
@@ -1449,14 +1449,18 @@ export default function App() {
       try {
         const swipeDir = isMicro ? 'left' : 'right';
         const points = measureCompletionFlight(habitId, swipeDir, originCoord);
-        const flightColor = targetHabit?.color || resolveHabitPieceColor(targetHabit, isMicro, isDark);
+        const themeDark = getThemeIsDark();
+        // Same isMicro boolean as habit_logs.type — light vs solid marble shade.
+        const flightColor =
+          originCoord?.marbleColor || getMarbleColor(themeDark, isMicro);
         const flight: PieceFlight = {
           id: `fly-${pieceId}-${Date.now()}`,
           pieceId,
+          isFallback: isMicro,
           kind: rewardKind,
           from: points.from,
           to: points.to,
-          isDark,
+          isDark: themeDark,
           direction: swipeDir,
           color: flightColor,
         };
@@ -1938,19 +1942,33 @@ export default function App() {
   );
   const settlePieceIdSet = useMemo(() => new Set(settlePieceIds), [settlePieceIds]);
 
-  const handlePieceFlightComplete = useCallback((flightId: string, pieceId: string) => {
-    void pulseCompletionHaptic('fallback');
-    // Synchronous handoff: instant single-frame handoff into 3D WebGL physics at rim aperture
-    setPieceFlights((prev) => prev.filter((flight) => flight.id !== flightId));
-    setSettlePieceIds((prev) => (prev.includes(pieceId) ? prev : [...prev, pieceId]));
-    const existing = settleTimersRef.current.get(pieceId);
-    if (existing) window.clearTimeout(existing);
-    const timer = window.setTimeout(() => {
-      settleTimersRef.current.delete(pieceId);
-      setSettlePieceIds((prev) => prev.filter((id) => id !== pieceId));
-    }, 800);
-    settleTimersRef.current.set(pieceId, timer);
-  }, []);
+  const handlePieceFlightComplete = useCallback(
+    (flightId: string, pieceId: string, handoff: FlightHandoffVelocity) => {
+      void pulseCompletionHaptic('fallback');
+      // Same React batch: mount bowl marble at rim with V_terminal, then unmount overlay
+      setSettleHandoffs((prev) => {
+        const next = new Map(prev);
+        next.set(pieceId, handoff);
+        return next;
+      });
+      setSettlePieceIds((prev) => (prev.includes(pieceId) ? prev : [...prev, pieceId]));
+      setPieceFlights((prev) => prev.filter((flight) => flight.id !== flightId));
+      const existing = settleTimersRef.current.get(pieceId);
+      if (existing) window.clearTimeout(existing);
+      const timer = window.setTimeout(() => {
+        settleTimersRef.current.delete(pieceId);
+        setSettlePieceIds((prev) => prev.filter((id) => id !== pieceId));
+        setSettleHandoffs((prev) => {
+          if (!prev.has(pieceId)) return prev;
+          const next = new Map(prev);
+          next.delete(pieceId);
+          return next;
+        });
+      }, 800);
+      settleTimersRef.current.set(pieceId, timer);
+    },
+    []
+  );
 
   const handleCompletionSoundChange = useCallback((enabled: boolean) => {
     setCompletionSoundEnabled(enabled);
@@ -1971,7 +1989,11 @@ export default function App() {
   );
 
   const stableCompleteToday = useCallback(
-    (habitId: string, isFallback?: boolean, originCoord?: { x: number; y: number }) => {
+    (
+      habitId: string,
+      isFallback?: boolean,
+      originCoord?: { x: number; y: number; marbleColor?: string }
+    ) => {
       handleCompleteTodayRef.current(habitId, isFallback, originCoord);
     },
     []
@@ -2283,7 +2305,7 @@ export default function App() {
     navScrollVisibleRef.current = true;
     syncNavChrome();
     const timer = window.setTimeout(() => {
-      if (tutorialLockRef.current || hasCompletedTutorial !== false) return;
+      if (tutorialLockRef.current || hasCompletedTutorial !== false || isAddModalOpen) return;
       tutorialLockRef.current = true;
       startAscendSpotlightTutorial(() => {
         setHasCompletedTutorial(true);
@@ -2299,7 +2321,7 @@ export default function App() {
     }, 700);
 
     return () => window.clearTimeout(timer);
-  }, [session, isOnboarded, hasCompletedTutorial, activeTab, selectedInterests, syncNavChrome]);
+  }, [session, isOnboarded, hasCompletedTutorial, activeTab, selectedInterests, syncNavChrome, isAddModalOpen]);
 
   useEffect(() => {
     if (!session || !isOnboarded) return;
@@ -2351,12 +2373,12 @@ export default function App() {
     );
   }
 
-  const themeBgClass = isDark ? 'dark bg-canvas text-ink' : 'bg-canvas text-ink';
+  const themeBgClass = 'bg-canvas text-ink';
 
   return (
     <div
       id="app-root"
-      className={`w-full h-full overflow-hidden select-none font-sans transition-colors duration-200 ${themeBgClass}`}
+      className={`w-full h-full overflow-hidden select-none font-sans ${themeBgClass}`}
     >
       <div
         id="mobile-viewport"
@@ -2394,7 +2416,10 @@ export default function App() {
                     id="add-habit-btn-above-list"
                     type="button"
                     whileTap={tapPress}
-                    onClick={() => setIsAddModalOpen(true)}
+                    onClick={() => {
+                      destroyAscendSpotlightTutorial();
+                      setIsAddModalOpen(true);
+                    }}
                     aria-label="Add Habit"
                     title="Add Habit"
                     className={HEADER_ICON_BTN_CLASS}
@@ -2408,7 +2433,6 @@ export default function App() {
             <HomeView
               pieces={celebrationPieces ?? bowlPieces}
               bowlFill={bowlFill}
-              isDark={isDark}
               momentumScore={todayMomentumScore}
               momentumPulse={momentumPulse}
               onCycleDaysChange={handleCycleDaysChange}
@@ -2416,6 +2440,7 @@ export default function App() {
               onCelebrationDone={handleBowlCelebrationDone}
               deferredPieceIds={deferredPieceIds}
               settlePieceIds={settlePieceIdSet}
+              settleHandoffs={settleHandoffs}
               habits={activeHabits}
               todayIndex={todayDayIndex}
               renderHabit={renderHabit}
@@ -2556,7 +2581,7 @@ export default function App() {
                 completionEvents={completionEvents ?? []}
                 momentumEvents={momentumEvents ?? []}
                 theme={theme}
-                onThemeChange={setTheme}
+                onThemeChange={handleThemeChange}
                 notificationWindows={notificationWindows}
                 onToggleNotificationWindow={handleToggleNotificationWindow}
                 completionSound={completionSound}

@@ -1,0 +1,294 @@
+{
+  "apk": "C:\\Users\\deepa\\Downloads\\habit-tracker\\android\\app\\build\\outputs\\apk\\release\\app-release.apk",
+  "apkBytes": 11173717,
+  "apkSha256": "81E49D7D05BCC63FEC2E57518959548DE77C5A32298E5431CF1C406657430238",
+  "apkMtime": "2026-09-25T03:14:04.239Z",
+  "package": "com.ascend.habittracker",
+  "versionName": "1.0.5",
+  "buildType": "release",
+  "measuredAt": "2026-09-25T03:26:13.335Z",
+  "serial": "emulator-5554",
+  "coldLaunchTotalTimeMs": 1389,
+  "coldLaunchWaitTimeMs": 1396,
+  "coldLaunchToAuthInteractiveMs": 7,
+  "authVisible": true,
+  "authReadyPollMs": 7,
+  "postSignupVisible": true,
+  "postSignupMs": 2148,
+  "authPath": "onboarding",
+  "onboardingVisible": true,
+  "onboardingAppearMs": 9,
+  "onboardingToHomeMs": 124,
+  "onboardingToHomePerfMs": 99,
+  "homeInteractive": true,
+  "driverState": {
+    "driverActive": false,
+    "overlay": true,
+    "popover": true,
+    "plusPointerEvents": "none",
+    "bodyPointerEvents": "auto",
+    "htmlClass": ""
+  },
+  "responsivenessProbe": {
+    "ok": true,
+    "styleMutateMs": 0.5
+  },
+  "firstPlusTap": {
+    "label": "first",
+    "clicked": {
+      "ok": true,
+      "pointerEvents": "none",
+      "driverActive": false,
+      "tClick": 9752.599999999627
+    },
+    "blockedBeforeClick": false,
+    "modalVisible": true,
+    "latencyMs": 99,
+    "perfLatencyMs": 80,
+    "wallMs": 100,
+    "baselinePerfMs": 9743.400000000373
+  },
+  "secondPlusTap": {
+    "label": "second",
+    "clicked": {
+      "ok": true,
+      "pointerEvents": "auto",
+      "driverActive": false,
+      "tClick": 10611.5
+    },
+    "blockedBeforeClick": false,
+    "modalVisible": true,
+    "latencyMs": 182,
+    "perfLatencyMs": 113,
+    "wallMs": 182,
+    "baselinePerfMs": 10578.800000000745
+  },
+  "perfSnapshot": {
+    "longTaskCount": 4,
+    "worstLongTasksMs": [
+      {
+        "duration": 171,
+        "start": 8453
+      },
+      {
+        "duration": 159,
+        "start": 8770
+      },
+      {
+        "duration": 129,
+        "start": 8641
+      },
+      {
+        "duration": 59,
+        "start": 8930
+      }
+    ],
+    "networkCount": 34,
+    "slowestNetwork": [
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/auth/v1/signup",
+        "status": 200,
+        "ms": 1755
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 200,
+        "ms": 604
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/quotes",
+        "status": 200,
+        "ms": 604
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 204,
+        "ms": 466
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 201,
+        "ms": 453
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/reminders",
+        "status": 200,
+        "ms": 440
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 200,
+        "ms": 439
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habits",
+        "status": 200,
+        "ms": 353
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/friendships",
+        "status": 200,
+        "ms": 292
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/momentum_events",
+        "status": 400,
+        "ms": 274
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 200,
+        "ms": 244
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 200,
+        "ms": 237
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 200,
+        "ms": 236
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 200,
+        "ms": 236
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 204,
+        "ms": 218
+      }
+    ],
+    "networkSample": [
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/auth/v1/signup",
+        "status": 200,
+        "ms": 1755
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 201,
+        "ms": 453
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 200,
+        "ms": 439
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/reminders",
+        "status": 200,
+        "ms": 440
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 204,
+        "ms": 466
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 204,
+        "ms": 167
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 200,
+        "ms": 96
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 200,
+        "ms": 146
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 200,
+        "ms": 153
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 200,
+        "ms": 152
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 200,
+        "ms": 188
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 204,
+        "ms": 166
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 200,
+        "ms": 236
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 200,
+        "ms": 236
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 204,
+        "ms": 218
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 200,
+        "ms": 237
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 200,
+        "ms": 604
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/quotes",
+        "status": 200,
+        "ms": 604
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habits",
+        "status": 200,
+        "ms": 353
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 200,
+        "ms": 64
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 200,
+        "ms": 74
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/profiles",
+        "status": 200,
+        "ms": 145
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 204,
+        "ms": 164
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 200,
+        "ms": 244
+      },
+      {
+        "url": "https://dpgupbcbhkmjtyqkljpr.supabase.co/rest/v1/habit_logs",
+        "status": 204,
+        "ms": 197
+      }
+    ]
+  },
+  "logcatErrors": [],
+  "originalBugFixed": true
+}

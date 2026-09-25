@@ -1,37 +1,186 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useEffect, useRef } from 'react';
 import { animate, motion, useMotionValue } from 'motion/react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { playCompletionSound } from '../utils/feedback';
-import { BOWL_COLORS, normalizeHabitColor } from '../utils/colors';
+import { getMarbleColor } from '../utils/colors';
+import {
+  FLIGHT_CAMERA,
+  FLIGHT_DURATION_MS,
+  HANDOFF_DEFAULT_VEL,
+  HANDOFF_PX_TO_WORLD,
+  MARBLE_CANVAS_DPR,
+  MARBLE_CANVAS_GL,
+  MARBLE_PHYSICAL_MATERIAL,
+  configureMarbleRenderer,
+} from '../lib/marbleRenderer';
+import { MarbleLightRig, StudioEnvironment } from '../lib/marbleScene';
+import { getThemeIsDark, subscribeTheme } from '../lib/themeStore';
 
-/** Organic 120 FPS flight duration into the bowl rim opening (synchronized 600ms). */
-const FLIGHT_MS = 600;
 const PIECE_PX = 28;
 const MAX_FLIGHTS = 4;
+/** Rise mostly upward to cruise altitude (avoids sweeping through the glass). */
+const RISE_END = 0.38;
+/** Finish above the rim opening before the vertical drop. */
+const APPROACH_END = 0.7;
+/** Sample window for terminal velocity (last 5% — vertical drop only). */
+const TERMINAL_SAMPLE_T = 0.95;
+/** Screen-space lift above the rim handoff point before the vertical drop. */
+const HOVER_LIFT_MIN = 52;
+const HOVER_LIFT_SPAN = 28;
+
+export interface FlightHandoffVelocity {
+  vx: number;
+  vy: number;
+  vz: number;
+}
 
 export interface PieceFlight {
   /** Unique flight instance id. */
   id: string;
   /** Matches AccumulationPiece.id (`habitId::isoDate`) — hidden in bowl until land. */
   pieceId: string;
+  /** Explicit completion type — drives getMarbleColor light vs solid shade. */
+  isFallback: boolean;
+  /** @deprecated Prefer isFallback — kept for bowl pieceId kind parity. */
   kind: 'full' | 'fallback';
   from: { x: number; y: number };
   to: { x: number; y: number };
   isDark: boolean;
   direction?: 'left' | 'right';
+  /** Hex from getMarbleColor(isDark, isFallback) at throw time. */
   color?: string;
 }
 
 interface FlyingPieceOverlayProps {
   flights: PieceFlight[];
-  onFlightComplete: (flightId: string, pieceId: string) => void;
+  onFlightComplete: (
+    flightId: string,
+    pieceId: string,
+    handoff: FlightHandoffVelocity
+  ) => void;
 }
 
-/** Pure 3D WebGL rotating marble matching the geometry and material of bowl marbles */
-function FlyingSphereMesh({ color }: { color: string }) {
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/** Approx half-width of the bowl frame in CSS px — used only to stay outside the glass. */
+const BOWL_CLEAR_HALF_W = 92;
+
+function riseSideX(p0x: number, rimX: number): number {
+  return p0x <= rimX ? rimX - BOWL_CLEAR_HALF_W : rimX + BOWL_CLEAR_HALF_W;
+}
+
+/**
+ * 1) Rise to altitude outside the bowl silhouette
+ * 2) Cruise horizontally above the bowl to the hover point
+ * 3) Ease-in vertical drop into the rim opening
+ */
+function flightPositionAt(
+  p0: { x: number; y: number },
+  hover: { x: number; y: number },
+  rim: { x: number; y: number },
+  t: number
+): { x: number; y: number } {
+  const sideX = riseSideX(p0.x, rim.x);
+  // Where the cruise starts after a full rise — continuous with the rise end pose.
+  const cruiseStartX =
+    p0.y > rim.y ? lerp(sideX, hover.x, 0.35) : lerp(p0.x, hover.x, 0.35);
+
+  if (t <= RISE_END) {
+    const u = t / RISE_END;
+    const eased = 1 - (1 - u) * (1 - u);
+    const y = lerp(p0.y, hover.y, eased);
+    let x: number;
+    if (p0.y > rim.y && y > rim.y) {
+      // Ascending past the glass: hold clear of the bowl column.
+      x = lerp(p0.x, sideX, Math.min(1, eased * 1.4));
+      if (Math.abs(x - rim.x) < BOWL_CLEAR_HALF_W) x = sideX;
+    } else if (p0.y > rim.y) {
+      // Crossed above the rim this frame — ease from clear side toward hover.
+      x = lerp(sideX, hover.x, eased * 0.35);
+    } else {
+      // Already above the rim at launch — no lateral jump.
+      x = lerp(p0.x, hover.x, eased * 0.35);
+    }
+    return { x, y };
+  }
+  if (t <= APPROACH_END) {
+    const u = (t - RISE_END) / (APPROACH_END - RISE_END);
+    const eased = u * u * (3 - 2 * u);
+    return {
+      x: lerp(cruiseStartX, hover.x, eased),
+      y: hover.y,
+    };
+  }
+  const u = (t - APPROACH_END) / (1 - APPROACH_END);
+  const eased = u * u;
+  return {
+    x: rim.x,
+    y: lerp(hover.y, rim.y, eased),
+  };
+}
+
+/** Screen px/s → bowl world units/s (Y flipped: CSS down → world up). */
+function screenDeltaToWorldVel(
+  dxPx: number,
+  dyPx: number,
+  dtSec: number
+): FlightHandoffVelocity {
+  if (dtSec <= 0) {
+    return { ...HANDOFF_DEFAULT_VEL };
+  }
+  const sx = (dxPx / dtSec) * HANDOFF_PX_TO_WORLD;
+  const syScreen = (dyPx / dtSec) * HANDOFF_PX_TO_WORLD;
+  // Screen Y+ is down; bowl Y+ is up.
+  const vy = -syScreen;
+  return {
+    vx: sx * 0.55,
+    vy: Math.min(vy, HANDOFF_DEFAULT_VEL.vy),
+    vz: syScreen * 0.12,
+  };
+}
+
+/** Pure 3D WebGL marble — color locked from flight.isFallback at throw time. */
+function FlyingSphereMesh({
+  isFallback,
+  isDark,
+  colorHex,
+}: {
+  isFallback: boolean;
+  isDark: boolean;
+  colorHex?: string;
+}) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const resolvedColor = useMemo(() => new THREE.Color(normalizeHabitColor(color)), [color]);
+  const materialRef = useRef<THREE.MeshPhysicalMaterial>(null);
+  const isFallbackRef = useRef(isFallback);
+  isFallbackRef.current = isFallback;
+  const isDarkRef = useRef(isDark);
+  isDarkRef.current = isDark;
+
+  const resolveHex = () =>
+    colorHex || getMarbleColor(isDarkRef.current, isFallbackRef.current);
+
+  useEffect(() => {
+    const syncThrowColor = () => {
+      const mat = materialRef.current;
+      if (!mat) return;
+      mat.color.set(colorHex || getMarbleColor(isDarkRef.current, isFallbackRef.current));
+    };
+    const syncTheme = () => {
+      const mat = materialRef.current;
+      if (!mat) return;
+      mat.color.set(getMarbleColor(getThemeIsDark(), isFallbackRef.current));
+    };
+    syncThrowColor();
+    const raf = requestAnimationFrame(syncThrowColor);
+    const unsub = subscribeTheme(syncTheme);
+    return () => {
+      cancelAnimationFrame(raf);
+      unsub();
+    };
+  }, [colorHex, isFallback, isDark]);
 
   useFrame((_, delta) => {
     if (meshRef.current) {
@@ -40,13 +189,18 @@ function FlyingSphereMesh({ color }: { color: string }) {
     }
   });
 
+  const initialColor = resolveHex();
+
   return (
     <mesh ref={meshRef}>
-      <sphereGeometry args={[0.82, 32, 32]} />
-      <meshStandardMaterial
-        color={resolvedColor}
-        roughness={0.18}
-        metalness={0.12}
+      <sphereGeometry args={[0.82, 24, 24]} />
+      <meshPhysicalMaterial
+        ref={materialRef}
+        color={initialColor}
+        roughness={MARBLE_PHYSICAL_MATERIAL.roughness}
+        metalness={MARBLE_PHYSICAL_MATERIAL.metalness}
+        clearcoat={MARBLE_PHYSICAL_MATERIAL.clearcoat}
+        clearcoatRoughness={MARBLE_PHYSICAL_MATERIAL.clearcoatRoughness}
       />
     </mesh>
   );
@@ -54,7 +208,7 @@ function FlyingSphereMesh({ color }: { color: string }) {
 
 const FlightMarble: React.FC<{
   flight: PieceFlight;
-  onDone: () => void;
+  onDone: (handoff: FlightHandoffVelocity) => void;
 }> = ({ flight, onDone }) => {
   const x = useMotionValue(flight.from.x);
   const y = useMotionValue(flight.from.y);
@@ -63,29 +217,10 @@ const FlightMarble: React.FC<{
 
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  const handoffRef = useRef<FlightHandoffVelocity>({ ...HANDOFF_DEFAULT_VEL });
 
-  const isFallback = flight.kind === 'fallback';
-
-  // Strict adherence to locked Blue/Green/Orange palette with darkened dark green
-  const sphereColor = normalizeHabitColor(
-    flight.color ||
-      (flight.isDark
-        ? isFallback
-          ? BOWL_COLORS.light_blue
-          : BOWL_COLORS.blue
-        : isFallback
-        ? BOWL_COLORS.light_green
-        : BOWL_COLORS.dark_green)
-  );
-
-  const glowColor = useMemo(() => {
-    const hex = sphereColor.toLowerCase();
-    if (hex === BOWL_COLORS.dark_green || hex === '#064e3b') return 'rgba(6, 78, 59, 0.55)';
-    if (hex === BOWL_COLORS.light_green || hex === '#34d399') return 'rgba(52, 211, 153, 0.45)';
-    if (hex === BOWL_COLORS.orange || hex === '#ea580c') return 'rgba(234, 88, 12, 0.55)';
-    if (hex === BOWL_COLORS.light_blue || hex === '#60a5fa') return 'rgba(96, 165, 250, 0.45)';
-    return 'rgba(37, 99, 235, 0.55)';
-  }, [sphereColor]);
+  const isFallback = Boolean(flight.isFallback) || flight.kind === 'fallback';
+  const isDark = Boolean(flight.isDark);
 
   useEffect(() => {
     let finished = false;
@@ -94,10 +229,9 @@ const FlightMarble: React.FC<{
     const finish = () => {
       if (finished) return;
       finished = true;
-      onDoneRef.current?.();
+      onDoneRef.current?.(handoffRef.current);
     };
 
-    // Trigger completion chime immediately at throw launch
     try {
       playCompletionSound();
     } catch {
@@ -106,47 +240,39 @@ const FlightMarble: React.FC<{
 
     const startFrom = flight.from;
     const targetTo = flight.to;
+    const durationSec = FLIGHT_DURATION_MS / 1000;
 
-    // Pseudo-random deterministic parameters from flight id for distinct arcs
     let seed = 0;
     for (let i = 0; i < flight.id.length; i++) {
       seed = (seed * 31 + flight.id.charCodeAt(i)) & 0xffffffff;
     }
     const rand1 = (seed & 0xffff) / 0xffff;
-    const rand2 = ((seed >>> 16) & 0xffff) / 0xffff;
-    const rand3 = Math.abs(Math.sin(seed));
 
-    // Dynamic arc variation: height varies above bowl top rim
-    const apexLift = 50 + rand1 * 35;
-    const yApex = Math.min(startFrom.y, targetTo.y) - apexLift;
+    // Hover directly above the rim opening, then fall straight down into it.
+    const hoverLift = HOVER_LIFT_MIN + rand1 * HOVER_LIFT_SPAN;
+    const rim = targetTo;
+    const hover = { x: rim.x, y: rim.y - hoverLift };
+    const p0 = startFrom;
 
-    // Dynamic apex timing along the throw (38% to 48%)
-    const apexT = 0.38 + rand2 * 0.10;
-
-    // Dynamic lateral curvature (natural air sway)
-    const lateralCurvature = (rand3 - 0.5) * 40;
+    const pNear = flightPositionAt(p0, hover, rim, TERMINAL_SAMPLE_T);
+    const pEnd = flightPositionAt(p0, hover, rim, 1);
+    const dtTerminal = (1 - TERMINAL_SAMPLE_T) * durationSec;
+    // Vertical drop → nearly zero lateral world velocity at handoff.
+    handoffRef.current = screenDeltaToWorldVel(
+      pEnd.x - pNear.x,
+      pEnd.y - pNear.y,
+      dtTerminal
+    );
+    handoffRef.current.vx *= 0.2;
+    handoffRef.current.vz *= 0.2;
 
     try {
       launchControls = animate(0, 1, {
-        duration: FLIGHT_MS / 1000,
-        ease: 'linear', // Time is linear; physical parabolic curve calculated below
+        duration: durationSec,
+        ease: 'linear',
         onUpdate: (t) => {
-          // Horizontal travel: energetic start easing smoothly into the rim aperture
-          const xProg = Math.sin(t * Math.PI * 0.5);
-          const sway = Math.sin(t * Math.PI) * lateralCurvature;
-          const curX = startFrom.x + (targetTo.x - startFrom.x) * xProg + sway;
+          const pos = flightPositionAt(p0, hover, rim, t);
 
-          // Vertical travel: parabolic physical ballistic gravity arc up to apex, then falling to rim
-          let curY: number;
-          if (t <= apexT) {
-            const u = t / apexT;
-            curY = yApex + (startFrom.y - yApex) * Math.pow(1 - u, 2.0);
-          } else {
-            const u = (t - apexT) / (1 - apexT);
-            curY = yApex + (targetTo.y - yApex) * Math.pow(u, 2.0);
-          }
-
-          // Scale: emerges smoothly from 0.5 to full 1.0 size within first 22%
           let curScale: number;
           if (t < 0.22) {
             const su = t / 0.22;
@@ -155,10 +281,9 @@ const FlightMarble: React.FC<{
             curScale = 1.0;
           }
 
-          x.set(curX);
-          y.set(curY);
+          x.set(pos.x);
+          y.set(pos.y);
           scale.set(curScale);
-          // Opacity remains 100% full right up to handoff at t=1.0 to prevent disappearing
           opacity.set(1);
         },
         onComplete: finish,
@@ -170,7 +295,7 @@ const FlightMarble: React.FC<{
     return () => {
       launchControls?.stop();
     };
-  }, [flight.id, flight.from, flight.to]);
+  }, [flight.id, flight.from, flight.to, opacity, scale, x, y]);
 
   return (
     <motion.div
@@ -191,24 +316,23 @@ const FlightMarble: React.FC<{
         transform: 'translate3d(0, 0, 0)',
       }}
     >
-      {/* Radiant particle aura */}
-      <div
-        className="pointer-events-none absolute -inset-2.5 rounded-full animate-pulse blur-xs"
-        style={{
-          background: `radial-gradient(circle, ${glowColor} 0%, transparent 72%)`,
-        }}
-      />
-
-      {/* High-Fidelity 3D WebGL Sphere */}
+      {/* No CSS glow — WebGL color must match bowl marble with zero 2D tint */}
       <Canvas
-        gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
-        camera={{ position: [0, 0, 2.1], fov: 45 }}
+        gl={MARBLE_CANVAS_GL}
+        dpr={MARBLE_CANVAS_DPR}
+        camera={FLIGHT_CAMERA}
+        onCreated={({ gl }) => configureMarbleRenderer(gl)}
         className="pointer-events-none h-full w-full"
       >
-        <ambientLight intensity={0.55} />
-        <directionalLight position={[2, 4, 3]} intensity={1.2} color="#ffffff" />
-        <directionalLight position={[-2, 1, 1]} intensity={0.4} color="#ffffff" />
-        <FlyingSphereMesh color={sphereColor} />
+        <MarbleLightRig />
+        <Suspense fallback={null}>
+          <StudioEnvironment />
+          <FlyingSphereMesh
+            isFallback={isFallback}
+            isDark={isDark}
+            colorHex={flight.color}
+          />
+        </Suspense>
       </Canvas>
     </motion.div>
   );
@@ -226,14 +350,18 @@ export const FlyingPieceOverlay: React.FC<FlyingPieceOverlayProps> = ({
         <FlightMarble
           key={flight.id}
           flight={flight}
-          onDone={() => onFlightComplete?.(flight.id, flight.pieceId)}
+          onDone={(handoff) => onFlightComplete?.(flight.id, flight.pieceId, handoff)}
         />
       ))}
     </>
   );
 };
 
-/** Resolve card swipe point → bowl top rim opening for a continuous parabolic flight. */
+/**
+ * Resolve card swipe point → bowl rim opening (handoff).
+ * Destination is the aperture at the top of the bowl — never mid-glass —
+ * so the overlay can hover above then drop vertically into the opening.
+ */
 export function measureCompletionFlight(
   habitId: string,
   direction?: 'left' | 'right',
@@ -266,18 +394,19 @@ export function measureCompletionFlight(
     fromY = screenH * 0.65;
   }
 
-  // Target precisely the top rim aperture of the 3D bowl in screen space (25-30% down from top)
-  const rimJitterX = (Math.random() - 0.5) * 12;
-  const rimJitterY = (Math.random() - 0.5) * 6;
+  // Small lateral jitter only — keep Y on the rim so the drop stays vertical.
+  const rimJitterX = (Math.random() - 0.5) * 10;
 
   let toX = screenW * 0.5 + rimJitterX;
-  let toY = screenH * 0.28 + rimJitterY;
+  // Fallback: upper third of the viewport ≈ rim when bowl DOM is missing.
+  let toY = screenH * 0.18;
 
   if (bowlFrame || bowl) {
     const b = (bowlFrame || bowl)!.getBoundingClientRect();
     if (b.width > 0 && b.height > 0) {
       toX = b.left + b.width * 0.5 + rimJitterX;
-      toY = b.top + b.height * 0.45 + rimJitterY;
+      // Rim aperture (~top 10% of the bowl frame), not mid-body (was 0.45).
+      toY = b.top + Math.min(20, b.height * 0.1);
     }
   }
 

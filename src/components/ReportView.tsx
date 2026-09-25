@@ -399,6 +399,13 @@ const ReportViewInner: React.FC<ReportViewProps> = ({
   const [downloadSuccess, setDownloadSuccess] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [keystoneExpanded, setKeystoneExpanded] = useState(false);
+
+  // ── Deferred render: yield to browser paint so the tab switch is instant ──
+  const [isReady, setIsReady] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setIsReady(true), 50);
+    return () => clearTimeout(timer);
+  }, []);
   const [sleep, setSleep] = useState<SleepSnapshot>({
     hasSleepData: false,
     linked: false,
@@ -725,6 +732,45 @@ const ReportViewInner: React.FC<ReportViewProps> = ({
       (hasSleepData ? 3 : 2)) *
       100
   );
+
+  // ── Skeleton: lightweight placeholder while heavy charts are deferred ──
+  if (!isReady) {
+    return (
+      <div
+        id="report-screen"
+        className={`absolute inset-0 px-4.5 ${SCREEN_INSET_CLASS} pb-28 space-y-4 overflow-y-auto overscroll-y-contain no-scrollbar select-none max-w-md mx-auto`}
+      >
+        <ScreenHeader
+          title="Report"
+          subtitle="Your progress, in perspective."
+          titleClassName="text-[32px] font-black text-slate-900 dark:text-white tracking-tight leading-none"
+          onOpenSettings={onOpenSettings}
+        />
+        {/* Skeleton ring chart */}
+        <div className="w-full flex items-center justify-center min-h-[230px]">
+          <div className="w-44 h-44 rounded-full border-[7px] border-slate-100 dark:border-slate-800 animate-pulse" />
+        </div>
+        {/* Skeleton cards */}
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-14 rounded-2xl bg-slate-100/80 dark:bg-slate-800/60 animate-pulse"
+            />
+          ))}
+        </div>
+        {/* Skeleton performance rows */}
+        <div className="space-y-2">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="space-y-1.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 px-3 py-2.5">
+              <div className="h-3.5 w-2/3 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" />
+              <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

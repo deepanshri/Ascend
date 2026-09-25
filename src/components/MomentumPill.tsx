@@ -14,7 +14,6 @@ export interface MomentumPillProps {
   momentumScore: number;
   /** Increments when a genuine momentum vote may have changed the score. */
   momentumPulse?: number;
-  isDark?: boolean;
 }
 
 /**
@@ -27,10 +26,8 @@ export interface MomentumPillProps {
 const MomentumPillInner: React.FC<MomentumPillProps> = ({
   momentumScore,
   momentumPulse = 0,
-  isDark = false,
 }) => {
   const targetScore = Math.round(Number.isFinite(momentumScore) ? momentumScore : 0);
-  const darkMode = Boolean(isDark);
 
   const [delta, setDelta] = useState<number | null>(null);
 
@@ -204,14 +201,10 @@ const MomentumPillInner: React.FC<MomentumPillProps> = ({
         minWidth: pillWidth,
         contain: 'layout style',
       }}
-      className={`inline-flex items-center justify-center rounded-full border text-[11px] font-bold tabular-nums overflow-hidden px-3.5 py-1 gap-1.5 will-change-[width] ${
-        darkMode
-          ? 'bg-slate-900/95 border-blue-500/50 text-blue-200'
-          : 'bg-white/95 border-emerald-200 text-emerald-800 shadow-sm'
-      }`}
+      className="inline-flex items-center justify-center rounded-full border text-[11px] font-bold tabular-nums overflow-hidden px-3.5 py-1 gap-1.5 will-change-[width] bg-white/95 border-emerald-200 text-emerald-800 shadow-sm dark:bg-slate-900/95 dark:border-blue-500/50 dark:text-blue-200 dark:shadow-none"
       title="Live momentum score"
     >
-      <span className={`whitespace-nowrap ${darkMode ? 'text-blue-400' : 'text-emerald-600'}`}>
+      <span className="whitespace-nowrap text-emerald-600 dark:text-blue-400">
         Momentum
       </span>
       <span
@@ -223,11 +216,7 @@ const MomentumPillInner: React.FC<MomentumPillProps> = ({
       {deltaLabel ? (
         <motion.span
           style={{ opacity: deltaOpacity }}
-          className={`text-[12px] font-black whitespace-nowrap ${
-            darkMode
-              ? 'text-blue-300 drop-shadow-[0_0_10px_rgba(59,130,246,0.95)]'
-              : 'text-emerald-600 drop-shadow-[0_0_10px_rgba(16,185,129,0.85)]'
-          }`}
+          className="text-[12px] font-black whitespace-nowrap text-emerald-600 drop-shadow-[0_0_10px_rgba(16,185,129,0.85)] dark:text-blue-300 dark:drop-shadow-[0_0_10px_rgba(59,130,246,0.95)]"
         >
           {deltaLabel}
         </motion.span>

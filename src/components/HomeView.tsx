@@ -4,12 +4,11 @@ import { MomentumPill } from './MomentumPill';
 import type { AccumulationPiece, BowlFill, CycleDays } from '../services/reportService';
 import type { Habit } from '../types';
 import { getTodayDayIndex } from '../utils/dates';
-import { resolveHabitPieceColor } from '../utils/colors';
+import type { FlightHandoffVelocity } from './FlyingPieceOverlay';
 
 interface HomeViewProps {
   pieces: AccumulationPiece[];
   bowlFill: BowlFill;
-  isDark?: boolean;
   momentumScore: number;
   /** Increments on each habit completion / miss so the island always pulses. */
   momentumPulse?: number;
@@ -18,6 +17,7 @@ interface HomeViewProps {
   onCelebrationDone?: () => void;
   deferredPieceIds?: ReadonlySet<string>;
   settlePieceIds?: ReadonlySet<string>;
+  settleHandoffs?: ReadonlyMap<string, FlightHandoffVelocity>;
   habits?: Habit[];
   todayIndex?: number;
   renderHabit?: (habit: Habit, index: number) => React.ReactNode;
@@ -31,7 +31,6 @@ const EMPTY_PIECES: AccumulationPiece[] = [];
 const HomeViewInner: React.FC<HomeViewProps> = ({
   pieces,
   bowlFill,
-  isDark = false,
   momentumScore,
   momentumPulse = 0,
   onCycleDaysChange,
@@ -39,6 +38,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   onCelebrationDone,
   deferredPieceIds,
   settlePieceIds,
+  settleHandoffs,
   habits,
   todayIndex,
   renderHabit,
@@ -46,7 +46,6 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   examShieldActive = false,
   onOpenExamShield,
 }) => {
-  const darkMode = Boolean(isDark);
   const safePieces = Array.isArray(pieces) ? pieces : EMPTY_PIECES;
   const fillPercent = Number.isFinite(bowlFill?.fillPercent) ? bowlFill.fillPercent : 0;
   const votes = Number.isFinite(bowlFill?.votes) ? bowlFill.votes : 0;
@@ -92,27 +91,12 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
     return { activeHabits: active, sessionCompletedHabits: completed };
   }, [habits, initialCompletedIds]);
 
-  // Exact 1-to-1 marble mapping: map historical completions directly to their habit's assigned color
-  const habitMap = useMemo(() => new Map((habits || []).map((h) => [h.id, h])), [habits]);
-
-  const mappedPieces = useMemo(() => {
-    return safePieces.map((piece) => {
-      const habit = habitMap.get(piece.habitId);
-      const color = piece.color || resolveHabitPieceColor(habit, piece.kind === 'fallback', darkMode);
-      return {
-        ...piece,
-        color,
-      };
-    });
-  }, [safePieces, habitMap, darkMode]);
-
   return (
     <div className="mt-0 flex w-full flex-col items-center pt-1">
       <div className="relative z-10 mb-1 flex flex-col items-center justify-center">
         <MomentumPill
           momentumScore={momentumScore}
           momentumPulse={momentumPulse}
-          isDark={darkMode}
         />
         {examShieldActive && (
           <div
@@ -128,11 +112,10 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
 
       <div className="mx-auto mt-0 flex w-full flex-col items-center justify-center">
         <Bowl
-          completedCount={mappedPieces.length}
-          pieces={mappedPieces}
+          completedCount={safePieces.length}
+          pieces={safePieces}
           fillPercent={fillPercent}
           isOverflowing={isOverflowing}
-          isDark={darkMode}
           votes={votes}
           capacity={capacity}
           cycleDays={cycleDays}
@@ -141,6 +124,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
           onCelebrationDone={onCelebrationDone}
           deferredPieceIds={deferredPieceIds}
           settlePieceIds={settlePieceIds}
+          settleHandoffs={settleHandoffs}
         />
       </div>
 
@@ -178,7 +162,6 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
 
 function homeViewPropsAreEqual(prev: HomeViewProps, next: HomeViewProps): boolean {
   return (
-    prev.isDark === next.isDark &&
     prev.momentumScore === next.momentumScore &&
     prev.momentumPulse === next.momentumPulse &&
     prev.celebrating === next.celebrating &&
@@ -189,6 +172,7 @@ function homeViewPropsAreEqual(prev: HomeViewProps, next: HomeViewProps): boolea
     prev.habits === next.habits &&
     prev.deferredPieceIds === next.deferredPieceIds &&
     prev.settlePieceIds === next.settlePieceIds &&
+    prev.settleHandoffs === next.settleHandoffs &&
     prev.onCycleDaysChange === next.onCycleDaysChange &&
     prev.onCelebrationDone === next.onCelebrationDone &&
     prev.onOpenExamShield === next.onOpenExamShield &&
@@ -198,4 +182,3 @@ function homeViewPropsAreEqual(prev: HomeViewProps, next: HomeViewProps): boolea
 }
 
 export const HomeView = React.memo(HomeViewInner, homeViewPropsAreEqual);
-

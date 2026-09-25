@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { authService, isSupabaseConfigured } from '../lib/supabase';
+import { authService } from '../lib/supabase';
 import { UserSession } from '../types';
 import { MotionModal } from './MotionModal';
 import { tapPress } from '../lib/motionPresets';
@@ -180,12 +180,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
           Habit architecture powered by continuous identity momentum.
         </p>
 
-        {isSupabaseConfigured && (
-          <div className="inline-flex items-center space-x-1 mt-2 px-2 py-0.5 rounded-full border text-[10px] font-semibold bg-accent text-accent-fg border-accent dark:bg-blue-600 dark:text-white dark:border-blue-500">
-            <span className="w-1.5 h-1.5 rounded-full bg-white/90 animate-pulse" />
-            <span>Supabase Cloud Connected</span>
-          </div>
-        )}
+
       </div>
 
       {/* Auth Card */}
@@ -293,8 +288,8 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  onChange={(e) => setPassword(e.target.value.trim())}
+                  placeholder="Enter your password"
                   className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[13.5px] text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-blue-500 transition pr-10"
                 />
                 <button

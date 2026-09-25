@@ -178,13 +178,40 @@ export async function appendMomentumEventRemote(
   if (!ok) enqueue({ userId, event });
 }
 
+let supportsTimeOfDayColumn = true;
+
 export async function pushMomentumEventsRemote(
   userId: string | null | undefined,
   events: MomentumEvent[]
 ): Promise<void> {
-  if (!canSync(userId) || !userId || events.length === 0) return;
-  for (const event of events.filter((event) => !isSeedHabitId(event.habitId))) {
-    await appendMomentumEventRemote(userId, event);
+  if (!canSync(userId) || !userId || events.length === 0 || !supabase) return;
+  const filtered = events.filter((event) => !isSeedHabitId(event.habitId) && isUuid(event.id));
+  if (filtered.length === 0) return;
+
+  if (!isOnline()) {
+    for (const event of filtered) enqueue({ userId, event });
+    return;
+  }
+
+  const rawRows = filtered.map((e) => toMomentumEventRow(userId, e));
+  const rows = supportsTimeOfDayColumn
+    ? rawRows
+    : rawRows.map(({ time_of_day: _t, ...core }) => core);
+
+  try {
+    let { error } = await supabase.from('momentum_events').upsert(rows, { onConflict: 'id', ignoreDuplicates: true });
+    if (error && /time_of_day/i.test(error.message)) {
+      supportsTimeOfDayColumn = false;
+      const coreRows = rawRows.map(({ time_of_day: _t, ...core }) => core);
+      const retry = await supabase.from('momentum_events').upsert(coreRows, { onConflict: 'id', ignoreDuplicates: true });
+      error = retry.error;
+    }
+    if (error) {
+      console.warn('Batch momentum events push note:', error.message);
+      for (const event of filtered) enqueue({ userId, event });
+    }
+  } catch {
+    for (const event of filtered) enqueue({ userId, event });
   }
 }
 

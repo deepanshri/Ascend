@@ -28,13 +28,13 @@ export interface BowlFill {
 }
 
 import type { Habit } from '../types';
-import { resolveHabitPieceColor } from '../utils/colors';
 
 export interface AccumulationPiece {
   id: string;
   habitId: string;
   isoDate: string;
   kind: 'full' | 'fallback';
+  /** Optional display hex; HomeView always overwrites via getMarbleColor(theme, kind). */
   color?: string;
 }
 
@@ -257,8 +257,9 @@ export function accumulationPiecesFromLogs(
   minTimestamp = 0,
   habits?: Iterable<Habit>
 ): AccumulationPiece[] {
+  // `habits` retained for call-site compatibility; marble colors resolve at render via getMarbleColor.
+  void habits;
   const allow = new Set(activeHabitIds);
-  const habitMap = habits ? new Map(Array.from(habits).map((h) => [h.id, h])) : null;
   const byKey = new Map<string, AccumulationPiece & { timestamp: number }>();
 
   for (const event of events) {
@@ -270,14 +271,13 @@ export function accumulationPiecesFromLogs(
     const prev = byKey.get(id);
     if (prev && event.timestamp < prev.timestamp) continue;
     const isFallback = event.type === 'fallback_micro';
-    const habit = habitMap?.get(event.habitId);
-    const color = habit ? resolveHabitPieceColor(habit, isFallback) : undefined;
     byKey.set(id, {
       id,
       habitId: event.habitId,
       isoDate: iso,
       kind: isFallback ? 'fallback' : 'full',
-      color,
+      // Color resolved at render via getMarbleColor(isDark, isFallback) — not baked here
+      // so theme toggles and flight→bowl handoff stay in sync.
       timestamp: event.timestamp,
     });
   }

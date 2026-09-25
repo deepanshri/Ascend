@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 
 export interface OnboardingViewProps {
   onComplete?: () => void;
@@ -263,12 +263,27 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
 
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
+  const isHorizontalSwipeRef = useRef(false);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     const touch = e.touches[0];
     if (!touch) return;
     touchStartXRef.current = touch.clientX;
     touchStartYRef.current = touch.clientY;
+    isHorizontalSwipeRef.current = false;
+  }, []);
+
+  // Prevent native scroll from fighting with horizontal swipe detection
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const deltaX = Math.abs(touch.clientX - touchStartXRef.current);
+    const deltaY = Math.abs(touch.clientY - touchStartYRef.current);
+    if (deltaX > 10 && deltaX > deltaY * 1.25) {
+      isHorizontalSwipeRef.current = true;
+      e.preventDefault();
+    }
   }, []);
 
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
@@ -279,9 +294,11 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
     const deltaY = touch.clientY - touchStartYRef.current;
     touchStartXRef.current = null;
     touchStartYRef.current = null;
+    const wasHorizontal = isHorizontalSwipeRef.current;
+    isHorizontalSwipeRef.current = false;
 
     // Minimum swipe threshold & ensure dominant horizontal axis
-    if (Math.abs(deltaX) > 42 && Math.abs(deltaX) > Math.abs(deltaY) * 1.25) {
+    if (wasHorizontal && Math.abs(deltaX) > 42 && Math.abs(deltaX) > Math.abs(deltaY) * 1.25) {
       if (deltaX < 0) {
         // Swipe Left -> Next slide
         setStepState((prev) => {
@@ -329,16 +346,29 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
 
   if (!isOpen) return null;
 
+  // Pre-compute slide track style so we don't create a new object every render
+  const slideTrackStyle = useMemo<React.CSSProperties>(() => {
+    const offset = `${(step - 1) * 33.333333}%`;
+    return {
+      transform: `translate3d(-${offset}, 0, 0)`,
+      WebkitTransform: `translate3d(-${offset}, 0, 0)`,
+      willChange: 'transform',
+      backfaceVisibility: 'hidden' as const,
+      WebkitBackfaceVisibility: 'hidden' as const,
+    };
+  }, [step]);
+
   return (
     <div
       id="onboarding-screen"
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       className="relative flex flex-col justify-between h-full px-6 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] text-slate-900 dark:text-white bg-[#F8FAF9] dark:bg-slate-950 select-none overflow-hidden touch-pan-y"
     >
-      {/* Background ambient blurs */}
-      <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-100/60 dark:bg-blue-900/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-72 h-72 bg-emerald-100/40 dark:bg-blue-950/20 rounded-full blur-3xl pointer-events-none" />
+      {/* Background ambient blurs — isolated on own compositing layer to prevent repaint during slide transitions */}
+      <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-100/60 dark:bg-blue-900/20 rounded-full blur-3xl pointer-events-none" style={{ contain: 'strict', willChange: 'auto' }} />
+      <div className="absolute bottom-0 left-0 w-72 h-72 bg-emerald-100/40 dark:bg-blue-950/20 rounded-full blur-3xl pointer-events-none" style={{ contain: 'strict', willChange: 'auto' }} />
 
       {/* Top Header & Step Indicator */}
       <div className="relative z-10 shrink-0">
@@ -355,7 +385,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
                 aria-selected={s === step}
                 aria-label={`Step ${s} of 3`}
                 onClick={() => setStep(s as 1 | 2 | 3)}
-                className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                className={`h-1.5 rounded-full transition-[width,background-color] duration-300 ease-out cursor-pointer ${
                   s === step
                     ? 'w-7 bg-emerald-600 dark:bg-blue-500'
                     : s < step
@@ -372,13 +402,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
       <div className="relative z-10 my-auto py-5 w-full overflow-hidden onboarding-slide-container">
         <div
           className="onboarding-slide-track"
-          style={{
-            transform: `translate3d(-${(step - 1) * 33.333333}%, 0, 0)`,
-            WebkitTransform: `translate3d(-${(step - 1) * 33.333333}%, 0, 0)`,
-            willChange: 'transform',
-            backfaceVisibility: 'hidden',
-            WebkitBackfaceVisibility: 'hidden',
-          }}
+          style={slideTrackStyle}
         >
           <SlideOne onNext={handleNextToStep2} />
           <SlideTwo onBack={handleBackToStep1} onNext={handleNextToStep3} />

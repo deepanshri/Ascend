@@ -3,7 +3,7 @@ import { parseTimeOfDay, resolveHabitTimeOfDay } from '../utils/timeOfDay';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { habitCategoryBadge } from '../utils/categories';
 import { getTodayDayIndex, isoDateForDayIndex, toISODate } from '../utils/dates';
-import { HabitLogRow, mapHabitLogRowToEvent } from '../utils/momentum';
+import { HabitLogRow, isUuid, mapHabitLogRowToEvent } from '../utils/momentum';
 import { isSeedHabitId, SEED_HABIT_IDS } from '../data/initialHabits';
 import { MAX_ACTIVE_HABITS } from './protection';
 
@@ -232,23 +232,20 @@ export async function persistHabitsToTable(userId: string, habits: Habit[]): Pro
 export async function purgeSeedHabitsFromTable(userId?: string | null): Promise<void> {
   if (!canSync(userId) || !supabase || !userId) return;
   const seedIds = Array.from(SEED_HABIT_IDS);
+  const uuidSeedIds = seedIds.filter(isUuid);
   try {
     const logs = await supabase.from('habit_logs').delete().eq('user_id', userId).in('habit_id', seedIds);
     if (logs.error) console.warn('Seed habit_logs purge failed:', logs.error.message);
-    const habits = await supabase.from('habits').delete().eq('user_id', userId).in('id', seedIds);
-    if (habits.error) console.warn('Seed habits purge failed:', habits.error.message);
+    if (uuidSeedIds.length > 0) {
+      const habits = await supabase.from('habits').delete().eq('user_id', userId).in('id', uuidSeedIds);
+      if (habits.error) console.warn('Seed habits purge failed:', habits.error.message);
+    }
     const onboardingLogs = await supabase
       .from('habit_logs')
       .delete()
       .eq('user_id', userId)
       .like('habit_id', 'habit-onboarding-%');
     if (onboardingLogs.error) console.warn('Onboarding habit_logs purge failed:', onboardingLogs.error.message);
-    const onboardingHabits = await supabase
-      .from('habits')
-      .delete()
-      .eq('user_id', userId)
-      .like('id', 'habit-onboarding-%');
-    if (onboardingHabits.error) console.warn('Onboarding habits purge failed:', onboardingHabits.error.message);
   } catch (err) {
     console.warn('Seed habit purge offline:', err);
   }

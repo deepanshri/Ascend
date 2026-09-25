@@ -1,12 +1,23 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useThree, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { ContactShadows, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { AnimatePresence, motion } from 'motion/react';
 import { CYCLE_DAY_OPTIONS, clampCycleDays, type AccumulationPiece, type CycleDays } from '../services/reportService';
 import { tapPress } from '../lib/motionPresets';
-import { BOWL_COLORS, normalizeHabitColor } from '../utils/colors';
+import { getMarbleColor } from '../utils/colors';
+import {
+  BOWL_CAMERA,
+  HANDOFF_DEFAULT_VEL,
+  HANDOFF_RIM_Y,
+  MARBLE_CANVAS_DPR,
+  MARBLE_CANVAS_GL,
+  MARBLE_PHYSICAL_MATERIAL,
+  configureMarbleRenderer,
+} from '../lib/marbleRenderer';
+import { MarbleLightRig, StudioEnvironment } from '../lib/marbleScene';
+import { getThemeIsDark, subscribeTheme } from '../lib/themeStore';
+import type { FlightHandoffVelocity } from './FlyingPieceOverlay';
 
 // Preload the 3D bowl model at module scope for instant rendering
 useGLTF.preload('/assets/bowl.glb');
@@ -16,7 +27,6 @@ export interface BowlProps {
   pieces?: AccumulationPiece[];
   fillPercent?: number;
   isOverflowing?: boolean;
-  isDark?: boolean;
   votes?: number;
   capacity?: number;
   cycleDays?: number;
@@ -25,6 +35,8 @@ export interface BowlProps {
   onCelebrationDone?: () => void;
   deferredPieceIds?: ReadonlySet<string>;
   settlePieceIds?: ReadonlySet<string>;
+  /** Terminal flight velocity per pieceId — applied as RigidMarble v_spawn at handoff. */
+  settleHandoffs?: ReadonlyMap<string, FlightHandoffVelocity>;
 }
 
 function hashSeed(str: string): number {
@@ -41,54 +53,43 @@ function hashUnit(seed: number): number {
   return (n - Math.floor(n)) * 2 - 1;
 }
 
-/** Procedural studio environment providing neutral reflections and refraction for glass and glossy marbles */
-function StudioEnvironment() {
-  const { gl, scene } = useThree();
+/** 3D glass bowl — materials created once; theme only mutates .color in-place. */
+function BowlModel() {
+  const { scene } = useGLTF('/assets/bowl.glb');
+  const glassMatsRef = useRef<THREE.MeshPhysicalMaterial[]>([]);
 
   useEffect(() => {
-    const pmremGenerator = new THREE.PMREMGenerator(gl);
-    pmremGenerator.compileEquirectangularShader();
-    const room = new RoomEnvironment();
-    const envTexture = pmremGenerator.fromScene(room, 0.04).texture;
-    scene.environment = envTexture;
-    room.dispose();
-    pmremGenerator.dispose();
-
-    return () => {
-      scene.environment = null;
-      envTexture.dispose();
-    };
-  }, [gl, scene]);
-
-  return null;
-}
-
-/** 3D Glass Bowl Model loaded from GLB with enhanced glass visibility */
-function BowlModel({ isDark = false }: { isDark?: boolean }) {
-  const { scene } = useGLTF('/assets/bowl.glb');
-
-  useMemo(() => {
+    const mats: THREE.MeshPhysicalMaterial[] = [];
     scene.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        // Normalize raw geometry so bowl diameter is 2.0 units (raw GLB is 0.12 units)
-        if (!mesh.geometry.userData.normalized) {
-          mesh.geometry.computeBoundingBox();
-          const bbox = mesh.geometry.boundingBox;
-          if (bbox) {
-            const sizeX = bbox.max.x - bbox.min.x;
-            if (sizeX > 0 && sizeX < 1.0) {
-              const factor = 2.0 / sizeX;
-              mesh.geometry.scale(factor, factor, factor);
-              mesh.geometry.computeVertexNormals();
-            }
-          }
-          mesh.geometry.userData.normalized = true;
-        }
+      if (!(child as THREE.Mesh).isMesh) return;
+      const mesh = child as THREE.Mesh;
 
-        // Real transmissive clear glass with +10% richer presence: FrontSide avoids self-overlapping backfaces of the 2-shell mesh
-        mesh.material = new THREE.MeshPhysicalMaterial({
-          color: new THREE.Color(isDark ? '#e0f2fe' : '#ffffff'),
+      if (!mesh.geometry.userData.normalized) {
+        mesh.geometry.computeBoundingBox();
+        const bbox = mesh.geometry.boundingBox;
+        if (bbox) {
+          const sizeX = bbox.max.x - bbox.min.x;
+          if (sizeX > 0 && sizeX < 1.0) {
+            const factor = 2.0 / sizeX;
+            mesh.geometry.scale(factor, factor, factor);
+            mesh.geometry.computeVertexNormals();
+          }
+        }
+        mesh.geometry.userData.normalized = true;
+      }
+
+      const existing = mesh.material;
+      let mat: THREE.MeshPhysicalMaterial;
+      if (
+        existing &&
+        !Array.isArray(existing) &&
+        (existing as THREE.MeshPhysicalMaterial).isMeshPhysicalMaterial &&
+        (existing as THREE.Material).userData?.ascendGlass
+      ) {
+        mat = existing as THREE.MeshPhysicalMaterial;
+      } else {
+        mat = new THREE.MeshPhysicalMaterial({
+          color: new THREE.Color(getThemeIsDark() ? '#e0f2fe' : '#ffffff'),
           transparent: true,
           opacity: 0.36,
           transmission: 0.58,
@@ -99,14 +100,27 @@ function BowlModel({ isDark = false }: { isDark?: boolean }) {
           clearcoat: 1.0,
           clearcoatRoughness: 0.06,
           thickness: 0.35,
-          depthWrite: false, // Prevents front glass from cutting off inner marbles
+          depthWrite: false,
           side: THREE.FrontSide,
         });
-        mesh.receiveShadow = true;
-        mesh.castShadow = false;
+        mat.userData.ascendGlass = true;
+        mesh.material = mat;
       }
+      mats.push(mat);
+      mesh.receiveShadow = true;
+      mesh.castShadow = false;
     });
-  }, [scene, isDark]);
+    glassMatsRef.current = mats;
+
+    const syncGlassColor = () => {
+      const hex = getThemeIsDark() ? '#e0f2fe' : '#ffffff';
+      for (const mat of glassMatsRef.current) {
+        mat.color.set(hex);
+      }
+    };
+    syncGlassColor();
+    return subscribeTheme(syncGlassColor);
+  }, [scene]);
 
   return <primitive object={scene} scale={1.2} position={[0, -0.3, 0]} renderOrder={2} />;
 }
@@ -314,15 +328,16 @@ interface MarbleScatterProps {
   pieces?: AccumulationPiece[];
   deferredPieceIds?: ReadonlySet<string>;
   settlePieceIds?: ReadonlySet<string>;
-  isDark: boolean;
+  settleHandoffs?: ReadonlyMap<string, FlightHandoffVelocity>;
 }
 
 interface RigidMarbleProps {
   id: string | number;
   targetPos: PlacedPosition;
   rotation: [number, number, number];
-  color: string;
+  isFallback: boolean;
   isSettling: boolean;
+  handoffVel: FlightHandoffVelocity;
   shadowTexture: THREE.CanvasTexture;
   isFloorContact: boolean;
   shadowY: number;
@@ -331,14 +346,16 @@ interface RigidMarbleProps {
 function RigidMarble({
   targetPos,
   rotation,
-  color,
+  isFallback,
   isSettling,
+  handoffVel,
   shadowTexture,
   isFloorContact,
   shadowY,
 }: RigidMarbleProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const shadowRef = useRef<THREE.Mesh>(null);
+  const materialRef = useRef<THREE.MeshPhysicalMaterial>(null);
 
   // Physics state for physical drop and settling
   const physicsRef = useRef<{
@@ -346,23 +363,44 @@ function RigidMarble({
     x: number;
     y: number;
     z: number;
+    vx: number;
     vy: number;
+    vz: number;
   }>({
     active: false,
     x: targetPos.x,
     y: targetPos.y,
     z: targetPos.z,
+    vx: 0,
     vy: 0,
+    vz: 0,
   });
+
+  // Theme → mutate existing material color (no shader recompile / canvas remount)
+  useEffect(() => {
+    const sync = () => {
+      const mat = materialRef.current;
+      if (!mat) return;
+      mat.color.set(getMarbleColor(getThemeIsDark(), isFallback));
+    };
+    sync();
+    return subscribeTheme(sync);
+  }, [isFallback]);
 
   useEffect(() => {
     if (isSettling) {
+      const vx = Number.isFinite(handoffVel.vx) ? handoffVel.vx : HANDOFF_DEFAULT_VEL.vx;
+      const vy = Number.isFinite(handoffVel.vy) ? handoffVel.vy : HANDOFF_DEFAULT_VEL.vy;
+      const vz = Number.isFinite(handoffVel.vz) ? handoffVel.vz : HANDOFF_DEFAULT_VEL.vz;
       physicsRef.current = {
         active: true,
-        x: targetPos.x * 0.35,
-        y: 0.72, // Top rim aperture of 3D bowl
-        z: targetPos.z * 0.35,
-        vy: -2.8, // Initial downward velocity vector matching flight speed
+        // Spawn near the opening center so the 3D drop continues the vertical fall.
+        x: targetPos.x * 0.2,
+        y: HANDOFF_RIM_Y,
+        z: targetPos.z * 0.2,
+        vx,
+        vy: Math.min(vy, HANDOFF_DEFAULT_VEL.vy),
+        vz,
       };
       if (meshRef.current) {
         meshRef.current.position.set(
@@ -372,7 +410,7 @@ function RigidMarble({
         );
       }
     }
-  }, [isSettling, targetPos.x, targetPos.y, targetPos.z]);
+  }, [isSettling, handoffVel.vx, handoffVel.vy, handoffVel.vz, targetPos.x, targetPos.y, targetPos.z]);
 
   useFrame((_, delta) => {
     const p = physicsRef.current;
@@ -383,13 +421,29 @@ function RigidMarble({
       return;
     }
 
-    const dt = Math.min(delta, 0.033);
-    // Gravity acceleration inside bowl
+    const dt = Math.min(delta, 1 / 60);
     p.vy -= 14.0 * dt;
+    p.x += p.vx * dt;
     p.y += p.vy * dt;
-    // Lateral convergence into resting pocket
-    p.x += (targetPos.x - p.x) * Math.min(1, dt * 5.0);
-    p.z += (targetPos.z - p.z) * Math.min(1, dt * 5.0);
+    p.z += p.vz * dt;
+    const converge = Math.min(1, dt * 4.2);
+    p.x += (targetPos.x - p.x) * converge;
+    p.z += (targetPos.z - p.z) * converge;
+    p.vx *= 1 - Math.min(1, dt * 3.5);
+    p.vz *= 1 - Math.min(1, dt * 3.5);
+
+    // Keep the marble inside the rim while falling — no glass clip-through.
+    const rc = Math.hypot(p.x, p.z);
+    if (rc > RIM_MAX_CENTER_R && rc > 1e-6) {
+      const s = RIM_MAX_CENTER_R / rc;
+      p.x *= s;
+      p.z *= s;
+      p.vx *= 0.25;
+      p.vz *= 0.25;
+    }
+
+    // Collide with the bowl interior floor at the current (x, z), not only the final slot.
+    const floorY = Math.max(getBowlFloorY(Math.hypot(p.x, p.z)), targetPos.y);
 
     if (meshRef.current) {
       meshRef.current.position.set(p.x, p.y, p.z);
@@ -397,12 +451,15 @@ function RigidMarble({
       meshRef.current.rotation.y += dt * 2.5;
     }
 
-    // Floor / nested marble collision with damped restitution bounce
-    if (p.y <= targetPos.y) {
-      p.y = targetPos.y;
+    if (p.y <= floorY) {
+      p.y = floorY;
       p.vy = -p.vy * 0.34;
+      p.vx *= 0.55;
+      p.vz *= 0.55;
       if (Math.abs(p.vy) < 0.18) {
         p.vy = 0;
+        p.vx = 0;
+        p.vz = 0;
         p.active = false;
         p.x = targetPos.x;
         p.y = targetPos.y;
@@ -413,7 +470,6 @@ function RigidMarble({
       }
     }
 
-    // Contact shadow opacity tracks floor proximity
     if (shadowRef.current) {
       const dist = Math.max(0, p.y - targetPos.y);
       const shadowMat = shadowRef.current.material as THREE.MeshBasicMaterial;
@@ -422,6 +478,8 @@ function RigidMarble({
       }
     }
   });
+
+  const initialColor = getMarbleColor(getThemeIsDark(), isFallback);
 
   return (
     <>
@@ -450,10 +508,13 @@ function RigidMarble({
         receiveShadow
       >
         <sphereGeometry args={[SPHERE_RADIUS, 24, 24]} />
-        <meshStandardMaterial
-          color={color}
-          roughness={0.18}
-          metalness={0.12}
+        <meshPhysicalMaterial
+          ref={materialRef}
+          color={initialColor}
+          roughness={MARBLE_PHYSICAL_MATERIAL.roughness}
+          metalness={MARBLE_PHYSICAL_MATERIAL.metalness}
+          clearcoat={MARBLE_PHYSICAL_MATERIAL.clearcoat}
+          clearcoatRoughness={MARBLE_PHYSICAL_MATERIAL.clearcoatRoughness}
         />
       </mesh>
     </>
@@ -466,7 +527,7 @@ function MarbleScatter({
   pieces,
   deferredPieceIds,
   settlePieceIds,
-  isDark,
+  settleHandoffs,
 }: MarbleScatterProps) {
   const visiblePieces = useMemo(() => {
     if (!pieces) return null;
@@ -485,25 +546,13 @@ function MarbleScatter({
       const piece = visiblePieces ? visiblePieces[i] : null;
       const seed = hashSeed(piece?.id || `marble-${i}`);
       const pos = positions[i] || { x: 0, y: -0.05, z: 0 };
-
       const isFallback = piece?.kind === 'fallback';
-      // 1-to-1 exact habit color mapping:
-      // If piece has an explicit color (e.g. piece.color), use it directly.
-      // Otherwise fall back to dark green / light green / blue palette.
-      const color = piece?.color
-        ? normalizeHabitColor(piece.color)
-        : isDark
-        ? isFallback
-          ? BOWL_COLORS.light_blue
-          : BOWL_COLORS.blue
-        : isFallback
-        ? BOWL_COLORS.light_green
-        : BOWL_COLORS.dark_green;
 
-      // Check if this piece is resting on or close to the bowl floor
       const floorY = getBowlFloorY(Math.hypot(pos.x, pos.z));
       const isFloorContact = Math.abs(pos.y - floorY) < 0.02;
       const isSettling = Boolean(piece?.id && settlePieceIds?.has(piece.id));
+      const handoffVel =
+        (piece?.id && settleHandoffs?.get(piece.id)) || HANDOFF_DEFAULT_VEL;
 
       return {
         id: piece?.id || i,
@@ -513,13 +562,14 @@ function MarbleScatter({
           Math.abs(hashUnit(seed * 19 + i)) * Math.PI,
           0,
         ] as [number, number, number],
-        color,
+        isFallback: Boolean(isFallback),
         isFloorContact,
         isSettling,
+        handoffVel,
         shadowY: floorY - SPHERE_RADIUS + 0.005,
       };
     });
-  }, [count, visiblePieces, positions, isDark, settlePieceIds]);
+  }, [count, visiblePieces, positions, settlePieceIds, settleHandoffs]);
 
   return (
     <group renderOrder={1}>
@@ -529,8 +579,9 @@ function MarbleScatter({
           id={m.id}
           targetPos={m.pos}
           rotation={m.rotation}
-          color={m.color}
+          isFallback={m.isFallback}
           isSettling={m.isSettling}
+          handoffVel={m.handoffVel}
           shadowTexture={shadowTexture}
           isFloorContact={m.isFloorContact}
           shadowY={m.shadowY}
@@ -545,7 +596,7 @@ interface BowlCanvasProps {
   pieces?: AccumulationPiece[];
   deferredPieceIds?: ReadonlySet<string>;
   settlePieceIds?: ReadonlySet<string>;
-  isDark: boolean;
+  settleHandoffs?: ReadonlyMap<string, FlightHandoffVelocity>;
 }
 
 const BowlCanvasInner: React.FC<BowlCanvasProps> = ({
@@ -553,39 +604,18 @@ const BowlCanvasInner: React.FC<BowlCanvasProps> = ({
   pieces,
   deferredPieceIds,
   settlePieceIds,
-  isDark,
+  settleHandoffs,
 }) => {
   return (
     <Canvas
       shadows
-      camera={{ position: [0, 2.5, 4.5], fov: 45 }}
-      dpr={[1, 1.5]}
-      gl={{
-        alpha: true,
-        antialias: true,
-        powerPreference: 'high-performance',
-      }}
+      camera={BOWL_CAMERA}
+      dpr={MARBLE_CANVAS_DPR}
+      gl={MARBLE_CANVAS_GL}
+      onCreated={({ gl }) => configureMarbleRenderer(gl)}
       className="h-full w-full pointer-events-none"
     >
-      <ambientLight intensity={0.4} />
-      <directionalLight
-        position={[2, 5, 3]}
-        intensity={1.1}
-        color="#ffffff"
-        castShadow
-        shadow-mapSize-width={512}
-        shadow-mapSize-height={512}
-        shadow-camera-near={1}
-        shadow-camera-far={12}
-        shadow-camera-left={-2}
-        shadow-camera-right={2}
-        shadow-camera-top={2}
-        shadow-camera-bottom={-2}
-        shadow-bias={-0.001}
-        shadow-normalBias={0.02}
-      />
-      <directionalLight position={[-3, 3, 2]} intensity={0.45} color="#ffffff" />
-      <directionalLight position={[0, 4, -3]} intensity={0.3} color="#f1f5f9" />
+      <MarbleLightRig castShadow />
       <Suspense fallback={null}>
         <StudioEnvironment />
         <MarbleScatter
@@ -593,9 +623,9 @@ const BowlCanvasInner: React.FC<BowlCanvasProps> = ({
           pieces={pieces}
           deferredPieceIds={deferredPieceIds}
           settlePieceIds={settlePieceIds}
-          isDark={isDark}
+          settleHandoffs={settleHandoffs}
         />
-        <BowlModel isDark={isDark} />
+        <BowlModel />
         <ContactShadows position={[0, -0.45, 0]} opacity={0.45} scale={4} blur={1.5} far={1} />
       </Suspense>
     </Canvas>
@@ -608,7 +638,7 @@ const BowlCanvas = React.memo(BowlCanvasInner, (prev, next) => {
     prev.pieces === next.pieces &&
     prev.deferredPieceIds === next.deferredPieceIds &&
     prev.settlePieceIds === next.settlePieceIds &&
-    prev.isDark === next.isDark
+    prev.settleHandoffs === next.settleHandoffs
   );
 });
 
@@ -617,7 +647,6 @@ function BowlInner({
   pieces,
   fillPercent = 0,
   isOverflowing = false,
-  isDark = false,
   votes = 0,
   capacity = 7,
   cycleDays = 7,
@@ -626,6 +655,7 @@ function BowlInner({
   onCelebrationDone,
   deferredPieceIds,
   settlePieceIds,
+  settleHandoffs,
 }: BowlProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -633,7 +663,6 @@ function BowlInner({
   const celebrateDoneRef = useRef(onCelebrationDone);
   celebrateDoneRef.current = onCelebrationDone;
 
-  const darkMode = Boolean(isDark);
   const resolvedCount = completedCount !== undefined
     ? completedCount
     : (pieces ? pieces.length : votes);
@@ -666,7 +695,7 @@ function BowlInner({
       id="accumulation-bowl"
       data-tour="accumulation-bowl"
       className="relative mx-auto my-0 flex w-full flex-col items-center justify-center select-none"
-      aria-label={`${darkMode ? 'Night' : 'Morning'} 3D accumulation bowl, ${votes} of ${capacity} votes in a ${selectedCycle}-day cycle, ${roundedFill} percent full${isOverflowing ? ', overflowing' : ''}${celebrating ? ', cycle complete' : ''}`}
+      aria-label={`3D accumulation bowl, ${votes} of ${capacity} votes in a ${selectedCycle}-day cycle, ${roundedFill} percent full${isOverflowing ? ', overflowing' : ''}${celebrating ? ', cycle complete' : ''}`}
     >
       <AnimatePresence>
         {celebrating && (
@@ -676,11 +705,7 @@ function BowlInner({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.96 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className={`absolute top-0 z-50 rounded-2xl px-3 py-1.5 text-[11px] font-bold shadow-lg border ${
-              darkMode
-                ? 'bg-slate-900/95 text-blue-200 border-blue-500/50'
-                : 'bg-white/95 text-emerald-800 border-emerald-300/80'
-            }`}
+            className="absolute top-0 z-50 rounded-2xl px-3 py-1.5 text-[11px] font-bold shadow-lg border bg-white/95 text-emerald-800 border-emerald-300/80 dark:bg-slate-900/95 dark:text-blue-200 dark:border-blue-500/50"
           >
             Cycle complete!
           </motion.div>
@@ -695,21 +720,19 @@ function BowlInner({
           aria-hidden="true"
         />
 
-        {/* Real-Time 3D WebGL Canvas */}
+        {/* Real-Time 3D WebGL Canvas — never keyed on theme */}
         <BowlCanvas
           completedCount={resolvedCount}
           pieces={pieces}
           deferredPieceIds={deferredPieceIds}
           settlePieceIds={settlePieceIds}
-          isDark={darkMode}
+          settleHandoffs={settleHandoffs}
         />
 
         {/* Cycle-complete celebration glow */}
         {celebrating && (
           <motion.div
-            className={`pointer-events-none absolute inset-x-4 bottom-2 z-[35] h-8 rounded-full blur-md ${
-              darkMode ? 'bg-blue-400/40' : 'bg-emerald-400/35'
-            }`}
+            className="pointer-events-none absolute inset-x-4 bottom-2 z-[35] h-8 rounded-full blur-md bg-emerald-400/35 dark:bg-blue-400/40"
             initial={{ opacity: 0, scaleX: 0.4 }}
             animate={{ opacity: [0, 1, 0], scaleX: [0.4, 1.1, 1.2] }}
             transition={{ duration: 1.4, ease: 'easeOut' }}
@@ -726,11 +749,7 @@ function BowlInner({
           onClick={() => setMenuOpen((open) => !open)}
           aria-expanded={menuOpen}
           aria-haspopup="listbox"
-          className={`backdrop-blur-sm px-2.5 py-0.5 rounded-full text-[11px] tabular-nums cursor-pointer transition-colors border ${
-            darkMode
-              ? 'bg-slate-800/80 border-slate-700/60 text-slate-300 hover:text-white'
-              : 'bg-white/90 border-slate-200 text-slate-700 hover:text-slate-900 shadow-sm'
-          }`}
+          className="backdrop-blur-sm px-2.5 py-0.5 rounded-full text-[11px] tabular-nums cursor-pointer transition-colors border bg-white/90 border-slate-200 text-slate-700 hover:text-slate-900 shadow-sm dark:bg-slate-800/80 dark:border-slate-700/60 dark:text-slate-300 dark:hover:text-white dark:shadow-none"
         >
           {votes}/{capacity} · {selectedCycle} Days ▾
         </motion.button>
@@ -744,11 +763,7 @@ function BowlInner({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.96 }}
               transition={{ duration: 0.16, ease: 'easeOut' }}
-              className={`absolute left-1/2 top-full z-50 mt-1.5 w-[148px] -translate-x-1/2 rounded-2xl border p-1 shadow-xl backdrop-blur-md ${
-                darkMode
-                  ? 'bg-slate-900/95 text-white border-slate-800'
-                  : 'bg-white/95 text-slate-900 border-slate-200'
-              }`}
+              className="absolute left-1/2 top-full z-50 mt-1.5 w-[148px] -translate-x-1/2 rounded-2xl border p-1 shadow-xl backdrop-blur-md bg-white/95 text-slate-900 border-slate-200 dark:bg-slate-900/95 dark:text-white dark:border-slate-800"
             >
               {CYCLE_DAY_OPTIONS.map((days) => {
                 const active = days === selectedCycle;
@@ -764,12 +779,8 @@ function BowlInner({
                     }}
                     className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-between transition cursor-pointer ${
                       active
-                        ? darkMode
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-emerald-500 text-white'
-                        : darkMode
-                        ? 'text-slate-300 hover:bg-slate-800'
-                        : 'text-slate-700 hover:bg-slate-100'
+                        ? 'bg-emerald-500 text-white dark:bg-blue-600'
+                        : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
                     }`}
                   >
                     <span>{days} Days</span>
@@ -791,13 +802,13 @@ function bowlPropsAreEqual(prev: BowlProps, next: BowlProps): boolean {
     prev.pieces === next.pieces &&
     prev.fillPercent === next.fillPercent &&
     prev.isOverflowing === next.isOverflowing &&
-    prev.isDark === next.isDark &&
     prev.votes === next.votes &&
     prev.capacity === next.capacity &&
     prev.cycleDays === next.cycleDays &&
     prev.celebrating === next.celebrating &&
     prev.deferredPieceIds === next.deferredPieceIds &&
     prev.settlePieceIds === next.settlePieceIds &&
+    prev.settleHandoffs === next.settleHandoffs &&
     prev.onCycleDaysChange === next.onCycleDaysChange &&
     prev.onCelebrationDone === next.onCelebrationDone
   );

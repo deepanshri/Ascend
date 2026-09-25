@@ -38,9 +38,9 @@ function sharedDriver(steps: DriveStep[], onComplete: () => void): Driver {
     nextBtnText: 'Next',
     prevBtnText: 'Back',
     doneBtnText: 'Got it',
-    disableActiveInteraction: true,
+    disableActiveInteraction: false,
     skipMissingElement: true,
-    waitForElement: 2800,
+    waitForElement: 0,
     onDestroyed: () => {
       const shouldComplete = completeOnDestroy;
       activeTour = null;
@@ -196,6 +196,10 @@ const SCREEN_STEPS: Record<Exclude<TutorialScreen, 'home'>, DriveStep[]> = {
   ],
 };
 
+export function isTutorialActive(): boolean {
+  return Boolean(activeTour?.isActive());
+}
+
 export function startAscendSpotlightTutorial(onComplete: () => void): void {
   startScreenTutorial('home', onComplete);
 }
@@ -205,7 +209,16 @@ export function startScreenTutorial(screen: TutorialScreen, onComplete: () => vo
     return;
   }
   completeOnDestroy = true;
-  const steps = screen === 'home' ? HOME_STEPS : SCREEN_STEPS[screen];
+  const rawSteps = screen === 'home' ? HOME_STEPS : SCREEN_STEPS[screen];
+  const steps = typeof document !== 'undefined'
+    ? rawSteps.filter((step) => typeof step.element !== 'string' || Boolean(document.querySelector(step.element)))
+    : rawSteps;
+
+  if (steps.length === 0) {
+    onComplete();
+    return;
+  }
+
   const instance = sharedDriver(steps, onComplete);
   activeTour = instance;
   instance.drive();
