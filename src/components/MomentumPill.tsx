@@ -1,14 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { animate, motion, useMotionValue, useTransform } from 'motion/react';
+import { animate, motion, useMotionValue, useSpring, useTransform } from 'motion/react';
 
 const COLLAPSED_WIDTH = 120;
 const EXPANDED_WIDTH = 188;
 const EXPAND_MS = 0.3;
 const DELTA_IN_MS = 0.2;
-const COUNT_MS = 0.8;
-const DELTA_READ_DELAY_MS = 0.5;
 const DELTA_OUT_MS = 0.2;
 const CONTRACT_MS = 0.3;
+const HOLD_MS = 1000;
 
 export interface MomentumPillProps {
   momentumScore: number;
@@ -17,11 +16,8 @@ export interface MomentumPillProps {
 }
 
 /**
- * Apple-style Dynamic Island momentum pill.
- * Strict sequence: expand → show delta → count → hide delta → contract.
- * Animation runs ONLY when the rounded score actually changes (from !== to).
- * Count digits update via DOM textContent (not React setState) to avoid
- * re-rendering Home during the 0.8s count animation.
+ * Apple-style Dynamic Island momentum pill with smooth spring-based number interpolation.
+ * Rapid score fluctuations glide smoothly without layout shifts or text jitter.
  */
 const MomentumPillInner: React.FC<MomentumPillProps> = ({
   momentumScore,
@@ -29,164 +25,95 @@ const MomentumPillInner: React.FC<MomentumPillProps> = ({
 }) => {
   const targetScore = Math.round(Number.isFinite(momentumScore) ? momentumScore : 0);
 
+  const count = useMotionValue(targetScore);
+  const spring = useSpring(count, { stiffness: 280, damping: 28 });
+  const rounded = useTransform(spring, (latest) => Math.round(latest));
+
   const [delta, setDelta] = useState<number | null>(null);
-
-  const scoreElRef = useRef<HTMLSpanElement | null>(null);
-  const displayRef = useRef(targetScore);
-  const pulseRef = useRef(momentumPulse);
-  const animatingRef = useRef(false);
-  const runIdRef = useRef(0);
-  /** Captured during render when pulse fires — before hydrate can snap the score. */
-  const pendingPulseRef = useRef<{ from: number; to: number } | null>(null);
-
-  if (momentumPulse > pulseRef.current) {
-    const from = displayRef.current;
-    const to = targetScore;
-    // Safeguard: never queue an island sequence when the score did not move.
-    if (from !== to) {
-      pendingPulseRef.current = { from, to };
-      animatingRef.current = true;
-    }
-  }
-  pulseRef.current = momentumPulse;
 
   const pillWidth = useMotionValue(COLLAPSED_WIDTH);
   const deltaOpacity = useMotionValue(0);
-  const count = useMotionValue(displayRef.current);
-  const rounded = useTransform(count, (value) => Math.round(value));
 
-  const writeScore = (value: number) => {
-    displayRef.current = value;
-    const el = scoreElRef.current;
-    if (el) el.textContent = String(value);
-  };
+  const prevScoreRef = useRef(targetScore);
+  const animRunningRef = useRef(false);
+  const animTimeoutRef = useRef<number | null>(null);
+  const pillControlsRef = useRef<Array<{ stop: () => void }>>([]);
 
+  // Smoothly update spring target whenever momentumScore changes
   useEffect(() => {
-    const unsubscribe = rounded.on('change', (value) => {
-      writeScore(value);
-    });
-    return unsubscribe;
-  }, [rounded]);
-
-  // Hydrate when not mid-island sequence.
-  useEffect(() => {
-    if (animatingRef.current || pendingPulseRef.current) return;
-    if (displayRef.current === targetScore) return;
     count.set(targetScore);
-    writeScore(targetScore);
   }, [targetScore, count]);
 
+  // Handle Dynamic Island expand/contract sequence on score change or momentumPulse
   useEffect(() => {
-    const pending = pendingPulseRef.current;
-    if (!pending) return;
-    pendingPulseRef.current = null;
+    const diff = targetScore - prevScoreRef.current;
+    prevScoreRef.current = targetScore;
 
-    const from = pending.from;
-    const to = pending.to;
-    // Second guard — refuse no-op sequences even if a stale pulse sneaks through.
-    if (from === to) {
-      animatingRef.current = false;
+    if (diff === 0 && momentumPulse === 0) return;
+
+    if (diff !== 0) {
+      setDelta(diff);
+    }
+
+    // If an animation sequence is currently active, refresh hold timeout rather than thrashing
+    if (animRunningRef.current) {
+      if (animTimeoutRef.current) window.clearTimeout(animTimeoutRef.current);
+      animTimeoutRef.current = window.setTimeout(() => {
+        closePill();
+      }, HOLD_MS);
       return;
     }
 
-    const nextDelta = to - from;
-    const runId = ++runIdRef.current;
-    const isLive = () => runId === runIdRef.current;
+    if (diff === 0) return;
 
-    const stoppers: Array<{ stop: () => void }> = [];
-    const run = (controls: { stop: () => void }) => {
-      stoppers.push(controls);
-      return controls;
-    };
+    // Start expand sequence
+    animRunningRef.current = true;
+    pillControlsRef.current.forEach((c) => c.stop());
+    pillControlsRef.current = [];
 
-    count.set(from);
-    writeScore(from);
-    setDelta(nextDelta !== 0 ? nextDelta : null);
-    deltaOpacity.set(0);
-    animatingRef.current = true;
+    const c1 = animate(pillWidth, EXPANDED_WIDTH, {
+      duration: EXPAND_MS,
+      ease: [0.22, 1, 0.36, 1],
+    });
+    const c2 = animate(deltaOpacity, 1, {
+      duration: DELTA_IN_MS,
+      ease: 'easeOut',
+    });
+    pillControlsRef.current.push(c1, c2);
 
-    void (async () => {
-      try {
-        // 1) Expand pill
-        await new Promise<void>((resolve) => {
-          run(
-            animate(pillWidth, EXPANDED_WIDTH, {
-              duration: EXPAND_MS,
-              ease: [0.22, 1, 0.36, 1],
-              onComplete: () => resolve(),
-            })
-          );
-        });
-        if (!isLive()) return;
+    if (animTimeoutRef.current) window.clearTimeout(animTimeoutRef.current);
+    animTimeoutRef.current = window.setTimeout(() => {
+      closePill();
+    }, HOLD_MS);
+  }, [targetScore, momentumPulse, pillWidth, deltaOpacity]);
 
-        // 2) Show delta
-        await new Promise<void>((resolve) => {
-          run(
-            animate(deltaOpacity, 1, {
-              duration: DELTA_IN_MS,
-              ease: 'easeOut',
-              onComplete: () => resolve(),
-            })
-          );
-        });
-        if (!isLive()) return;
+  const closePill = () => {
+    pillControlsRef.current.forEach((c) => c.stop());
+    pillControlsRef.current = [];
 
-        // 3) Count up / down while delta stays visible
-        await new Promise<void>((resolve) => {
-          run(
-            animate(count, to, {
-              duration: COUNT_MS,
-              ease: 'easeOut',
-              onComplete: () => {
-                writeScore(to);
-                resolve();
-              },
-            })
-          );
-        });
-        if (!isLive()) return;
-
-        // 4) Hold so the delta is readable, then fade it out
-        await new Promise<void>((resolve) => {
-          run(
-            animate(deltaOpacity, 0, {
-              duration: DELTA_OUT_MS,
-              delay: DELTA_READ_DELAY_MS,
-              ease: 'easeIn',
-              onComplete: () => resolve(),
-            })
-          );
-        });
-        if (!isLive()) return;
+    const c1 = animate(deltaOpacity, 0, {
+      duration: DELTA_OUT_MS,
+      ease: 'easeIn',
+      onComplete: () => {
         setDelta(null);
+      },
+    });
+    const c2 = animate(pillWidth, COLLAPSED_WIDTH, {
+      duration: CONTRACT_MS,
+      ease: [0.22, 1, 0.36, 1],
+      onComplete: () => {
+        animRunningRef.current = false;
+      },
+    });
+    pillControlsRef.current.push(c1, c2);
+  };
 
-        // 5) Contract pill
-        await new Promise<void>((resolve) => {
-          run(
-            animate(pillWidth, COLLAPSED_WIDTH, {
-              duration: CONTRACT_MS,
-              ease: [0.22, 1, 0.36, 1],
-              onComplete: () => resolve(),
-            })
-          );
-        });
-      } finally {
-        if (isLive()) {
-          count.set(to);
-          writeScore(to);
-          setDelta(null);
-          deltaOpacity.set(0);
-          pillWidth.set(COLLAPSED_WIDTH);
-          animatingRef.current = false;
-        }
-      }
-    })();
-
+  useEffect(() => {
     return () => {
-      runIdRef.current += 1;
-      stoppers.forEach((c) => c.stop());
+      if (animTimeoutRef.current) window.clearTimeout(animTimeoutRef.current);
+      pillControlsRef.current.forEach((c) => c.stop());
     };
-  }, [momentumPulse, count, pillWidth, deltaOpacity]);
+  }, []);
 
   const deltaLabel =
     delta == null || delta === 0 ? null : delta > 0 ? `+${delta}` : `${delta}`;
@@ -207,12 +134,11 @@ const MomentumPillInner: React.FC<MomentumPillProps> = ({
       <span className="whitespace-nowrap text-emerald-600 dark:text-blue-400">
         Momentum
       </span>
-      <span
-        ref={scoreElRef}
+      <motion.span
         className="text-[13px] font-black min-w-[1.75ch] text-center"
       >
-        {displayRef.current}
-      </span>
+        {rounded}
+      </motion.span>
       {deltaLabel ? (
         <motion.span
           style={{ opacity: deltaOpacity }}
