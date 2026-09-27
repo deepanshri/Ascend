@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Habit, HabitCompletionEvent, IdentityEvidence, MomentumEvent } from '../types';
 import { fetchHabitLogsForExport, type HabitLogExportRow } from './habitsApi';
 import { fetchMomentumEventsFromTable } from './momentumEvents';
@@ -177,65 +179,61 @@ export async function buildReportCsv(options: {
 }
 
 export async function downloadCsvFile(filename: string, csvContent: string): Promise<void> {
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const platform = Capacitor.getPlatform();
 
-  // 1. Mobile / Capacitor Web Share API (Primary strategy for mobile apps)
-  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+  // 1. Mobile Native (Android / iOS): write directly to physical storage using @capacitor/filesystem
+  if (platform === 'android' || platform === 'ios') {
     try {
-      const file = new File([blob], filename, { type: 'text/csv;charset=utf-8;' });
-      if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: filename,
+      const downloadsDirectory =
+        (Directory as Record<string, Directory>).Downloads || ('DOWNLOADS' as Directory);
+
+      await Filesystem.writeFile({
+        path: filename,
+        data: csvContent,
+        directory: downloadsDirectory,
+        encoding: Encoding.UTF8,
+      });
+      return;
+    } catch (writeErr) {
+      console.warn('Filesystem.writeFile to Directory.Downloads failed, falling back to Directory.Documents:', writeErr);
+      try {
+        await Filesystem.writeFile({
+          path: filename,
+          data: csvContent,
+          directory: Directory.Documents,
+          encoding: Encoding.UTF8,
         });
         return;
+      } catch (docErr) {
+        console.warn('Filesystem.writeFile to Directory.Documents also failed:', docErr);
       }
-    } catch (shareErr: unknown) {
-      if (shareErr instanceof Error && shareErr.name === 'AbortError') {
-        return; // User manually dismissed native share sheet
-      }
-      // Fall through to file link handling below
     }
   }
 
-  // 2. Android WebView Detection & Data URI / Blob Download Handling
-  const isAndroidWebView =
-    typeof navigator !== 'undefined' &&
-    /Android/i.test(navigator.userAgent) &&
-    (/wv/i.test(navigator.userAgent) || !window.URL?.createObjectURL);
-
-  if (!isAndroidWebView && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
-    try {
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      window.setTimeout(() => {
-        try {
-          if (link.parentNode) link.parentNode.removeChild(link);
-          URL.revokeObjectURL(url);
-        } catch {
-          /* ignore */
-        }
-      }, 3000);
-      return;
-    } catch {
-      // Fall through to Base64 / Data URI
-    }
-  }
-
-  // 3. Android WebView / Restrictive environment Data URI Fallback
+  // 2. Desktop Web Browsers: Standard DOM anchor click execution with deferred URL revocation
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   try {
-    const encoded = encodeURIComponent(csvContent);
-    const dataUrl = `data:text/csv;charset=utf-8,${encoded}`;
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = dataUrl;
+    link.href = url;
     link.download = filename;
-    link.target = '_blank';
-    link.rel = 'noopener';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    window.setTimeout(() => {
+      try {
+        if (link.parentNode) link.parentNode.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch {
+        /* ignore */
+      }
+    }, 3000);
+  } catch {
+    // Data URI fallback for restrictive web environments
+    const encoded = encodeURIComponent(csvContent);
+    const link = document.createElement('a');
+    link.href = `data:text/csv;charset=utf-8,${encoded}`;
+    link.download = filename;
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
@@ -246,9 +244,5 @@ export async function downloadCsvFile(filename: string, csvContent: string): Pro
         /* ignore */
       }
     }, 3000);
-  } catch {
-    // Ultimate fallback for restricted WebViews: direct location navigation
-    const encoded = encodeURIComponent(csvContent);
-    window.location.href = `data:text/csv;charset=utf-8,${encoded}`;
   }
 }
