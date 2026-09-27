@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
@@ -885,6 +886,76 @@ export default function App() {
   const [passwordStatusMsg, setPasswordStatusMsg] = useState<string | null>(null);
   const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
   const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
+
+  // Android Native Edge-Swipe & Back Button Gesture Handling
+  useEffect(() => {
+    let removeListener: (() => void) | null = null;
+    void CapacitorApp.addListener('backButton', () => {
+      // Priority Modal Stack Checklist
+      if (isChronicleOpen) {
+        setIsChronicleOpen(false);
+        return;
+      }
+      if (isEveningJournalOpen) {
+        setIsEveningJournalOpen(false);
+        return;
+      }
+      if (isAddModalOpen) {
+        setIsAddModalOpen(false);
+        return;
+      }
+      if (detailHabit) {
+        setDetailHabit(null);
+        return;
+      }
+      if (deleteConfirmHabit) {
+        setDeleteConfirmHabit(null);
+        return;
+      }
+      if (isLedgerModalOpen) {
+        setIsLedgerModalOpen(false);
+        return;
+      }
+      if (isPasswordModalOpen) {
+        setIsPasswordModalOpen(false);
+        return;
+      }
+      if (isExamShieldModalOpen) {
+        setIsExamShieldModalOpen(false);
+        return;
+      }
+      if (longPressedHabitId) {
+        setLongPressedHabitId(null);
+        setLongPressedRect(null);
+        return;
+      }
+      if (activeTab !== 'home') {
+        setActiveTab('home');
+        return;
+      }
+      // Minimize app if on home tab with no open modals
+      void CapacitorApp.minimizeApp();
+    }).then((handle) => {
+      removeListener = () => {
+        void handle.remove();
+      };
+    }).catch(() => {});
+
+    return () => {
+      if (removeListener) removeListener();
+    };
+  }, [
+    isChronicleOpen,
+    isEveningJournalOpen,
+    isAddModalOpen,
+    detailHabit,
+    deleteConfirmHabit,
+    isLedgerModalOpen,
+    isPasswordModalOpen,
+    isExamShieldModalOpen,
+    longPressedHabitId,
+    activeTab,
+  ]);
 
 
   // Listen to Supabase auth state and restore session

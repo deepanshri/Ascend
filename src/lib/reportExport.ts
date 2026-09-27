@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import { Habit, HabitCompletionEvent, IdentityEvidence, MomentumEvent } from '../types';
 import { fetchHabitLogsForExport, type HabitLogExportRow } from './habitsApi';
 import { fetchMomentumEventsFromTable } from './momentumEvents';
@@ -178,71 +179,65 @@ export async function buildReportCsv(options: {
   return lines.join('\n');
 }
 
-export async function downloadCsvFile(filename: string, csvContent: string): Promise<void> {
+export async function downloadCsvFile(filename: string, content: string): Promise<void> {
   const platform = Capacitor.getPlatform();
 
-  // 1. Mobile Native (Android / iOS): write directly to physical storage using @capacitor/filesystem
   if (platform === 'android' || platform === 'ios') {
     try {
+      // Request permissions for Scoped Storage if required
+      try {
+        await Filesystem.requestPermissions();
+      } catch (permErr) {
+        console.warn('Filesystem.requestPermissions note:', permErr);
+      }
+
       const downloadsDirectory =
         (Directory as Record<string, Directory>).Downloads || ('DOWNLOADS' as Directory);
 
+      // Attempt direct write to Downloads directory
       await Filesystem.writeFile({
         path: filename,
-        data: csvContent,
+        data: content,
         directory: downloadsDirectory,
         encoding: Encoding.UTF8,
       });
+      alert(`Report saved to Downloads: ${filename}`);
       return;
-    } catch (writeErr) {
-      console.warn('Filesystem.writeFile to Directory.Downloads failed, falling back to Directory.Documents:', writeErr);
+    } catch (primaryErr) {
+      console.warn('Downloads directory write failed, falling back to Cache + Share:', primaryErr);
       try {
-        await Filesystem.writeFile({
+        // Fallback: Write to Cache and invoke Native Share
+        const cacheResult = await Filesystem.writeFile({
           path: filename,
-          data: csvContent,
-          directory: Directory.Documents,
+          data: content,
+          directory: Directory.Cache,
           encoding: Encoding.UTF8,
         });
+        await Share.share({
+          title: filename,
+          url: cacheResult.uri,
+        });
         return;
-      } catch (docErr) {
-        console.warn('Filesystem.writeFile to Directory.Documents also failed:', docErr);
+      } catch (fallbackErr) {
+        console.error('All mobile write options failed:', fallbackErr);
       }
     }
   }
 
-  // 2. Desktop Web Browsers: Standard DOM anchor click execution with deferred URL revocation
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  try {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    window.setTimeout(() => {
-      try {
-        if (link.parentNode) link.parentNode.removeChild(link);
-        URL.revokeObjectURL(url);
-      } catch {
-        /* ignore */
-      }
-    }, 3000);
-  } catch {
-    // Data URI fallback for restrictive web environments
-    const encoded = encodeURIComponent(csvContent);
-    const link = document.createElement('a');
-    link.href = `data:text/csv;charset=utf-8,${encoded}`;
-    link.download = filename;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    window.setTimeout(() => {
-      try {
-        if (link.parentNode) link.parentNode.removeChild(link);
-      } catch {
-        /* ignore */
-      }
-    }, 3000);
-  }
+  // Desktop Browser Fallback
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    try {
+      if (link.parentNode) link.parentNode.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      /* ignore */
+    }
+  }, 3000);
 }
