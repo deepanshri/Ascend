@@ -2745,8 +2745,6 @@ setMomentumEvents((prev) =>
                 onClearCache={handleClearCache}
                 onScroll={handleMainScroll}
                 onOpenSettings={handleOpenHomeTab}
-                selectedInterests={selectedInterests}
-                onToggleInterest={handleToggleInterest}
               />
             </Suspense>
           </div>

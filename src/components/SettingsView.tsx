@@ -7,7 +7,6 @@ import { habitCategoryLabel } from '../utils/categories';
 import { toISODate } from '../utils/dates';
 import { NotificationWindowToggles } from './NotificationWindowToggles';
 import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
-import { SettingsModal } from './SettingsModal';
 import type { NotificationWindowKey, PsychologyNotificationWindows } from '../lib/notifications';
 import type { EveningJournalSettings } from '../lib/eveningJournal';
 import { downloadCsvFile } from '../lib/reportExport';
@@ -40,8 +39,6 @@ interface SettingsViewProps {
   onClearCache: () => void;
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
   onOpenSettings?: () => void;
-  selectedInterests?: string[];
-  onToggleInterest?: (interest: string) => void;
 }
 
 const SettingsViewInner: React.FC<SettingsViewProps> = ({
@@ -67,10 +64,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
   onClearCache,
   onScroll,
   onOpenSettings,
-  selectedInterests = [],
-  onToggleInterest,
 }) => {
-  const [isInterestsModalOpen, setIsInterestsModalOpen] = useState(false);
   const [startMonday, setStartMonday] = useState(true);
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -290,11 +284,11 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
           />
         </div>
 
-        {/* Evening Journal */}
+        {/* Evening Chronicle */}
         <div className="border-t border-slate-100 dark:border-slate-800 pt-2.5 space-y-2.5">
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col">
-              <span className="text-[12.5px] font-medium text-slate-900 dark:text-white">Evening Journal</span>
+              <span className="text-[12.5px] font-medium text-slate-900 dark:text-white">Evening Chronicle</span>
               <span className="text-[10.5px] text-slate-400">Turn the Home quote card into a short nightly reflection</span>
             </div>
             <button
@@ -312,7 +306,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
           {eveningJournal.enabled && (
             <label className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 px-3 py-2">
               <span>
-                <span className="block text-[11.5px] font-semibold text-slate-700 dark:text-slate-200">Journal ready time</span>
+                <span className="block text-[11.5px] font-semibold text-slate-700 dark:text-slate-200">Chronicle ready time</span>
                 <span className="block text-[9.5px] text-slate-400">The card stays ready until you complete it</span>
               </span>
               <input
@@ -391,29 +385,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
             />
           </button>
         </div>
-
-        {/* Wisdom & Interest Topics */}
-        <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-2.5">
-          <div className="flex flex-col">
-            <span className="text-[12.5px] font-medium text-slate-900 dark:text-white">Interest &amp; Wisdom Topics</span>
-            <span className="text-[10.5px] text-slate-400">Filter home screen quotes by your active topics</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsInterestsModalOpen(true)}
-            className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-[11.5px] transition cursor-pointer"
-          >
-            Configure →
-          </button>
-        </div>
       </section>
-
-      <SettingsModal
-        isOpen={isInterestsModalOpen}
-        onClose={() => setIsInterestsModalOpen(false)}
-        selectedInterests={selectedInterests}
-        onToggleInterest={onToggleInterest}
-      />
 
       {/* Data Management: Export & Import & Cache */}
       <section className="bg-white dark:bg-slate-900 rounded-2xl p-4 space-y-3 border border-slate-200/90 dark:border-slate-800 shadow-sm">

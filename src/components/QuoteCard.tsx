@@ -246,14 +246,10 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
       if (Math.abs(deltaX) > SWIPE_PX || Math.abs(velocityX) > VELOCITY_THRESHOLD) {
         if (isModeEvening) {
           onOpenJournal?.();
-        } else if (isModeNextDayPlan) {
-          if (onOpenChronicle) {
-            onOpenChronicle();
-          } else {
-            deltaX < 0 || velocityX < 0 ? goNext() : goPrev();
-          }
+        } else if (onOpenChronicle) {
+          onOpenChronicle();
         } else {
-          // Standard quote navigation: Left -> next, Right -> prev
+          // Standard quote navigation fallback: Left -> next, Right -> prev
           if (deltaX < 0 || velocityX < 0) {
             goNext();
           } else {

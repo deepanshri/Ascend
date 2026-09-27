@@ -30,6 +30,7 @@ import { persistUserProfile } from '../lib/profile';
 import { AVATAR_OPTIONS, persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from '../data/avatars';
 import type { ProtectionModeStatus } from '../lib/protection';
 import { normalizeCategoryKey } from '../utils/quotes';
+import { ALL_INTEREST_CATEGORIES } from './SettingsModal';
 
 interface PersonalViewProps {
   userSession: UserSession;
@@ -105,8 +106,7 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
     }
   });
 
-  // Personal Interests state (preset tags only - no custom tags)
-  const PRESET_INTERESTS = ['Movies', 'Books', 'Anime', 'Running', 'Fitness', 'Coding', 'Music', 'Gaming'];
+  // Personal Interests state (persisted locally)
   const [localSelectedInterests, setLocalSelectedInterests] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('ascend_personal_interests');
@@ -367,7 +367,7 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
         <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-0.5 transition shrink-0" />
       </section>
 
-      {/* CARD 2: PERSONAL INTEREST */}
+      {/* CARD 2: INTEREST & WISDOM TOPICS */}
       <section className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100/90 dark:border-slate-800 shadow-sm space-y-3.5">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -377,37 +377,40 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
             </div>
             <div>
               <h2 className="text-[16px] font-bold text-slate-900 dark:text-white">
-                Personal Interest
+                Interest &amp; Wisdom Topics
               </h2>
               <p className="text-[11.5px] text-slate-400 dark:text-slate-500">
                 Curates daily wisdom quotes on your Home tab
               </p>
             </div>
           </div>
-          <ChevronRight className="w-5 h-5 text-slate-400" />
         </div>
 
-        {/* Preset Tags: built-in presets only */}
+        {/* 11 Curated Wisdom Categories */}
         <div className="pt-1">
           <div className="flex flex-wrap gap-2">
-            {PRESET_INTERESTS.map((tag) => {
-              const tagNorm = normalizeCategoryKey(tag);
+            {ALL_INTEREST_CATEGORIES.map((item) => {
+              const itemNorm = normalizeCategoryKey(item.key);
               const isSelected = selectedInterests.some(
-                (s) => normalizeCategoryKey(s) === tagNorm || s.toLowerCase() === tag.toLowerCase()
+                (s) =>
+                  normalizeCategoryKey(s) === itemNorm ||
+                  s.toLowerCase() === item.key.toLowerCase() ||
+                  s.toLowerCase() === item.name.toLowerCase()
               );
               return (
                 <button
-                  key={tag}
+                  key={item.key}
                   type="button"
-                  onClick={() => toggleInterest(tag)}
-                  className={`px-3.5 py-1.5 rounded-xl text-[12.5px] font-medium border transition cursor-pointer active:scale-95 ${
+                  onClick={() => toggleInterest(item.key)}
+                  className={`px-3 py-1.5 rounded-xl text-[12px] font-medium border transition cursor-pointer active:scale-95 flex items-center space-x-1.5 ${
                     isSelected
                       ? 'bg-[#E8F8EE] dark:bg-blue-950 text-[#165B33] dark:text-blue-300 border-[#23C15D]/60 dark:border-blue-500/60 font-bold shadow-xs'
                       : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
                   }`}
                 >
-                  {isSelected && <span className="mr-1 font-bold">✓</span>}
-                  {tag}
+                  <span className="text-sm">{item.icon}</span>
+                  <span>{item.name}</span>
+                  {isSelected && <span className="ml-1 font-bold">✓</span>}
                 </button>
               );
             })}

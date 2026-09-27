@@ -179,8 +179,7 @@ export async function buildReportCsv(options: {
 export async function downloadCsvFile(filename: string, csvContent: string): Promise<void> {
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
 
-  // On mobile / Capacitor, use Web Share API with File when supported
-  // (allows Android/iOS users to Save to Files, Drive, etc. reliably inside WebViews)
+  // 1. Mobile / Capacitor Web Share API (Primary strategy for mobile apps)
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     try {
       const file = new File([blob], filename, { type: 'text/csv;charset=utf-8;' });
@@ -193,45 +192,63 @@ export async function downloadCsvFile(filename: string, csvContent: string): Pro
       }
     } catch (shareErr: unknown) {
       if (shareErr instanceof Error && shareErr.name === 'AbortError') {
-        return; // User cancelled native share sheet
+        return; // User manually dismissed native share sheet
       }
-      // Fall through to browser anchor download
+      // Fall through to file link handling below
     }
   }
 
-  // Standard web browser download:
+  // 2. Android WebView Detection & Data URI / Blob Download Handling
+  const isAndroidWebView =
+    typeof navigator !== 'undefined' &&
+    /Android/i.test(navigator.userAgent) &&
+    (/wv/i.test(navigator.userAgent) || !window.URL?.createObjectURL);
+
+  if (!isAndroidWebView && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+    try {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      window.setTimeout(() => {
+        try {
+          if (link.parentNode) link.parentNode.removeChild(link);
+          URL.revokeObjectURL(url);
+        } catch {
+          /* ignore */
+        }
+      }, 3000);
+      return;
+    } catch {
+      // Fall through to Base64 / Data URI
+    }
+  }
+
+  // 3. Android WebView / Restrictive environment Data URI Fallback
   try {
-    const url = URL.createObjectURL(blob);
+    const encoded = encodeURIComponent(csvContent);
+    const dataUrl = `data:text/csv;charset=utf-8,${encoded}`;
     const link = document.createElement('a');
-    link.href = url;
+    link.href = dataUrl;
     link.download = filename;
+    link.target = '_blank';
+    link.rel = 'noopener';
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
-    // Defer revocation so mobile browser download manager has time to stream the blob
     window.setTimeout(() => {
       try {
         if (link.parentNode) link.parentNode.removeChild(link);
-        URL.revokeObjectURL(url);
       } catch {
         /* ignore */
       }
     }, 3000);
   } catch {
-    // Data URI fallback for restrictive environments where createObjectURL is blocked
+    // Ultimate fallback for restricted WebViews: direct location navigation
     const encoded = encodeURIComponent(csvContent);
-    const link = document.createElement('a');
-    link.href = `data:text/csv;charset=utf-8,${encoded}`;
-    link.download = filename;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    window.setTimeout(() => {
-      try {
-        if (link.parentNode) link.parentNode.removeChild(link);
-      } catch {
-        /* ignore */
-      }
-    }, 3000);
+    window.location.href = `data:text/csv;charset=utf-8,${encoded}`;
   }
 }

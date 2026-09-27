@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion, type PanInfo } from 'motion/react';
+import { ChevronLeft, ChevronRight, Check, X } from 'lucide-react';
 import { MotionModal } from './MotionModal';
 import { tapPress } from '../lib/motionPresets';
 import {
@@ -23,6 +24,8 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
   onClose,
   onSave,
 }) => {
+  const [activePage, setActivePage] = useState<1 | 2 | 3>(1);
+  const [direction, setDirection] = useState<1 | -1>(1);
   const [phase1, setPhase1] = useState('');
   const [phase2, setPhase2] = useState('');
   const [phase3, setPhase3] = useState('');
@@ -38,6 +41,8 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
     setPhase3(existing?.phase3 ?? '');
     setYesterdayPlan(getYesterdayPlanForToday());
     setIsSavedRecently(false);
+    setActivePage(1);
+    setDirection(1);
   }, [isOpen, todayIso]);
 
   const handleSave = () => {
@@ -61,13 +66,55 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
     setPhase1(yesterdayPlan);
   };
 
+  const goNextPage = () => {
+    if (activePage < 3) {
+      setDirection(1);
+      setActivePage((prev) => (prev + 1) as 1 | 2 | 3);
+    } else {
+      handleSave();
+    }
+  };
+
+  const goPrevPage = () => {
+    if (activePage > 1) {
+      setDirection(-1);
+      setActivePage((prev) => (prev - 1) as 1 | 2 | 3);
+    }
+  };
+
+  const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    const deltaX = info.offset.x;
+    const velocityX = info.velocity.x;
+    const SWIPE_PX = 40;
+    if (deltaX < -SWIPE_PX || velocityX < -200) {
+      goNextPage();
+    } else if (deltaX > SWIPE_PX || velocityX > 200) {
+      goPrevPage();
+    }
+  };
+
+  const pageVariants = {
+    enter: (dir: number) => ({
+      x: dir > 0 ? 60 : -60,
+      opacity: 0,
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
+    },
+    exit: (dir: number) => ({
+      x: dir < 0 ? 60 : -60,
+      opacity: 0,
+    }),
+  };
+
   return (
     <MotionModal
       isOpen={isOpen}
       onClose={onClose}
       overlayId="chronicle-modal-overlay"
       cardId="chronicle-modal-card"
-      cardClassName="p-5 max-w-[420px]"
+      cardClassName="p-5 max-w-[420px] overflow-hidden"
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -89,117 +136,216 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
           aria-label="Close chronicle"
           className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer text-sm"
         >
-          ✕
+          <X className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Yesterday's Plan Anchor (if present) */}
-      {yesterdayPlan && (
-        <div className="mt-3.5 p-3 rounded-xl bg-emerald-50/80 dark:bg-blue-950/40 border border-emerald-200/90 dark:border-blue-800/80">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 dark:text-blue-300">
-              <span>🎯</span>
-              <span>Yesterday&apos;s Plan For Today</span>
-            </div>
-            {!phase1.trim() && (
-              <button
-                type="button"
-                onClick={handleApplyYesterdayPlanToFocus}
-                className="text-[10.5px] font-bold text-emerald-700 dark:text-blue-400 hover:underline cursor-pointer"
-              >
-                Use as Focus →
-              </button>
-            )}
-          </div>
-          <p className="mt-1 text-[12px] font-semibold text-slate-800 dark:text-slate-100 italic">
-            &ldquo;{yesterdayPlan}&rdquo;
-          </p>
-        </div>
-      )}
-
-      {/* 3-Phase Entry Form */}
-      <div className="mt-4 space-y-4 max-h-[55vh] overflow-y-auto pr-1">
-        {/* Phase 1 */}
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-slate-50/60 dark:bg-slate-900/50 space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-blue-400">
-              Phase 1 · Morning Focus
-            </span>
-          </div>
-          <label htmlFor="chronicle-phase1" className="block text-[12.5px] font-bold text-slate-900 dark:text-white">
-            What&apos;s your primary focus today?
-          </label>
-          <textarea
-            id="chronicle-phase1"
-            rows={2}
-            value={phase1}
-            onChange={(e) => setPhase1(e.target.value)}
-            placeholder="e.g. Deep work on feature design, stay patient and present"
-            className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[12.5px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 dark:focus:border-blue-500 resize-none"
-          />
-        </div>
-
-        {/* Phase 2 */}
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-slate-50/60 dark:bg-slate-900/50 space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-              Phase 2 · Daily Reflection
-            </span>
-          </div>
-          <label htmlFor="chronicle-phase2" className="block text-[12.5px] font-bold text-slate-900 dark:text-white">
-            Enter what all you did today
-          </label>
-          <textarea
-            id="chronicle-phase2"
-            rows={2}
-            value={phase2}
-            onChange={(e) => setPhase2(e.target.value)}
-            placeholder="e.g. Shipped the modal updates, went for a 20m walk, read 15 pages"
-            className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[12.5px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 dark:focus:border-blue-500 resize-none"
-          />
-        </div>
-
-        {/* Phase 3 */}
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-slate-50/60 dark:bg-slate-900/50 space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-400">
-              Phase 3 · Tomorrow&apos;s Strategy
-            </span>
-          </div>
-          <label htmlFor="chronicle-phase3" className="block text-[12.5px] font-bold text-slate-900 dark:text-white">
-            Plan your strategy for tomorrow
-          </label>
-          <textarea
-            id="chronicle-phase3"
-            rows={2}
-            value={phase3}
-            onChange={(e) => setPhase3(e.target.value)}
-            placeholder="e.g. Put gym clothes out, start with a 30m review at 8:30am"
-            className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[12.5px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 dark:focus:border-blue-500 resize-none"
-          />
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 italic">
-            This will appear as &ldquo;See the plan of today by you&rdquo; tomorrow morning.
-          </p>
-        </div>
+      {/* 3-Step Pill Progress Bar */}
+      <div className="mt-3.5 flex items-center justify-between gap-1.5 px-0.5">
+        {[
+          { page: 1, label: 'Page 1 · Focus' },
+          { page: 2, label: 'Page 2 · Reflection' },
+          { page: 3, label: 'Page 3 · Strategy' },
+        ].map((item) => {
+          const isActive = activePage === item.page;
+          const isDone = activePage > item.page;
+          return (
+            <button
+              key={item.page}
+              type="button"
+              onClick={() => {
+                setDirection(item.page > activePage ? 1 : -1);
+                setActivePage(item.page as 1 | 2 | 3);
+              }}
+              className={`flex-1 py-1 px-2 rounded-lg text-[10.5px] font-bold transition cursor-pointer border ${
+                isActive
+                  ? 'bg-emerald-50 dark:bg-blue-950/80 text-emerald-800 dark:text-blue-300 border-emerald-400/80 dark:border-blue-500'
+                  : isDone
+                  ? 'bg-slate-100 dark:bg-slate-800/80 text-emerald-700 dark:text-blue-400 border-transparent'
+                  : 'bg-slate-50 dark:bg-slate-900/60 text-slate-400 dark:text-slate-500 border-transparent'
+              }`}
+            >
+              {item.label}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Actions */}
-      <div className="mt-4 flex gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+      {/* Paginated Content Area */}
+      <div className="mt-3.5 relative min-h-[220px]">
+        <AnimatePresence mode="wait" custom={direction}>
+          <motion.div
+            key={activePage}
+            custom={direction}
+            variants={pageVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            drag="x"
+            dragDirectionLock
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.2}
+            onDragEnd={handleDragEnd}
+            className="touch-pan-y"
+          >
+            {activePage === 1 && (
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-blue-400">
+                    Phase 1 · Morning Focus
+                  </span>
+                  <span className="text-[10px] font-medium text-slate-400">Page 1 of 3</span>
+                </div>
+
+                <label
+                  htmlFor="chronicle-phase1"
+                  className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug"
+                >
+                  What&apos;s your primary focus today?
+                </label>
+
+                {yesterdayPlan && !phase1.trim() && (
+                  <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-blue-950/60 border border-emerald-200 dark:border-blue-800 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-emerald-900 dark:text-blue-200 truncate italic">
+                      &ldquo;{yesterdayPlan}&rdquo;
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleApplyYesterdayPlanToFocus}
+                      className="text-[10.5px] font-bold text-emerald-700 dark:text-blue-300 shrink-0 hover:underline cursor-pointer"
+                    >
+                      Use →
+                    </button>
+                  </div>
+                )}
+
+                <textarea
+                  id="chronicle-phase1"
+                  rows={4}
+                  value={phase1}
+                  onChange={(e) => setPhase1(e.target.value)}
+                  placeholder=""
+                  className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[13px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 dark:focus:border-blue-500 resize-none font-medium"
+                />
+              </div>
+            )}
+
+            {activePage === 2 && (
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                    Phase 2 · Daily Reflection
+                  </span>
+                  <span className="text-[10px] font-medium text-slate-400">Page 2 of 3</span>
+                </div>
+
+                <label
+                  htmlFor="chronicle-phase2"
+                  className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug"
+                >
+                  Enter what all you did today
+                </label>
+
+                <textarea
+                  id="chronicle-phase2"
+                  rows={4}
+                  value={phase2}
+                  onChange={(e) => setPhase2(e.target.value)}
+                  placeholder=""
+                  className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[13px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 dark:focus:border-amber-500 resize-none font-medium"
+                />
+              </div>
+            )}
+
+            {activePage === 3 && (
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-400">
+                    Phase 3 · Tomorrow&apos;s Strategy
+                  </span>
+                  <span className="text-[10px] font-medium text-slate-400">Page 3 of 3</span>
+                </div>
+
+                <label
+                  htmlFor="chronicle-phase3"
+                  className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug"
+                >
+                  Plan your strategy for tomorrow
+                </label>
+
+                <textarea
+                  id="chronicle-phase3"
+                  rows={4}
+                  value={phase3}
+                  onChange={(e) => setPhase3(e.target.value)}
+                  placeholder=""
+                  className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[13px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 dark:focus:border-purple-500 resize-none font-medium"
+                />
+
+                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 italic">
+                  This strategy will display on your Home quote panel tomorrow morning.
+                </p>
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* Navigation & Action Controls */}
+      <div className="mt-4 flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+        {/* Prev Chevron Button */}
         <motion.button
           type="button"
           whileTap={tapPress}
-          onClick={onClose}
-          className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-[12.5px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+          onClick={goPrevPage}
+          disabled={activePage === 1}
+          className={`px-3 py-2 rounded-xl text-[12px] font-bold flex items-center gap-1 transition cursor-pointer ${
+            activePage === 1
+              ? 'opacity-40 cursor-not-allowed text-slate-400 bg-slate-100 dark:bg-slate-800'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+          }`}
         >
-          Cancel
+          <ChevronLeft className="w-4 h-4" />
+          <span>Prev</span>
         </motion.button>
+
+        {/* Center Dots */}
+        <div className="flex items-center space-x-1.5">
+          {[1, 2, 3].map((p) => (
+            <span
+              key={p}
+              className={`block rounded-full transition-all duration-300 ${
+                activePage === p
+                  ? 'w-5 h-2 bg-emerald-600 dark:bg-blue-500'
+                  : 'w-2 h-2 bg-slate-300 dark:bg-slate-700'
+              }`}
+            />
+          ))}
+        </div>
+
+        {/* Next / Save Chevron Button */}
         <motion.button
           type="button"
           whileTap={tapPress}
-          onClick={handleSave}
-          className="flex-1 py-2.5 rounded-xl bg-[#23C15D] dark:bg-blue-600 text-white font-bold text-[12.5px] shadow-sm hover:bg-emerald-600 dark:hover:bg-blue-500 active:scale-[0.99] transition cursor-pointer"
+          onClick={activePage === 3 ? handleSave : goNextPage}
+          className={`px-3.5 py-2 rounded-xl text-[12px] font-bold flex items-center gap-1 transition shadow-xs cursor-pointer ${
+            activePage === 3
+              ? 'bg-[#23C15D] dark:bg-blue-600 text-white hover:bg-emerald-600 dark:hover:bg-blue-500'
+              : 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white'
+          }`}
         >
-          {isSavedRecently ? 'Saved ✓' : 'Save Chronicle'}
+          {activePage === 3 ? (
+            <>
+              {isSavedRecently ? 'Saved ✓' : 'Save Chronicle'}
+              <Check className="w-4 h-4 ml-0.5" />
+            </>
+          ) : (
+            <>
+              <span>Next</span>
+              <ChevronRight className="w-4 h-4" />
+            </>
+          )}
         </motion.button>
       </div>
     </MotionModal>
