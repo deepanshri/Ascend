@@ -223,9 +223,11 @@ function SingleFlyingMarble({
 
     meshRef.current.position.set(worldX, worldY, worldZ);
 
-    // Base world radius matching Bowl.tsx (SPHERE_RADIUS = 0.19)
-    const targetWorldRadius = 0.14;
-    const distanceComp = 1.88 / Math.max(0.1, 1.88 - worldZ); // Pitch compensation factor
+    // PIECE_PX = 14 -> 7px target physical radius
+    const targetWorldRadius = (PIECE_PX / 2) * (viewport.height / size.height);
+    const distanceComp = 1.88 / Math.max(0.1, 1.88 - worldZ);
+
+    // Set exact 1:1 physical scale
     meshRef.current.scale.setScalar(targetWorldRadius / distanceComp);
 
     meshRef.current.visible = true;
