@@ -47,7 +47,7 @@ function BottomNavInner({
         opacity: 1,
         pointerEvents: isBlurred ? 'none' : 'auto',
       }}
-      className={`absolute bottom-0 left-0 right-0 z-40 mx-4 mb-[max(1.25rem,env(safe-area-inset-bottom))] h-[68px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-full nav-pill-shadow border border-slate-100/90 dark:border-slate-800 px-2 flex items-center justify-between gpu-accelerated ${
+      className={`absolute bottom-0 left-0 right-0 z-40 mx-4 mb-[max(1.25rem,env(safe-area-inset-bottom))] h-[68px] bg-white/95 dark:bg-slate-900/95 rounded-full nav-pill-shadow border border-slate-100/90 dark:border-slate-800 px-2 flex items-center justify-between gpu-accelerated ${
         isBlurred ? 'opacity-40' : ''
       }`}
     >

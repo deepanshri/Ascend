@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useRef } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef } from 'react';
 import { animate, motion, useMotionValue } from 'motion/react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -118,25 +118,9 @@ function SingleFlyingMarble({
 
   const progressRef = useRef(0);
 
-  useEffect(() => {
-    let finished = false;
-    let launchControls: { stop: () => void } | null = null;
-
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      onDoneRef.current?.(handoffRef.current);
-    };
-
-    try {
-      playCompletionSound();
-    } catch {
-      /* audio failure must never block animation */
-    }
-
+  const trajectory = useMemo(() => {
     const pStart = flight.from;
     const pTarget = flight.to;
-    const durationSec = FLIGHT_DURATION_MS / 1000;
     const touchRatio = Number.isFinite(flight.touchRatio) ? flight.touchRatio! : 0.5;
 
     let pControl: { x: number; y: number };
@@ -159,6 +143,27 @@ function SingleFlyingMarble({
         y: Math.min(pStart.y, pTarget.y) - 130,
       };
     }
+    return { pStart, pControl, pTarget };
+  }, [flight.from, flight.to, flight.touchRatio]);
+
+  useEffect(() => {
+    let finished = false;
+    let launchControls: { stop: () => void } | null = null;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      onDoneRef.current?.(handoffRef.current);
+    };
+
+    try {
+      playCompletionSound();
+    } catch {
+      /* audio failure must never block animation */
+    }
+
+    const { pStart, pControl, pTarget } = trajectory;
+    const durationSec = FLIGHT_DURATION_MS / 1000;
 
     const pNear = flightPositionAt(pStart, pControl, pTarget, TERMINAL_SAMPLE_T);
     const pEnd = flightPositionAt(pStart, pControl, pTarget, 1);
@@ -170,10 +175,6 @@ function SingleFlyingMarble({
     );
     handoffRef.current.vx *= 0.2;
     handoffRef.current.vz = Math.max(0, handoffRef.current.vz * 0.2);
-
-    if (meshRef.current) {
-      (meshRef.current as any)._flightTrajectory = { pStart, pControl, pTarget };
-    }
 
     try {
       launchControls = animate(0, 1, {
@@ -191,7 +192,7 @@ function SingleFlyingMarble({
     return () => {
       launchControls?.stop();
     };
-  }, [flight.id, flight.from, flight.to]);
+  }, [trajectory]);
 
   useEffect(() => {
     const syncThrowColor = () => {
@@ -211,8 +212,7 @@ function SingleFlyingMarble({
 
   useFrame((_, delta) => {
     if (!meshRef.current) return;
-    const traj = (meshRef.current as any)._flightTrajectory;
-    if (!traj) return;
+    const traj = trajectory;
 
     const progress = progressRef.current;
     const pos = flightPositionAt(traj.pStart, traj.pControl, traj.pTarget, progress);
@@ -227,6 +227,8 @@ function SingleFlyingMarble({
     const fixedWorldRadius = (PIECE_PX / 2) * (viewport.height / size.height);
     meshRef.current.scale.setScalar(fixedWorldRadius);
 
+    meshRef.current.visible = true;
+
     meshRef.current.rotation.x += delta * 4.8;
     meshRef.current.rotation.y += delta * 6.5;
   });
@@ -234,7 +236,7 @@ function SingleFlyingMarble({
   const initialColor = flight.color || getMarbleColor(isDark, isFallback);
 
   return (
-    <mesh ref={meshRef}>
+    <mesh ref={meshRef} visible={false} scale={[0, 0, 0]}>
       <sphereGeometry args={[1, 24, 24]} />
       <meshPhysicalMaterial
         ref={materialRef}
@@ -291,46 +293,56 @@ export default function FlyingPieceOverlay({
  * Destination is the aperture at the top of the bowl — never mid-glass —
  * so the overlay can hover above then drop vertically into the opening.
  */
+let cachedBowlRect: { rect: DOMRect; timestamp: number } | null = null;
+
+function getCachedBowlRect(): DOMRect | null {
+  const now = Date.now();
+  if (cachedBowlRect && now - cachedBowlRect.timestamp < 1000) {
+    return cachedBowlRect.rect;
+  }
+  const bowlFrame = document.getElementById('accumulation-bowl-frame');
+  const bowl = bowlFrame || document.getElementById('accumulation-bowl');
+  if (bowl) {
+    const r = bowl.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      cachedBowlRect = { rect: r, timestamp: now };
+      return r;
+    }
+  }
+  return null;
+}
+
 export function measureCompletionFlight(
   habitId: string,
   direction?: 'left' | 'right',
   customOrigin?: { x: number; y: number; touchRatio?: number }
 ): { from: { x: number; y: number }; to: { x: number; y: number }; touchRatio: number } {
-  const card = document.getElementById(`habit-card-${habitId}`);
-  const bowlFrame = document.getElementById('accumulation-bowl-frame');
-  const bowl = bowlFrame || document.getElementById('accumulation-bowl');
-
   const screenW = typeof window !== 'undefined' ? window.innerWidth : 390;
   const screenH = typeof window !== 'undefined' ? window.innerHeight : 844;
 
   let fromX: number;
   let fromY: number;
-  let touchRatio = 0.5;
-
-  if (card) {
-    const a = card.getBoundingClientRect();
-    if (customOrigin && Number.isFinite(customOrigin.touchRatio)) {
-      touchRatio = customOrigin.touchRatio!;
-    } else if (customOrigin && Number.isFinite(customOrigin.x) && a.width > 0) {
-      touchRatio = (customOrigin.x - a.left) / a.width;
-    }
-  } else if (customOrigin && Number.isFinite(customOrigin.touchRatio)) {
-    touchRatio = customOrigin.touchRatio!;
-  }
-
-  touchRatio = Math.max(0, Math.min(1, touchRatio));
+  let touchRatio = customOrigin && Number.isFinite(customOrigin.touchRatio) ? customOrigin.touchRatio! : 0.5;
 
   if (customOrigin && Number.isFinite(customOrigin.x) && Number.isFinite(customOrigin.y) && customOrigin.x !== 0 && customOrigin.y !== 0) {
     fromX = customOrigin.x;
     fromY = customOrigin.y;
-  } else if (card) {
-    const a = card.getBoundingClientRect();
-    fromX = a.left + a.width * 0.5;
-    fromY = a.top + a.height * 0.5;
   } else {
-    fromX = screenW * 0.5;
-    fromY = screenH * 0.65;
+    const card = document.getElementById(`habit-card-${habitId}`);
+    if (card) {
+      const a = card.getBoundingClientRect();
+      fromX = a.left + a.width * 0.5;
+      fromY = a.top + a.height * 0.5;
+      if (!Number.isFinite(customOrigin?.touchRatio) && customOrigin && Number.isFinite(customOrigin.x) && a.width > 0) {
+        touchRatio = (customOrigin.x - a.left) / a.width;
+      }
+    } else {
+      fromX = screenW * 0.5;
+      fromY = screenH * 0.65;
+    }
   }
+
+  touchRatio = Math.max(0, Math.min(1, touchRatio));
 
   // Small lateral jitter only — keep Y on the rim so the drop stays vertical.
   const rimJitterX = (Math.random() - 0.5) * 10;
@@ -339,13 +351,10 @@ export function measureCompletionFlight(
   // Fallback: bowl rim visual height ≈ 35% of screen height
   let toY = screenH * 0.35;
 
-  if (bowlFrame || bowl) {
-    const b = (bowlFrame || bowl)!.getBoundingClientRect();
-    if (b.width > 0 && b.height > 0) {
-      toX = b.left + b.width * 0.5 + rimJitterX;
-      // Rim aperture (~top 20% of the bowl frame)
-      toY = b.top + b.height * 0.2;
-    }
+  const b = getCachedBowlRect();
+  if (b) {
+    toX = b.left + b.width * 0.5 + rimJitterX;
+    toY = b.top + b.height * 0.2;
   }
 
   return {
