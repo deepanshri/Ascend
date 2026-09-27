@@ -2550,7 +2550,7 @@ setMomentumEvents((prev) =>
           resetKey={String(viewResetKey)}
           onReset={() => setViewResetKey((value) => value + 1)}
         >
-        <div className="absolute inset-0 z-10 tab-pane-host gpu-smooth">
+        <div className="absolute inset-0 z-10 tab-pane-host gpu-smooth bg-canvas">
         {/* Active tabs maintain persistent DOM memory once visited for 0ms instant tab switching. */}
           <main
             id="app-main-content"

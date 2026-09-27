@@ -185,7 +185,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
         {children}
 
         {renderHabit && (
-          <section id="habit-list" className="mt-0.5 flex flex-col gap-2.5 gpu-smooth">
+          <section id="habit-list" className="mt-0.5 flex flex-col gap-2.5 gpu-smooth bg-canvas">
             {activeHabits.length === 0 && sessionCompletedHabits.length === 0 ? (
               <div className="bg-white/80 dark:bg-slate-800/80 rounded-2xl p-6 text-center text-slate-400 dark:text-slate-500 text-[13px] border border-slate-200/80 dark:border-slate-700/80">
                 No habits active yet. Tap &quot;+&quot; in the header to create one!

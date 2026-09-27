@@ -3,8 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=overlays-content" />
-    <meta name="theme-color" content="#F8FAF9" />
+    <meta name="theme-color" content="#090d16" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('ascend_theme');
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var isDark = saved === 'dark' || (!saved && prefersDark) || (saved === 'system' && prefersDark);
+          if (isDark) document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
     <title>Habit Tracker</title>
     <meta name="description" content="A mindful habit tracker featuring radial calendar arcs, interactive progress rings, and identity evidence logging." />
     <meta property="og:title" content="Habit Tracker" />

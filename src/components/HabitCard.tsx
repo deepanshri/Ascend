@@ -675,10 +675,10 @@ function HabitCardInner({
                   isLongPressed
                     ? 'scale-[1.025] shadow-2xl ring-2 ring-accent border-accent'
                     : isFallbackActive && !isTodayDone
-                    ? 'shadow-sm ring-1 ring-accent bg-emerald-100/60 dark:bg-blue-950/80 border-emerald-500 dark:border-blue-500 active:scale-[0.995]'
+                    ? 'shadow-sm ring-1 ring-accent bg-emerald-100/60 dark:bg-blue-950/80 border-emerald-500 dark:border-blue-500'
                     : habit.isKeystone || keystoneBoosted
-                    ? 'overflow-visible bg-emerald-900/20 dark:bg-blue-950/40 border-emerald-500/60 dark:border-blue-500/60 keystone-boost-glow active:scale-[0.995]'
-                    : 'shadow-sm border-line active:scale-[0.995]'
+                    ? 'overflow-visible bg-emerald-900/20 dark:bg-blue-950/40 border-emerald-500/60 dark:border-blue-500/60 keystone-boost-glow'
+                    : 'shadow-sm border-line'
                 }`}
               >
                 <div className="flex items-start justify-between">

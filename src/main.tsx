@@ -6,7 +6,13 @@ import './index.css';
 import { applyNativeChrome } from './lib/nativeChrome';
 import { startOfflineSyncListener } from './lib/offlineSync';
 
-void applyNativeChrome(false).catch(() => {});
+let isDarkBoot = false;
+try {
+  const savedTheme = localStorage.getItem('ascend_theme');
+  const systemDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  isDarkBoot = savedTheme === 'dark' || (!savedTheme && systemDark) || (savedTheme === 'system' && systemDark);
+} catch {}
+void applyNativeChrome(isDarkBoot).catch(() => {});
 startOfflineSyncListener();
 
 function Root() {

@@ -48,6 +48,10 @@
   --color-accent-soft: var(--ascend-accent-soft);
 }
 
+*, *::before, *::after {
+  -webkit-tap-highlight-color: transparent !important;
+}
+
 html, body, #root, button, input, select, textarea, span, p, div, h1, h2, h3, h4, h5, h6 {
   font-family: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
@@ -139,6 +143,7 @@ html {
   -webkit-transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+  background-color: var(--ascend-canvas);
 }
 
 .tab-pane {
@@ -149,6 +154,7 @@ html {
   -webkit-transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+  background-color: var(--ascend-canvas);
 }
 
 .tab-pane-active {
@@ -608,6 +614,6 @@ html.ascend-swiping #settings-screen {
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
 }
-html.dark, html.dark body, html.dark #root, html.dark #app-root, html.dark #mobile-viewport, html.dark .tab-pane-host {
+html.dark, html.dark body, html.dark #root, html.dark #app-root, html.dark #mobile-viewport, html.dark .tab-pane-host, html.dark #app-main-content, html.dark .tab-pane, html.dark #habit-list {
   background-color: #090d16 !important;
 }
