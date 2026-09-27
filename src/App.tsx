@@ -143,6 +143,15 @@ import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
 import { HabitCard } from './components/HabitCard';
 import { QuoteCard } from './components/QuoteCard';
+import {
+  loadEveningJournalEntries,
+  loadEveningJournalSettings,
+  previousMorningIntention,
+  saveEveningJournalEntries,
+  saveEveningJournalSettings,
+  type EveningJournalEntry,
+  type EveningJournalSettings,
+} from './lib/eveningJournal';
 import { normalizeCategoryKey } from './utils/quotes';
 import { FriendsFeed } from './components/FriendsFeed';
 import { ScreenHeader, SCREEN_INSET_CLASS, HEADER_ICON_BTN_CLASS } from './components/ScreenHeader';
@@ -154,6 +163,7 @@ const HabitDetailModal = React.lazy(() => import('./components/HabitDetailModal'
 const DeleteHabitConfirmModal = React.lazy(() => import('./components/DeleteHabitConfirmModal').then((m) => ({ default: m.DeleteHabitConfirmModal })));
 const IdentityLedgerModal = React.lazy(() => import('./components/IdentityLedgerModal').then((m) => ({ default: m.IdentityLedgerModal })));
 const FrictionAuditModal = React.lazy(() => import('./components/FrictionAuditModal').then((m) => ({ default: m.FrictionAuditModal })));
+const EveningJournalModal = React.lazy(() => import('./components/EveningJournalModal').then((m) => ({ default: m.EveningJournalModal })));
 const AuthView = React.lazy(() => import('./components/AuthView').then((m) => ({ default: m.AuthView })));
 const OnboardingView = React.lazy(() => import('./components/OnboardingView').then((m) => ({ default: m.OnboardingView })));
 const RemindersView = React.lazy(() => import('./components/RemindersView').then((m) => ({ default: m.RemindersView })));
@@ -319,6 +329,18 @@ export default function App() {
   const [notificationWindows, setNotificationWindows] = useState<PsychologyNotificationWindows>(
     () => loadNotificationWindows()
   );
+  const [eveningJournal, setEveningJournal] = useState<EveningJournalSettings>(() =>
+    loadEveningJournalSettings()
+  );
+  const [eveningJournalEntries, setEveningJournalEntries] = useState<EveningJournalEntry[]>(() =>
+    loadEveningJournalEntries()
+  );
+  const [isEveningJournalOpen, setIsEveningJournalOpen] = useState(false);
+
+  const handleEveningJournalChange = useCallback((next: EveningJournalSettings) => {
+    setEveningJournal(next);
+    saveEveningJournalSettings(next);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1025,6 +1047,15 @@ export default function App() {
   }, [derivedHabits]);
   const activeKeystoneCount = useMemo(() => countActiveKeystones(habits), [habits]);
   const activeFallbackIdSet = useMemo(() => new Set(activeFallbackIds), [activeFallbackIds]);
+  const todayIso = toISODate(calendarOrigin);
+  const journalCompletedToday = useMemo(
+    () => eveningJournalEntries.some((entry) => entry.date === todayIso),
+    [eveningJournalEntries, todayIso]
+  );
+  const morningIntention = useMemo(
+    () => previousMorningIntention(eveningJournalEntries, activeHabits),
+    [eveningJournalEntries, activeHabits]
+  );
   const { morningHabits, nightHabits } = useHabits(activeHabits);
 
   const bowlWindow = useMemo(
@@ -2162,9 +2193,57 @@ setMomentumEvents((prev) =>
     ]
   );
 
+  const handleEveningJournalComplete = useCallback((entry: EveningJournalEntry) => {
+    const existingKeys = new Set(
+      frictionAudits
+        .filter((audit) => audit.loggedDate === entry.date && audit.habitId)
+        .map((audit) => `${audit.habitId}|${audit.loggedDate}`)
+    );
+    const freshAudits: FrictionAudit[] = [];
+
+    Object.entries(entry.missedReasons).forEach(([habitId, reason]) => {
+      const trimmed = reason.trim();
+      if (!trimmed || existingKeys.has(`${habitId}|${entry.date}`)) return;
+      const habit = activeHabits.find((item) => item.id === habitId);
+      if (!habit) return;
+      const prompt: PendingFrictionPrompt = { habitId, habitName: habit.name, loggedDate: entry.date };
+      freshAudits.push(createMissedFrictionAudit(prompt, trimmed));
+      markFrictionPrompted(habitId, entry.date);
+      void persistHabitLogFrictionReason(sessionRef.current?.id, habitId, entry.date, trimmed).catch(() => {});
+    });
+
+    if (freshAudits.length > 0) {
+      setFrictionAudits((current) => [...freshAudits, ...current]);
+    }
+    setEveningJournalEntries((current) => {
+      const next = [...current.filter((item) => item.date !== entry.date), entry]
+        .sort((a, b) => a.date.localeCompare(b.date));
+      saveEveningJournalEntries(next);
+      return next;
+    });
+    setIsEveningJournalOpen(false);
+  }, [activeHabits, frictionAudits]);
+
+  const handleOpenEveningJournal = useCallback(() => setIsEveningJournalOpen(true), []);
   const quoteCardElement = useMemo(
-    () => <QuoteCard selectedInterests={selectedInterests} isGuest={Boolean(session?.isGuest)} />,
-    [selectedInterests, session?.isGuest]
+    () => (
+      <QuoteCard
+        selectedInterests={selectedInterests}
+        isGuest={Boolean(session?.isGuest)}
+        journalSettings={eveningJournal}
+        journalCompletedToday={journalCompletedToday}
+        morningIntention={morningIntention}
+        onOpenJournal={handleOpenEveningJournal}
+      />
+    ),
+    [
+      selectedInterests,
+      session?.isGuest,
+      eveningJournal,
+      journalCompletedToday,
+      morningIntention,
+      handleOpenEveningJournal,
+    ]
   );
   const handleOpenHomeTab = useCallback(() => setActiveTab('home'), []);
   const handleOpenLedgerModal = useCallback(() => setIsLedgerModalOpen(true), []);
@@ -2669,6 +2748,8 @@ setMomentumEvents((prev) =>
                 onThemeChange={handleThemeChange}
                 notificationWindows={notificationWindows}
                 onToggleNotificationWindow={handleToggleNotificationWindow}
+                eveningJournal={eveningJournal}
+                onEveningJournalChange={handleEveningJournalChange}
                 completionSound={completionSound}
                 onCompletionSoundChange={handleCompletionSoundChange}
                 hapticVibration={hapticVibration}
@@ -2781,7 +2862,7 @@ setMomentumEvents((prev) =>
           </Suspense>
         )}
 
-        {Boolean(activeFrictionPrompt) && (
+        {Boolean(activeFrictionPrompt) && !isEveningJournalOpen && (
           <Suspense fallback={null}>
             <FrictionAuditModal
               isOpen={Boolean(activeFrictionPrompt)}
@@ -2789,6 +2870,20 @@ setMomentumEvents((prev) =>
               loggedDate={activeFrictionPrompt?.loggedDate}
               onSubmit={handleFrictionSubmit}
               onSkip={handleFrictionSkip}
+            />
+          </Suspense>
+        )}
+
+        {isEveningJournalOpen && (
+          <Suspense fallback={null}>
+            <EveningJournalModal
+              isOpen={isEveningJournalOpen}
+              habits={activeHabits}
+              todayIndex={todayDayIndex}
+              todayIso={todayIso}
+              frictionAudits={frictionAudits}
+              onClose={() => setIsEveningJournalOpen(false)}
+              onComplete={handleEveningJournalComplete}
             />
           </Suspense>
         )}

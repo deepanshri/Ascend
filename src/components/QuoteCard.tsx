@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { mergeQuoteBank, resolveRotatingQuoteIndex } from '../data/quotes';
+import { isJournalReady, type EveningJournalSettings } from '../lib/eveningJournal';
 import {
   type Quote,
   INTEREST_QUOTES,
@@ -75,12 +76,34 @@ const ROTATE_MS = 6 * 60 * 60 * 1000;
 export interface QuoteCardProps {
   selectedInterests?: string[];
   isGuest?: boolean;
+  journalSettings?: EveningJournalSettings;
+  journalCompletedToday?: boolean;
+  morningIntention?: { text: string; habitName?: string } | null;
+  onOpenJournal?: () => void;
 }
 
 const QuoteCardInner: React.FC<QuoteCardProps> = ({
   selectedInterests,
   isGuest = false,
+  journalSettings,
+  journalCompletedToday = false,
+  morningIntention = null,
+  onOpenJournal,
 }) => {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    if (!journalSettings?.enabled) return;
+    const id = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(id);
+  }, [journalSettings?.enabled, journalSettings?.time]);
+
+  const journalReady = Boolean(
+    journalSettings && isJournalReady(journalSettings, journalCompletedToday, now)
+  );
+  // Toggling the feature off restores the original card with no journal-derived state.
+  const activeMorningIntention =
+    journalSettings?.enabled && now.getHours() < 12 ? morningIntention : null;
   // Listen for local storage changes if selectedInterests prop is not explicitly passed
   const [storedInterests, setStoredInterests] = useState<string[]>(() => getStoredUserInterests());
 
@@ -181,34 +204,71 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
       type="button"
       id="atomic-quote-card"
       data-tour="daily-wisdom"
-      title={isTip ? 'Tip · tap for next' : 'Quote · tap for next'}
-      aria-label={isTip ? 'App tip, tap for next' : 'Quote, tap for next'}
-      onClick={goNext}
+      title={journalReady ? 'Evening Journal is ready' : activeMorningIntention ? 'Your morning intention' : isTip ? 'Tip · tap for next' : 'Quote · tap for next'}
+      aria-label={journalReady ? 'Evening Journal is ready, tap to begin' : activeMorningIntention ? `Morning intention: ${activeMorningIntention.text}` : isTip ? 'App tip, tap for next' : 'Quote, tap for next'}
+      onClick={journalReady ? onOpenJournal : goNext}
       layout={false}
-      className="my-1 w-full h-auto cursor-pointer bg-slate-50/80 dark:bg-slate-800/40 border-none rounded-xl p-3.5 select-none text-left transition-all duration-300 overflow-visible"
+      className={`my-1 w-full h-auto cursor-pointer rounded-xl p-3.5 select-none text-left transition-all duration-300 overflow-visible border ${
+        journalReady
+          ? 'bg-accent-soft border-accent shadow-sm'
+          : activeMorningIntention
+          ? 'bg-orange-50/80 dark:bg-orange-950/25 border-orange-300/70 dark:border-orange-700/60'
+          : 'bg-slate-50/80 dark:bg-slate-800/40 border-transparent'
+      }`}
     >
       <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key={`${quoteIndex}-${currentQuote.text}`}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <p className="text-[11px] font-medium text-slate-800 dark:text-slate-100 italic leading-snug">
-            {isTip ? currentQuote.text : `\u201C${currentQuote.text}\u201D`}
-          </p>
+        {journalReady ? (
+          <motion.div
+            key="evening-journal-ready"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex items-center gap-3"
+          >
+            <span className="w-8 h-8 rounded-xl bg-accent text-accent-fg flex items-center justify-center text-[16px] shrink-0" aria-hidden="true">☾</span>
+            <span className="min-w-0">
+              <span className="block text-[12.5px] font-bold text-ink">Evening Journal is ready</span>
+              <span className="block text-[10.5px] text-ink-muted mt-0.5">Reflect on today and choose tomorrow’s first action.</span>
+            </span>
+          </motion.div>
+        ) : activeMorningIntention ? (
+          <motion.div
+            key={`morning-${activeMorningIntention.text}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex items-center gap-3"
+          >
+            <span className="w-8 h-8 rounded-xl bg-orange-400 text-white flex items-center justify-center text-[15px] shrink-0" aria-hidden="true">☀</span>
+            <span className="min-w-0">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-orange-700 dark:text-orange-300">Your first action</span>
+              <span className="block text-[12px] font-semibold text-slate-800 dark:text-slate-100 mt-0.5">{activeMorningIntention.text}</span>
+              {activeMorningIntention.habitName && <span className="block text-[9.5px] text-slate-500 dark:text-slate-400 mt-0.5">{activeMorningIntention.habitName}</span>}
+            </span>
+          </motion.div>
+        ) : (
+          <motion.div
+            key={`${quoteIndex}-${currentQuote.text}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <p className="text-[11px] font-medium text-slate-800 dark:text-slate-100 italic leading-snug">
+              {isTip ? currentQuote.text : `\u201C${currentQuote.text}\u201D`}
+            </p>
 
-          <div className="flex items-center justify-between mt-0.5 text-[10px] gap-2">
-            <span className="font-semibold text-emerald-900 dark:text-blue-300">
-              {isTip ? 'Tip' : `— ${currentQuote.author}`}
-            </span>
-            <span className="text-[9.5px] font-medium text-emerald-800/80 dark:text-blue-300/80 flex items-center space-x-1 shrink-0">
-              <span>{currentQuote.icon}</span>
-              <span>{isTip ? 'App' : currentQuote.category}</span>
-            </span>
-          </div>
-        </motion.div>
+            <div className="flex items-center justify-between mt-0.5 text-[10px] gap-2">
+              <span className="font-semibold text-emerald-900 dark:text-blue-300">
+                {isTip ? 'Tip' : `— ${currentQuote.author}`}
+              </span>
+              <span className="text-[9.5px] font-medium text-emerald-800/80 dark:text-blue-300/80 flex items-center space-x-1 shrink-0">
+                <span>{currentQuote.icon}</span>
+                <span>{isTip ? 'App' : currentQuote.category}</span>
+              </span>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </motion.button>
   );
@@ -216,6 +276,12 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
 
 export const QuoteCard = React.memo(QuoteCardInner, (prev, next) => {
   if (Boolean(prev.isGuest) !== Boolean(next.isGuest)) return false;
+  if (prev.journalSettings?.enabled !== next.journalSettings?.enabled) return false;
+  if (prev.journalSettings?.time !== next.journalSettings?.time) return false;
+  if (Boolean(prev.journalCompletedToday) !== Boolean(next.journalCompletedToday)) return false;
+  if (prev.morningIntention?.text !== next.morningIntention?.text) return false;
+  if (prev.morningIntention?.habitName !== next.morningIntention?.habitName) return false;
+  if (prev.onOpenJournal !== next.onOpenJournal) return false;
   const pList = prev.selectedInterests || [];
   const nList = next.selectedInterests || [];
   if (pList.length !== nList.length) return false;

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { animate, motion, useMotionValue, useSpring, useTransform } from 'motion/react';
+import { animate, motion, useMotionValue, useSpring } from 'motion/react';
 
 const COLLAPSED_WIDTH = 120;
 const EXPANDED_WIDTH = 188;
@@ -27,7 +27,7 @@ const MomentumPillInner: React.FC<MomentumPillProps> = ({
 
   const count = useMotionValue(targetScore);
   const spring = useSpring(count, { stiffness: 280, damping: 28 });
-  const rounded = useTransform(spring, (latest) => Math.round(latest));
+  const [displayScore, setDisplayScore] = useState(targetScore);
 
   const [delta, setDelta] = useState<number | null>(null);
 
@@ -38,6 +38,13 @@ const MomentumPillInner: React.FC<MomentumPillProps> = ({
   const animRunningRef = useRef(false);
   const animTimeoutRef = useRef<number | null>(null);
   const pillControlsRef = useRef<Array<{ stop: () => void }>>([]);
+
+  // Subscribe to physics spring updates to render smoothly in React 19
+  useEffect(() => {
+    return spring.on('change', (latest) => {
+      setDisplayScore(Math.round(latest));
+    });
+  }, [spring]);
 
   // Smoothly update spring target whenever momentumScore changes
   useEffect(() => {
@@ -134,11 +141,9 @@ const MomentumPillInner: React.FC<MomentumPillProps> = ({
       <span className="whitespace-nowrap text-emerald-600 dark:text-blue-400">
         Momentum
       </span>
-      <motion.span
-        className="text-[13px] font-black min-w-[1.75ch] text-center"
-      >
-        {rounded}
-      </motion.span>
+      <span className="text-[13px] font-black min-w-[1.75ch] text-center">
+        {displayScore}
+      </span>
       {deltaLabel ? (
         <motion.span
           style={{ opacity: deltaOpacity }}

@@ -682,7 +682,7 @@ export function calculateMomentumScore(
           timestamp: event.timestamp,
           scoreVal: eventScore(event.eventType),
           weight: event.weight,
-          delta: isToday ? 0 : decayFactor,
+          delta: decayFactor,
           isToday,
         });
       }
@@ -700,13 +700,7 @@ export function calculateMomentumScore(
         prevScore = clampMomentum(prevScore * (1 - step.delta) + step.dailyObservation * step.delta);
       }
     } else {
-      if (step.isToday) {
-        const increment = step.scoreVal * step.weight;
-        const add = Math.max(1, increment * 1.5);
-        prevScore = clampMomentum(prevScore + add);
-      } else {
-        prevScore = applyRollingMomentumStep(prevScore, step.scoreVal, step.weight, step.delta);
-      }
+      prevScore = applyRollingMomentumStep(prevScore, step.scoreVal, step.weight, step.delta);
     }
   }
 

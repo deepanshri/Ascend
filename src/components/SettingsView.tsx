@@ -9,6 +9,7 @@ import { NotificationWindowToggles } from './NotificationWindowToggles';
 import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import { SettingsModal } from './SettingsModal';
 import type { NotificationWindowKey, PsychologyNotificationWindows } from '../lib/notifications';
+import type { EveningJournalSettings } from '../lib/eveningJournal';
 
 interface SettingsViewProps {
   habits: Habit[];
@@ -19,6 +20,8 @@ interface SettingsViewProps {
   onThemeChange: (theme: ThemeMode) => void;
   notificationWindows: PsychologyNotificationWindows;
   onToggleNotificationWindow: (key: NotificationWindowKey) => void;
+  eveningJournal: EveningJournalSettings;
+  onEveningJournalChange: (settings: EveningJournalSettings) => void;
   completionSound: boolean;
   onCompletionSoundChange: (enabled: boolean) => void;
   hapticVibration?: boolean;
@@ -49,6 +52,8 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
   onThemeChange,
   notificationWindows,
   onToggleNotificationWindow,
+  eveningJournal,
+  onEveningJournalChange,
   completionSound,
   onCompletionSoundChange,
   hapticVibration = true,
@@ -290,6 +295,41 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
             windows={notificationWindows}
             onToggle={onToggleNotificationWindow}
           />
+        </div>
+
+        {/* Evening Journal */}
+        <div className="border-t border-slate-100 dark:border-slate-800 pt-2.5 space-y-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col">
+              <span className="text-[12.5px] font-medium text-slate-900 dark:text-white">Evening Journal</span>
+              <span className="text-[10.5px] text-slate-400">Turn the Home quote card into a short nightly reflection</span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={eveningJournal.enabled}
+              onClick={() => onEveningJournalChange({ ...eveningJournal, enabled: !eveningJournal.enabled })}
+              className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition duration-200 cursor-pointer ${
+                eveningJournal.enabled ? 'bg-accent' : 'bg-slate-300 dark:bg-slate-700'
+              }`}
+            >
+              <div className={`bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition duration-200 ${eveningJournal.enabled ? 'translate-x-4.5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+          {eveningJournal.enabled && (
+            <label className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 px-3 py-2">
+              <span>
+                <span className="block text-[11.5px] font-semibold text-slate-700 dark:text-slate-200">Journal ready time</span>
+                <span className="block text-[9.5px] text-slate-400">The card stays ready until you complete it</span>
+              </span>
+              <input
+                type="time"
+                value={eveningJournal.time}
+                onChange={(event) => onEveningJournalChange({ ...eveningJournal, time: event.target.value })}
+                className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-accent"
+              />
+            </label>
+          )}
         </div>
 
         {/* Sound Effects */}

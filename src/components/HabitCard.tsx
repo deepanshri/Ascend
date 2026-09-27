@@ -26,7 +26,7 @@ const COMPLETE_GRACE_MS = 3000;
 /** Blocks re-entrant swipe commits while App state settles. */
 const SWIPE_COMMIT_LOCK_MS = 280;
 /** Defer App setState until next tick for pointer release. */
-const SWIPE_COMMIT_DEFER_MS = 16;
+const SWIPE_COMMIT_DEFER_MS = 0;
 const FULL_POP_ANIMATE = { scale: [1, 1.03, 1] };
 const IDLE_SCALE = { scale: 1 };
 const FULL_POP_TRANSITION = {
@@ -562,7 +562,7 @@ function HabitCardInner({
           className={`absolute inset-0 text-white flex items-center justify-start px-5 font-bold rounded-2xl ${
             isTodayDone
               ? 'bg-slate-700 dark:bg-slate-700'
-              : 'bg-emerald-600 dark:bg-blue-600'
+              : 'bg-emerald-700 dark:bg-slate-800'
           }`}
           style={{ opacity: revealRightOpacity }}
         >
@@ -598,7 +598,7 @@ function HabitCardInner({
               ? 'bg-slate-700 dark:bg-slate-700'
               : isFallbackActive
               ? 'bg-slate-600 dark:bg-slate-700'
-              : 'bg-emerald-600 dark:bg-blue-600'
+              : 'bg-emerald-700 dark:bg-slate-800'
           }`}
           style={{ opacity: revealLeftOpacity }}
         >
@@ -651,7 +651,7 @@ function HabitCardInner({
           className="swipe-card-surface gpu-accelerated gpu-smooth relative w-full cursor-pointer select-none will-change-transform"
         >
           <motion.div
-            key={celebration === 'full' ? `full-${fullPopSeq}` : 'idle'}
+            key="card-motion-root"
             initial={IDLE_SCALE}
             animate={celebration === 'full' ? FULL_POP_ANIMATE : IDLE_SCALE}
             transition={FULL_POP_TRANSITION}
@@ -671,13 +671,13 @@ function HabitCardInner({
                   backfaceVisibility: 'hidden',
                   WebkitBackfaceVisibility: 'hidden',
                 }}
-                className={`relative bg-surface text-ink rounded-2xl p-4 border flex flex-col justify-between transition-[border-color,background-color,box-shadow] duration-200 ease-out ${
+                className={`relative bg-surface text-ink rounded-2xl p-4 border flex flex-col justify-between transition-[border-color,box-shadow] duration-200 ease-out ${
                   isLongPressed
                     ? 'scale-[1.025] shadow-2xl ring-2 ring-accent border-accent'
                     : isFallbackActive && !isTodayDone
-                    ? 'shadow-sm border-accent ring-1 ring-accent bg-accent-soft active:scale-[0.995]'
+                    ? 'shadow-sm ring-1 ring-accent bg-emerald-100/60 dark:bg-blue-950/80 border-emerald-500 dark:border-blue-500 active:scale-[0.995]'
                     : habit.isKeystone || keystoneBoosted
-                    ? 'overflow-visible bg-emerald-50/90 dark:bg-blue-950/40 border-emerald-500/60 dark:border-blue-500/60 keystone-boost-glow active:scale-[0.995]'
+                    ? 'overflow-visible bg-emerald-900/20 dark:bg-blue-950/40 border-emerald-500/60 dark:border-blue-500/60 keystone-boost-glow active:scale-[0.995]'
                     : 'shadow-sm border-line active:scale-[0.995]'
                 }`}
               >

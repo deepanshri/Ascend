@@ -598,7 +598,10 @@ const BowlCanvasInner: React.FC<BowlCanvasProps> = ({
       camera={BOWL_CAMERA}
       dpr={MARBLE_CANVAS_DPR}
       gl={MARBLE_CANVAS_GL}
-      onCreated={({ gl }) => configureMarbleRenderer(gl)}
+      onCreated={({ gl }) => {
+        gl.setClearColor(0x000000, 0);
+        configureMarbleRenderer(gl);
+      }}
       className="h-full w-full pointer-events-none"
     >
       <MarbleLightRig castShadow />

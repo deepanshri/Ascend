@@ -12,15 +12,18 @@ export default defineConfig(() => {
       },
     },
     build: {
-      // Prefer one pre-parsed UI chunk (React + Motion + icons) over micro-chunks
-      // that stall Capacitor WebView first paint / tab warm-up.
+      // Clean chunking strategy: isolates Supabase & Three.js 3D runtime from core UI runtime
       rollupOptions: {
         output: {
           manualChunks(id) {
             if (!id.includes('node_modules')) return;
             // Keep Supabase isolated — large and not needed for first paint gestures.
             if (id.includes('@supabase')) return 'supabase';
-            // Core interactive UI → single chunk for one-shot parse on device.
+            // Three.js and 3D rendering chunk
+            if (id.includes('three') || id.includes('@react-three')) {
+              return 'three-bundle';
+            }
+            // Core interactive UI → single chunk for fast one-shot parse on device.
             if (
               id.includes('motion') ||
               id.includes('framer-motion') ||

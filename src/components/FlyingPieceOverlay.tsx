@@ -223,8 +223,8 @@ function SingleFlyingMarble({
 
     meshRef.current.position.set(worldX, worldY, worldZ);
 
-    // Marble scale is strictly constant from spawn to landing
-    const fixedWorldRadius = (14 / size.width) * viewport.width;
+    // Fixed world radius strictly matching 28px diameter on physical screen
+    const fixedWorldRadius = (PIECE_PX / 2) * (viewport.height / size.height);
     meshRef.current.scale.setScalar(fixedWorldRadius);
 
     meshRef.current.rotation.x += delta * 4.8;

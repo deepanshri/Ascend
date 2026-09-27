@@ -10,6 +10,7 @@ import { normalizeScheduledDays, scheduleTypeFromDays } from '../utils/schedule'
 import { WeekdayScheduleChips } from './WeekdayScheduleChips';
 import { inferBowlModeFromClock } from '../utils/timeOfDay';
 import { formatTargetTimeDisplay } from '../utils/timeFormat';
+import { collectCreateHabitHiddenErrors } from '../lib/createHabitValidation';
 
 interface AddHabitModalProps {
   isOpen: boolean;
@@ -39,6 +40,9 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   const [isKeystone, setIsKeystone] = useState(false);
   const [keystoneWarning, setKeystoneWarning] = useState(false);
   const [scheduledWeekdays, setScheduledWeekdays] = useState<number[]>([]);
+  const [showMoreDetail, setShowMoreDetail] = useState(false);
+  const [purposeError, setPurposeError] = useState<string | null>(null);
+  const [fallbackError, setFallbackError] = useState<string | null>(null);
   const atCap = activeHabitCount >= MAX_ACTIVE_HABITS;
   const keystoneCapReached = activeKeystoneCount >= MAX_KEYSTONE_HABITS;
 
@@ -48,10 +52,14 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     setKeystoneWarning(false);
     setScheduledWeekdays([]);
     setTargetTime('');
+    setShowMoreDetail(false);
+    setPurposeError(null);
+    setFallbackError(null);
   }, [isOpen]);
 
   const handleKeystoneToggle = () => {
     if (!isKeystone && keystoneCapReached) {
+      setShowMoreDetail(true);
       setKeystoneWarning(true);
       return;
     }
@@ -62,6 +70,23 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || atCap) return;
+
+    const hiddenErrors = collectCreateHabitHiddenErrors({
+      purposeAnchor,
+      fallbackMicro,
+      isKeystone,
+      keystoneCapReached,
+    });
+    if (hiddenErrors.hasError) {
+      setPurposeError(hiddenErrors.purpose);
+      setFallbackError(hiddenErrors.fallback);
+      setKeystoneWarning(hiddenErrors.keystone);
+      setShowMoreDetail(true);
+      return;
+    }
+    setPurposeError(null);
+    setFallbackError(null);
+    setKeystoneWarning(false);
 
     const dbCategory = toDbCategory(category);
     const days = normalizeScheduledDays(scheduledWeekdays);
@@ -102,6 +127,9 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     setIsKeystone(false);
     setKeystoneWarning(false);
     setScheduledWeekdays([]);
+    setShowMoreDetail(false);
+    setPurposeError(null);
+    setFallbackError(null);
     onClose();
   };
 
@@ -235,8 +263,39 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                 </div>
               </div>
 
-              <WeekdayScheduleChips selected={scheduledWeekdays} onChange={setScheduledWeekdays} hint="" />
+              <WeekdayScheduleChips selected={scheduledWeekdays} onChange={setScheduledWeekdays} />
 
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <button
+                  type="button"
+                  aria-expanded={showMoreDetail}
+                  aria-controls="create-habit-more-detail"
+                  onClick={() => setShowMoreDetail((open) => !open)}
+                  className="w-full px-3.5 py-3 flex items-center justify-between text-left bg-slate-50/80 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <span>
+                    <span className="block text-[12.5px] font-bold text-slate-800 dark:text-slate-100">Add more detail</span>
+                    <span className="block text-[10.5px] text-slate-400 mt-0.5">Purpose, fallback and keystone options</span>
+                  </span>
+                  <svg
+                    className={`w-4 h-4 text-slate-500 transition-transform ${showMoreDetail ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 9l6 6 6-6" />
+                  </svg>
+                </button>
+
+                {showMoreDetail && (
+                  <motion.div
+                    id="create-habit-more-detail"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    transition={{ duration: 0.2 }}
+                    className="px-3.5 py-3.5 space-y-3.5 border-t border-slate-200 dark:border-slate-700"
+                  >
               {/* Target Time */}
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1 text-[12px]">
@@ -288,9 +347,22 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   type="text"
                   placeholder="e.g. Protect cognitive stamina and energy cycles"
                   value={purposeAnchor}
-                  onChange={(e) => setPurposeAnchor(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-slate-900 dark:text-white text-[12.5px] transition-colors"
+                  onChange={(e) => {
+                    setPurposeAnchor(e.target.value);
+                    if (purposeError) setPurposeError(null);
+                  }}
+                  aria-invalid={Boolean(purposeError)}
+                  className={`w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-slate-900 dark:text-white text-[12.5px] transition-colors ${
+                    purposeError
+                      ? 'border-orange-400 dark:border-orange-500'
+                      : 'border-slate-200 dark:border-slate-700'
+                  }`}
                 />
+                {purposeError && (
+                  <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-orange-700 dark:text-orange-300">
+                    {purposeError}
+                  </p>
+                )}
               </div>
 
               {/* Typing Fallback */}
@@ -302,9 +374,22 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   type="text"
                   placeholder="e.g. 5 min warmup, read 1 single page"
                   value={fallbackMicro}
-                  onChange={(e) => setFallbackMicro(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-slate-900 dark:text-white text-[12.5px] transition-colors"
+                  onChange={(e) => {
+                    setFallbackMicro(e.target.value);
+                    if (fallbackError) setFallbackError(null);
+                  }}
+                  aria-invalid={Boolean(fallbackError)}
+                  className={`w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] text-slate-900 dark:text-white text-[12.5px] transition-colors ${
+                    fallbackError
+                      ? 'border-orange-400 dark:border-orange-500'
+                      : 'border-slate-200 dark:border-slate-700'
+                  }`}
                 />
+                {fallbackError && (
+                  <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-orange-700 dark:text-orange-300">
+                    {fallbackError}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -335,6 +420,9 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-orange-700 dark:text-orange-300">
                     You already have {MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.
                   </p>
+                )}
+              </div>
+                  </motion.div>
                 )}
               </div>
 

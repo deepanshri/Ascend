@@ -4,27 +4,84 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import * as THREE from 'three';
 import { MARBLE_LIGHTS } from './marbleRenderer';
 
+const envCache = new WeakMap<THREE.WebGLRenderer, { texture: THREE.Texture; refCount: number }>();
+
 /**
- * Shared RoomEnvironment PMREM — must be identical in Bowl + FlyingPieceOverlay
- * so specular / env response matches 1:1 at handoff.
+ * Shared RoomEnvironment PMREM — cached per WebGL context and deferred after first paint
+ * to eliminate main-thread blocking synchronous compilation lag on fresh install.
  */
 export function StudioEnvironment() {
   const { gl, scene } = useThree();
 
   useEffect(() => {
-    const pmremGenerator = new THREE.PMREMGenerator(gl);
-    pmremGenerator.compileEquirectangularShader();
-    const room = new RoomEnvironment();
-    const envTexture = pmremGenerator.fromScene(room, 0.04).texture;
-    scene.environment = envTexture;
-    scene.environmentIntensity = MARBLE_LIGHTS.environmentIntensity;
-    room.dispose();
-    pmremGenerator.dispose();
+    let active = true;
+    let localTexture: THREE.Texture | null = null;
+
+    // Check if texture is already cached for this WebGLRenderer context
+    const cached = envCache.get(gl);
+    if (cached) {
+      cached.refCount++;
+      localTexture = cached.texture;
+      scene.environment = cached.texture;
+      scene.environmentIntensity = MARBLE_LIGHTS.environmentIntensity;
+    } else {
+      // Defer PMREM compilation to microtask/frame after initial paint
+      const timer = window.setTimeout(() => {
+        if (!active) return;
+        try {
+          const pmremGenerator = new THREE.PMREMGenerator(gl);
+          pmremGenerator.compileEquirectangularShader();
+          const room = new RoomEnvironment();
+          const envTexture = pmremGenerator.fromScene(room, 0.04).texture;
+          room.dispose();
+          pmremGenerator.dispose();
+
+          if (!active) {
+            envTexture.dispose();
+            return;
+          }
+
+          envCache.set(gl, { texture: envTexture, refCount: 1 });
+          localTexture = envTexture;
+          scene.environment = envTexture;
+          scene.environmentIntensity = MARBLE_LIGHTS.environmentIntensity;
+        } catch (err) {
+          console.warn('Deferred PMREM generation error:', err);
+        }
+      }, 50);
+
+      return () => {
+        active = false;
+        window.clearTimeout(timer);
+        scene.environment = null;
+        scene.environmentIntensity = 1;
+        if (localTexture) {
+          const entry = envCache.get(gl);
+          if (entry) {
+            entry.refCount--;
+            if (entry.refCount <= 0) {
+              entry.texture.dispose();
+              envCache.delete(gl);
+            }
+          }
+        }
+      };
+    }
 
     return () => {
+      active = false;
       scene.environment = null;
       scene.environmentIntensity = 1;
-      envTexture.dispose();
+      if (localTexture) {
+        const entry = envCache.get(gl);
+        if (entry) {
+          entry.refCount--;
+          if (entry.refCount <= 0) {
+            entry.texture.dispose();
+            envCache.delete(gl);
+          }
+        }
+      }
     };
   }, [gl, scene]);
 
