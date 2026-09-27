@@ -84,7 +84,6 @@ function HabitCardInner({
 }: HabitCardProps) {
   const [isFlipped, setIsFlipped] = useState(false);
   const [celebration, setCelebration] = useState<'none' | 'full' | 'fallback'>('none');
-  const [fullPopSeq, setFullPopSeq] = useState(0);
   /** Optimistic done during the undo grace after an immediate complete. */
   const [optimisticDone, setOptimisticDone] = useState(false);
   const pendingCompleteRef = useRef<{ timer: number; isFallback: boolean } | null>(null);
@@ -101,7 +100,6 @@ function HabitCardInner({
   const swipeSurfaceRef = useRef<HTMLElement>(null);
   const hasMovedRef = useRef(false);
   const longPressTimerRef = useRef<number | null>(null);
-  const startPosRef = useRef<{ x: number; y: number } | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
   const dragStartXRef = useRef<number | null>(null);
@@ -339,7 +337,7 @@ function HabitCardInner({
   const lastPointerCoordRef = useRef<{ x: number; y: number } | null>(null);
 
   const finishSwipe = useCallback(
-    (endOffset?: number, endVelocityX = 0, commitPoint?: { x: number; y: number }) => {
+    (endOffset?: number, endVelocityX = 0) => {
       const springHome = () => {
         dragStartXRef.current = null;
         try {
@@ -394,7 +392,6 @@ function HabitCardInner({
           // Normal full completion → solid marble.
           pendingAction = () => {
             setCelebration('full');
-            setFullPopSeq((seq) => seq + 1);
             void triggerCompletionHaptic();
             scheduleComplete(false, originCoord);
           };
@@ -459,12 +456,11 @@ function HabitCardInner({
   );
 
   const handleDragEnd = useCallback(
-    (_e: unknown, info: { offset: { x: number }; velocity?: { x: number }; point?: { x: number; y: number } }) => {
+    (_e: unknown, info: { offset: { x: number }; velocity?: { x: number } }) => {
       isDraggingRef.current = true;
       x.set(info.offset.x);
       gestureAxisRef.current = 'horizontal';
-      const commitPoint = info.point ?? lastPointerCoordRef.current ?? undefined;
-      finishSwipe(info.offset.x, info.velocity?.x || 0, commitPoint);
+      finishSwipe(info.offset.x, info.velocity?.x || 0);
     },
     [finishSwipe, x]
   );
@@ -876,7 +872,6 @@ function HabitCardInner({
                               onClick={(e) => {
                                 handlePillClick(e, (coord) => {
                                   setCelebration('full');
-                                  setFullPopSeq((seq) => seq + 1);
                                   scheduleComplete(false, coord);
                                 });
                               }}

@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { motion } from 'motion/react';
 import { ActiveTab } from '../types';
 import { navLayoutSpring, navTabPress, springSnappy } from '../lib/motionPresets';
@@ -9,27 +9,6 @@ interface BottomNavProps {
   pendingRemindersCount?: number;
   isBlurred?: boolean;
 }
-
-const NAV_TABS = [
-  { id: 'home'      as ActiveTab, label: 'Home',     Icon: () => (
-    <svg className="w-5 h-5 z-10" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M12 2.5L2 11.5h3.5v9h6.2v-6h3.6v6H19v-9H22.5L12 2.5z" />
-    </svg>
-  )},
-  { id: 'reminders' as ActiveTab, label: 'Tasks',    Icon: null },
-  { id: 'report'    as ActiveTab, label: 'Report',   Icon: () => (
-    <svg className="w-5 h-5 z-10" fill="currentColor" viewBox="0 0 24 24">
-      <rect height="10" rx="1.2" width="3.5" x="4"    y="11" />
-      <rect height="16" rx="1.2" width="3.5" x="10.2" y="5"  />
-      <rect height="12.5" rx="1.2" width="3.5" x="16.5" y="8.5" />
-    </svg>
-  )},
-  { id: 'personal'  as ActiveTab, label: 'Personal', Icon: () => (
-    <svg className="w-5 h-5 z-10" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M12 12a4.5 4.5 0 100-9 4.5 4.5 0 000 9zm0 2.5c-4.2 0-9 2.2-9 5.5v1h18v-1c0-3.3-4.8-5.5-9-5.5z" />
-    </svg>
-  )},
-] as const;
 
 function BottomNavInner({
   activeTab,

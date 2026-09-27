@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { Bowl } from './Bowl';
 import { MomentumPill } from './MomentumPill';
@@ -24,7 +24,6 @@ interface HomeViewProps {
   renderHabit?: (habit: Habit, index: number) => React.ReactNode;
   children?: React.ReactNode;
   examShieldActive?: boolean;
-  onOpenExamShield?: () => void;
 }
 
 const EMPTY_PIECES: AccumulationPiece[] = [];
@@ -45,7 +44,6 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   renderHabit,
   children,
   examShieldActive = false,
-  onOpenExamShield,
 }) => {
   const safePieces = Array.isArray(pieces) ? pieces : EMPTY_PIECES;
   const fillPercent = Number.isFinite(bowlFill?.fillPercent) ? bowlFill.fillPercent : 0;
@@ -233,7 +231,6 @@ function homeViewPropsAreEqual(prev: HomeViewProps, next: HomeViewProps): boolea
     prev.settleHandoffs === next.settleHandoffs &&
     prev.onCycleDaysChange === next.onCycleDaysChange &&
     prev.onCelebrationDone === next.onCelebrationDone &&
-    prev.onOpenExamShield === next.onOpenExamShield &&
     prev.renderHabit === next.renderHabit &&
     prev.children === next.children
   );

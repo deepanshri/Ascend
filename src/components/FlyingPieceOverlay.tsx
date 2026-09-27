@@ -1,5 +1,5 @@
-import React, { Suspense, useEffect, useMemo, useRef } from 'react';
-import { animate, motion, useMotionValue } from 'motion/react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { animate } from 'motion/react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { playCompletionSound } from '../utils/feedback';
@@ -10,7 +10,6 @@ import {
   HANDOFF_DEFAULT_VEL,
   HANDOFF_PX_TO_WORLD,
   MARBLE_CANVAS_DPR,
-  MARBLE_CANVAS_GL,
   MARBLE_PHYSICAL_MATERIAL,
   configureMarbleRenderer,
 } from '../lib/marbleRenderer';
@@ -18,7 +17,6 @@ import { MarbleLightRig, StudioEnvironment } from '../lib/marbleScene';
 import { getThemeIsDark, subscribeTheme } from '../lib/themeStore';
 
 const PIECE_PX = 14;
-const MAX_FLIGHTS = 4;
 /** Sample window for terminal velocity (last 5% — handoff to bowl physics). */
 const TERMINAL_SAMPLE_T = 0.95;
 
@@ -317,7 +315,6 @@ function getCachedBowlRect(): DOMRect | null {
 
 export function measureCompletionFlight(
   habitId: string,
-  direction?: 'left' | 'right',
   customOrigin?: { x: number; y: number; touchRatio?: number }
 ): { from: { x: number; y: number }; to: { x: number; y: number }; touchRatio: number } {
   const screenW = typeof window !== 'undefined' ? window.innerWidth : 390;

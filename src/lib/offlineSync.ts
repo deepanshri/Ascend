@@ -1,6 +1,7 @@
 import { HabitCompletionEvent, UserProfile } from '../types';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { isoDateForDayIndex, isIsoDate } from '../utils/dates';
+import { flushMomentumEventQueue } from './momentumEvents';
 
 const LOG_QUEUE_KEY = 'ascend_offline_habit_log_queue';
 const PROFILE_QUEUE_KEY = 'ascend_offline_profile_queue';
@@ -323,7 +324,6 @@ export async function flushOfflineQueue(): Promise<void> {
   writeJson(PROFILE_QUEUE_KEY, remainingProfiles);
 
   try {
-    const { flushMomentumEventQueue } = await import('./momentumEvents');
     await flushMomentumEventQueue();
   } catch {
     // momentum_events table may not exist yet on older projects.

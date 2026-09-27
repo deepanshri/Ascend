@@ -28,11 +28,10 @@ import {
   mergeMomentumEvents,
   momentumEventsFromCompletionLog,
   newMomentumEventId,
-  resolveMomentumEventDate,
   upsertHabitLog,
   deleteHabitLog,
 } from './utils/momentum';
-import { appendMomentumEventRemote, fetchMomentumEventsFromTable, loadLocalMomentumEvents, MOMENTUM_EVENTS_STORAGE_KEY, saveLocalMomentumEvents } from './lib/momentumEvents';
+import { appendMomentumEventRemote, loadLocalMomentumEvents, MOMENTUM_EVENTS_STORAGE_KEY, saveLocalMomentumEvents } from './lib/momentumEvents';
 import {
   addDaysIso,
   diffDaysIso,
@@ -46,7 +45,7 @@ import {
   startOfDay,
   toISODate,
 } from './utils/dates';
-import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso, scheduledHabitsForDayIndex } from './utils/schedule';
+import { isHabitScheduledOnDayIndex } from './utils/schedule';
 import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome, hideNativeSplash } from './lib/nativeChrome';
 import { applyDocumentTheme, getThemeIsDark, resolveThemeIsDark } from './lib/themeStore';
@@ -67,7 +66,7 @@ import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLoc
 import { persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from './data/avatars';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
 import { mergeHabitsByUpdatedAt, mergeRemindersByUpdatedAt, touchHabit } from './lib/syncMerge';
-import { fetchActiveHabits, fetchHabitLogsForDateRange, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable, omitDeletedHabitRefs, omitDeletedHabits, rememberDeletedHabit } from './lib/habitsApi';
+import { fetchHabitLogsForDateRange, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable, omitDeletedHabitRefs, omitDeletedHabits } from './lib/habitsApi';
 import {
   destroyAscendSpotlightTutorial,
   hasScreenTutorialCompleted,
@@ -92,7 +91,7 @@ import {
   type NotificationWindowKey,
   type PsychologyNotificationWindows,
 } from './lib/notifications';
-import { ledgerEvidenceForHabits, displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, removeTodayEvidence, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
+import { displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, removeTodayEvidence, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
 import { deleteHabit, stableHabitLogId } from './services/habitService';
 import {
   accumulationPiecesFromLogs,
@@ -101,12 +100,10 @@ import {
   clampCycleDays,
   persistCycleDays,
   readBowlCycleEpoch,
-  readCycleHistory,
   readStoredCycleDays,
   resetBowlCycleEpoch,
   summarizeDualBowlFill,
   summarizeBowlFill,
-  type CompletedCycleSummary,
   type CycleDays,
   type AccumulationPiece,
 } from './services/reportService';
@@ -180,7 +177,6 @@ import FlyingPieceOverlay, {
 import {
   isCompletionSoundEnabled,
   isHapticVibrationEnabled,
-  playCompletionReward,
   pulseCompletionHaptic,
   setCompletionSoundEnabled,
   setHapticVibrationEnabled,
@@ -547,16 +543,6 @@ export default function App() {
 
   const [cycleDays, setCycleDays] = useState<CycleDays>(() => readStoredCycleDays());
   const [bowlEpoch, setBowlEpoch] = useState(() => readBowlCycleEpoch(toISODate()));
-  const [cycleHistory, setCycleHistory] = useState<CompletedCycleSummary[]>(() => {
-    if (!isOnboarded) return [];
-    return readCycleHistory();
-  });
-
-  useEffect(() => {
-    if (isOnboarded || onboardingStep >= 3) {
-      setCycleHistory((prev) => (prev.length > 0 ? prev : readCycleHistory()));
-    }
-  }, [isOnboarded, onboardingStep]);
   const [bowlCelebrating, setBowlCelebrating] = useState(false);
   const [pieceFlights, setPieceFlights] = useState<PieceFlight[]>([]);
   const [settlePieceIds, setSettlePieceIds] = useState<string[]>([]);
@@ -620,7 +606,6 @@ export default function App() {
   }, [activeTab, safeActiveTab]);
 
   const isTabActive = useCallback((tab: ActiveTab) => safeActiveTab === tab, [safeActiveTab]);
-  const [visitedTabs, setVisitedTabs] = useState<Set<ActiveTab>>(() => new Set(['home']));
   const [hasRenderedTasks, setHasRenderedTasks] = useState(false);
   const [hasRenderedReports, setHasRenderedReports] = useState(false);
   const [hasRenderedPersonal, setHasRenderedPersonal] = useState(false);
@@ -637,15 +622,6 @@ export default function App() {
   if (activeTab === 'report' && !hasRenderedReports) setHasRenderedReports(true);
   if (activeTab === 'personal' && !hasRenderedPersonal) setHasRenderedPersonal(true);
   if (activeTab === 'settings' && !hasRenderedSettings) setHasRenderedSettings(true);
-
-  useEffect(() => {
-    setVisitedTabs((prev) => {
-      if (prev.has(safeActiveTab)) return prev;
-      const next = new Set(prev);
-      next.add(safeActiveTab);
-      return next;
-    });
-  }, [safeActiveTab]);
 
   const CALENDAR_LAST_ACTIVE_KEY = 'ascend_last_active_date';
 
@@ -902,9 +878,6 @@ export default function App() {
   const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
   const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
 
-  // Delete account
-  const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
-  const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
 
   // Listen to Supabase auth state and restore session
   useEffect(() => {
@@ -1031,10 +1004,6 @@ export default function App() {
   const selectedDay = currentDayIndex + 1;
   const isViewingToday = currentSelectedDate === weekIsoDates[todayDayIndex];
 
-  const handleSelectDay = (day: number) => {
-    const iso = weekIsoDates[day - 1];
-    if (iso) setCurrentSelectedDate(iso);
-  };
 
   // Derive habit states (days, microDays) by replaying the append-only event log
   const derivedHabits = useMemo(() => {
@@ -1138,7 +1107,6 @@ export default function App() {
       nightVotes: dualBowlFill.night.votes,
     });
     pendingCycleResetRef.current = { endIso: bowlWindow.endIso, resetAt: entry.completedAt };
-    setCycleHistory((prev) => [entry, ...prev.filter((item) => item.id !== entry.id)].slice(0, 40));
   }, [
     bowlFill.votes,
     bowlFill.capacity,
@@ -1410,9 +1378,6 @@ setMomentumEvents((prev) =>
     };
   }, [session?.id, session?.isGuest, isOnboarded, onboardingStep]);
 
-  const selectedDayCompletedCount = activeHabits.filter(
-    (h) => Boolean(h.days?.[currentDayIndex])
-  ).length;
 
   // Pending reminder count for bottom navigation badge
   const pendingRemindersCount = useMemo(() => {
@@ -1567,7 +1532,7 @@ setMomentumEvents((prev) =>
       const pieceId = `${habitId}::${loggedDate}`;
       try {
         const swipeDir = isMicro ? 'left' : 'right';
-        const points = measureCompletionFlight(habitId, swipeDir, originCoord);
+        const points = measureCompletionFlight(habitId, originCoord);
         const themeDark = getThemeIsDark();
         // Same isMicro boolean as habit_logs.type — light vs solid marble shade.
         const flightColor =
@@ -1821,19 +1786,10 @@ setMomentumEvents((prev) =>
   // Delete Account — JWT-scoped RPC deletes auth.users + owned public data (no service_role on client)
   const handleDeleteAccount = async () => {
     if (!session) return;
-    setDeleteAccountLoading(true);
-    setDeleteAccountError(null);
     try {
       const err = await authService.deleteAccount(session.id);
-      if (err) {
-        setDeleteAccountError(err);
-        setDeleteAccountLoading(false);
-        return;
-      }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e || '');
-      setDeleteAccountError(msg || 'Account deletion failed.');
-      setDeleteAccountLoading(false);
+      if (err) return;
+    } catch {
       return;
     }
     // Success — wipe local state; session=null returns user to Auth/landing
@@ -1846,7 +1802,6 @@ setMomentumEvents((prev) =>
     setMomentumEvents([]);
     setReminders([]);
     setActiveTab('home');
-    setDeleteAccountLoading(false);
   };
 
   // Sign out / Log out handler
@@ -2249,7 +2204,6 @@ setMomentumEvents((prev) =>
   const handleOpenLedgerModal = useCallback(() => setIsLedgerModalOpen(true), []);
   const handleCloseLedgerModal = useCallback(() => setIsLedgerModalOpen(false), []);
   const handleOpenPasswordModal = useCallback(() => setIsPasswordModalOpen(true), []);
-  const handleClosePasswordModal = useCallback(() => setIsPasswordModalOpen(false), []);
   const handleOpenExamShieldModal = useCallback(() => setIsExamShieldModalOpen(true), []);
 
 
@@ -2607,7 +2561,6 @@ setMomentumEvents((prev) =>
               todayIndex={todayDayIndex}
               renderHabit={renderHabit}
               examShieldActive={examShieldActive}
-              onOpenExamShield={handleOpenExamShieldModal}
             >
               {quoteCardElement}
             </HomeView>
