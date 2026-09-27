@@ -1804,15 +1804,30 @@ setMomentumEvents((prev) =>
     } catch {
       return;
     }
-    // Success — wipe local state; session=null returns user to Auth/landing
+    // Success — wipe ALL local persistence layers
     localStorage.clear();
+
+    // Clear IndexedDB stores (best-effort, non-blocking)
+    try {
+      const databases = await indexedDB.databases();
+      for (const db of databases) {
+        if (db.name) indexedDB.deleteDatabase(db.name);
+      }
+    } catch {
+      /* indexedDB.databases() not available in all browsers — ignore */
+    }
+
+    // Reset every React state atom to initial values
     setSession(null);
+    setStoredSession(null);
     setIsOnboarded(false);
     setHabits([]);
     setEvidenceList([]);
     setCompletionEvents([]);
     setMomentumEvents([]);
     setReminders([]);
+    setFrictionAudits([]);
+    setEveningJournalEntries([]);
     setActiveTab('home');
   };
 

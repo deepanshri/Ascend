@@ -96,9 +96,9 @@ const HOME_STEPS: DriveStep[] = [
   {
     element: '[data-tour="bottom-nav"]',
     popover: {
-      title: 'Bottom navigation',
+      title: 'Identity Ledger & Reports',
       description:
-        'Home for daily execution, Reminders for standalone alerts, Report for analysis, and Personal for interests, identity, and protection modes. Each tab has its own short walkthrough the first time you open it — close any of them with the X anytime.',
+        'Detailed analytics, identity votes, and native report exports. Home for daily execution, Reminders for standalone alerts, Report for full analysis, and Personal for interests, identity, and protection modes.',
       side: 'top',
       align: 'center',
     },

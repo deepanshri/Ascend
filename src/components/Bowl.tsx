@@ -701,7 +701,7 @@ function BowlInner({
         )}
       </AnimatePresence>
 
-      <div id="accumulation-bowl-frame" className="relative mx-auto h-40 w-48 overflow-visible">
+      <div id="accumulation-bowl-frame" className="relative mx-auto h-40 w-48 overflow-visible" style={{ contain: 'layout size style' }}>
         {/* Landing target for card→bowl flights (cavity floor) */}
         <div
           id="accumulation-bowl-target"
