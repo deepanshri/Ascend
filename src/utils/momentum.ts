@@ -2,7 +2,9 @@ import { Habit, HabitCompletionEvent, CompletionType, MomentumEvent, MomentumEve
 import { isSeedHabitId } from '../data/initialHabits';
 import { isSupabaseConfigured, supabase, fetchSequentialMomentumEvents } from '../lib/supabase';
 import {
+  addDaysIso,
   dayIndexForIso,
+  diffDaysIso,
   endOfIsoDate,
   getTodayDayIndex,
   getWeekDates,
@@ -170,11 +172,13 @@ export function momentumEventsFromCompletionLog(
       const habit = byId.get(event.habitId);
       const iso = resolveEventIsoDate(event, origin);
       const eventType = event.type === 'fallback_micro' ? 'fallback' : 'full';
+      const baseWeight = habit ? habitWeight(habit) : SELF_IMPROVEMENT_HABIT_WEIGHT;
+      const weight = eventType === 'fallback' ? baseWeight * 0.5 : baseWeight;
       return {
         id: `evt_${event.habitId}_${iso}_${eventType}`,
         habitId: event.habitId,
         eventType,
-        weight: habit ? habitWeight(habit) : SELF_IMPROVEMENT_HABIT_WEIGHT,
+        weight,
         timestamp: event.timestamp,
         loggedDate: iso,
         timeOfDay: event.timeOfDay ?? (habit ? resolveHabitTimeOfDay(habit) : undefined),
@@ -184,15 +188,15 @@ export function momentumEventsFromCompletionLog(
 }
 
 /**
- * Merge momentum events by (habitId, loggedDate) / id.
- * If an event with the same habitId and loggedDate exists, replace it rather than stacking duplicate decay rows.
+ * Merge momentum events by (habitId, loggedDate, eventType) / id.
+ * If an event with the same habitId, loggedDate, and eventType exists, replace it.
  */
 export function mergeMomentumEvents(local: MomentumEvent[], incoming: MomentumEvent[]): MomentumEvent[] {
   const byKey = new Map<string, MomentumEvent>();
 
   const put = (event: MomentumEvent) => {
     const iso = resolveMomentumEventDate(event);
-    const key = iso && event.habitId ? `${event.habitId}::${iso}` : event.id;
+    const key = iso && event.habitId ? `${event.habitId}::${iso}::${event.eventType}` : event.id;
     byKey.set(key, event);
   };
 
@@ -552,31 +556,16 @@ export function filterReversedMomentumEvents(events: MomentumEvent[]): MomentumE
       excludedIds.add(event.id);
 
       const list = completionsByKey.get(key);
-      let matched: MomentumEvent | undefined;
       if (list && list.length > 0) {
-        matched = list.pop();
-        const habitList = completionsByHabit.get(event.habitId);
-        if (habitList) {
-          const idx = habitList.lastIndexOf(matched);
-          if (idx !== -1) habitList.splice(idx, 1);
-        }
-      } else {
-        const habitList = completionsByHabit.get(event.habitId);
-        if (habitList && habitList.length > 0) {
-          matched = habitList.pop();
-          if (matched) {
-            const mKey = `${matched.habitId}::${resolveMomentumEventDate(matched)}`;
-            const mList = completionsByKey.get(mKey);
-            if (mList) {
-              const idx = mList.lastIndexOf(matched);
-              if (idx !== -1) mList.splice(idx, 1);
-            }
+        const matched = list.pop();
+        if (matched) {
+          excludedIds.add(matched.id);
+          const habitList = completionsByHabit.get(event.habitId);
+          if (habitList) {
+            const idx = habitList.lastIndexOf(matched);
+            if (idx !== -1) habitList.splice(idx, 1);
           }
         }
-      }
-
-      if (matched) {
-        excludedIds.add(matched.id);
       }
     }
   }
@@ -587,6 +576,7 @@ export function filterReversedMomentumEvents(events: MomentumEvent[]): MomentumE
 /**
  * Rolling momentum from the append-only `momentum_events` log.
  * - Filters out reversed completions before the replay fold (zero drift).
+ * - Evaluates continuous rolling day decay across unlogged gap days.
  * - Aggregates daily missed habit penalties into a single observation step per day:
  *     Daily Observation = (∑ Completed Weights / ∑ Total Active Weights) * 100
  *     S_next = clamp(S_prev * (1 - δ) + Daily Observation * δ, 0, 100)
@@ -625,21 +615,34 @@ export function calculateMomentumScore(
     }
   }
 
-  type TimelineStep =
-    | { type: 'daily'; timestamp: number; dailyObservation: number; delta: number }
-    | { type: 'event'; timestamp: number; scoreVal: number; weight: number; delta: number; isToday: boolean };
+  const sortedDates = Array.from(eventsByDate.keys()).sort();
+  let prevScore = 0;
 
-  const timelineSteps: TimelineStep[] = [];
-
-  for (const [date, dateEvents] of eventsByDate.entries()) {
+  for (let i = 0; i < sortedDates.length; i++) {
+    const date = sortedDates[i];
     const isToday = date === todayIso;
+
+    // Apply continuous exponential rolling day decay for unlogged calendar gaps between events
+    if (i > 0) {
+      const prevDate = sortedDates[i - 1];
+      const gap = diffDaysIso(prevDate, date);
+      if (gap > 1) {
+        for (let g = 1; g < gap; g++) {
+          const gapIso = addDaysIso(prevDate, g);
+          const isProtected = legacyProtectionActive || isProtectedOnDate(gapIso, options.protectionWindows);
+          if (!isProtected) {
+            prevScore = clampMomentum(prevScore * (1 - decayFactor));
+          }
+        }
+      }
+    }
+
+    const dateEvents = eventsByDate.get(date)!;
 
     if (datesWithMissed.has(date)) {
       // Deduplicate by habitId: take latest event for each habit on this date
       const habitEvents = new Map<string, MomentumEvent>();
-      let maxTimestamp = 0;
       for (const event of dateEvents) {
-        if (event.timestamp > maxTimestamp) maxTimestamp = event.timestamp;
         habitEvents.set(event.habitId, event);
       }
 
@@ -668,39 +671,33 @@ export function calculateMomentumScore(
         : 0;
       const stepDelta = isToday ? 0 : (activeWeightSum > 0 ? decayFactor : 0);
 
-      timelineSteps.push({
-        type: 'daily',
-        timestamp: maxTimestamp,
-        dailyObservation,
-        delta: stepDelta,
-      });
+      if (stepDelta === 0) {
+        prevScore = clampMomentum(prevScore + Math.max(0, dailyObservation * 0.05));
+      } else {
+        prevScore = clampMomentum(prevScore * (1 - stepDelta) + dailyObservation * stepDelta);
+      }
     } else {
-      // Individual completion steps for live / unmissed days
-      for (const event of dateEvents) {
-        timelineSteps.push({
-          type: 'event',
-          timestamp: event.timestamp,
-          scoreVal: eventScore(event.eventType),
-          weight: event.weight,
-          delta: decayFactor,
-          isToday,
-        });
+      // Individual completion steps for live / unmissed days sorted by timestamp
+      const sortedDateEvents = [...dateEvents].sort((a, b) => a.timestamp - b.timestamp);
+      for (const event of sortedDateEvents) {
+        prevScore = applyRollingMomentumStep(prevScore, eventScore(event.eventType), event.weight, decayFactor);
       }
     }
   }
 
-  timelineSteps.sort((a, b) => a.timestamp - b.timestamp);
-
-  let prevScore = 0;
-  for (const step of timelineSteps) {
-    if (step.type === 'daily') {
-      if (step.delta === 0) {
-        prevScore = clampMomentum(prevScore + Math.max(0, step.dailyObservation * 0.05));
-      } else {
-        prevScore = clampMomentum(prevScore * (1 - step.delta) + step.dailyObservation * step.delta);
+  // Continuous decay for unlogged trailing gap days up to the evaluated date (asOf or today)
+  if (sortedDates.length > 0) {
+    const lastDate = sortedDates[sortedDates.length - 1];
+    const targetIso = asOf !== undefined ? toISODate(new Date(asOf)) : todayIso;
+    const trailingGap = diffDaysIso(lastDate, targetIso);
+    if (trailingGap > 0) {
+      for (let g = 1; g < trailingGap; g++) {
+        const gapIso = addDaysIso(lastDate, g);
+        const isProtected = legacyProtectionActive || isProtectedOnDate(gapIso, options.protectionWindows);
+        if (!isProtected) {
+          prevScore = clampMomentum(prevScore * (1 - decayFactor));
+        }
       }
-    } else {
-      prevScore = applyRollingMomentumStep(prevScore, step.scoreVal, step.weight, step.delta);
     }
   }
 

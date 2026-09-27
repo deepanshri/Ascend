@@ -1,6 +1,6 @@
 import { HabitCompletionEvent, IdentityEvidence, MomentumEvent } from '../types';
 import { formatEvidenceDate, resolveEventIsoDate } from '../utils/dates';
-import { countIdentityVotes, resolveMomentumEventDate } from '../utils/momentum';
+import { countIdentityVotes, filterReversedMomentumEvents, resolveMomentumEventDate } from '../utils/momentum';
 
 export function ledgerDayKey(habitId: string, isoDate: string): string {
   return `${habitId}::${isoDate}`;
@@ -89,7 +89,8 @@ export function hasMomentumVoteOnIso(
   habitId: string,
   isoDate: string
 ): boolean {
-  return events.some((event) => {
+  const active = filterReversedMomentumEvents(events);
+  return active.some((event) => {
     if (event.habitId !== habitId) return false;
     if (event.eventType !== 'full' && event.eventType !== 'fallback') return false;
     return resolveMomentumEventDate(event) === isoDate;

@@ -544,7 +544,9 @@ function HabitCardInner({
   const tagFullName = habitCategoryLabel(habit.category);
 
   return (
-    <div
+    <motion.div
+      layout
+      layoutId={`habit-card-${habit.id}`}
       ref={cardRef}
       data-tour={isTourTarget ? 'habit-card' : undefined}
       onContextMenu={handleContextMenu}
@@ -941,7 +943,7 @@ function HabitCardInner({
           </motion.div>
         </motion.article>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

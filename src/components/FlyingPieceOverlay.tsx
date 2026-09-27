@@ -17,7 +17,7 @@ import {
 import { MarbleLightRig, StudioEnvironment } from '../lib/marbleScene';
 import { getThemeIsDark, subscribeTheme } from '../lib/themeStore';
 
-const PIECE_PX = 28;
+const PIECE_PX = 14;
 const MAX_FLIGHTS = 4;
 /** Sample window for terminal velocity (last 5% — handoff to bowl physics). */
 const TERMINAL_SAMPLE_T = 0.95;
@@ -223,9 +223,10 @@ function SingleFlyingMarble({
 
     meshRef.current.position.set(worldX, worldY, worldZ);
 
-    // Fixed world radius strictly matching 28px diameter on physical screen
-    const fixedWorldRadius = (PIECE_PX / 2) * (viewport.height / size.height);
-    meshRef.current.scale.setScalar(fixedWorldRadius);
+    // Base world radius matching Bowl.tsx (SPHERE_RADIUS = 0.19)
+    const targetWorldRadius = 0.14;
+    const distanceComp = 1.88 / Math.max(0.1, 1.88 - worldZ); // Pitch compensation factor
+    meshRef.current.scale.setScalar(targetWorldRadius / distanceComp);
 
     meshRef.current.visible = true;
 

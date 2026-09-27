@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { AnimatePresence } from 'motion/react';
 import { Bowl } from './Bowl';
 import { MomentumPill } from './MomentumPill';
 import type { AccumulationPiece, BowlFill, CycleDays } from '../services/reportService';
@@ -191,7 +192,9 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
                 No habits active yet. Tap &quot;+&quot; in the header to create one!
               </div>
             ) : (
-              activeHabits.map((habit, index) => renderHabit(habit, index))
+              <AnimatePresence mode="popLayout">
+                {activeHabits.map((habit, index) => renderHabit(habit, index))}
+              </AnimatePresence>
             )}
 
             {sessionCompletedHabits.length > 0 && (
@@ -201,9 +204,11 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
                     Completed
                   </h3>
                 </div>
-                {sessionCompletedHabits.map((habit, index) =>
-                  renderHabit(habit, activeHabits.length + index)
-                )}
+                <AnimatePresence mode="popLayout">
+                  {sessionCompletedHabits.map((habit, index) =>
+                    renderHabit(habit, activeHabits.length + index)
+                  )}
+                </AnimatePresence>
               </>
             )}
           </section>
