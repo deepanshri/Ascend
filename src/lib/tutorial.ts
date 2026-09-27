@@ -27,7 +27,7 @@ function sharedDriver(steps: DriveStep[], onComplete: () => void): Driver {
     animate: true,
     smoothScroll: true,
     allowClose: true,
-    stagePadding: 10,
+    stagePadding: 8,
     stageRadius: 18,
     overlayColor: '#0f172a',
     overlayOpacity: 0.48,
@@ -54,11 +54,21 @@ function sharedDriver(steps: DriveStep[], onComplete: () => void): Driver {
 
 const HOME_STEPS: DriveStep[] = [
   {
+    element: '[data-tour="home-momentum-badge"]',
+    popover: {
+      title: 'Dynamic Momentum Island',
+      description:
+        'Velocity, not an all-or-nothing streak. Momentum (0–100) interpolates smoothly via physics springs and expands into a Dynamic Island badge whenever you log full or fallback habits.',
+      side: 'bottom',
+      align: 'center',
+    },
+  },
+  {
     element: '[data-tour="accumulation-bowl"]',
     popover: {
-      title: 'Accumulation bowl',
+      title: '3D Accumulation Bowl',
       description:
-        'Each completion drops a marble into the bowl for this cycle. Light theme shows the Morning bowl with green gems; Dark theme shows the Night bowl with blue gems. Full completions are the darker gems; fallback micro-habits are lighter. At 80% capacity pieces spill over the rim.',
+        'Completions stack physically inside this 3D glass bowl. Morning bowl shows green gems; Night bowl shows blue gems. When cycle capacity hits 80%, pieces realistically spill over the rim.',
       side: 'bottom',
       align: 'center',
     },
@@ -66,9 +76,9 @@ const HOME_STEPS: DriveStep[] = [
   {
     element: '[data-tour="daily-wisdom"]',
     popover: {
-      title: 'Daily Atomic Wisdom',
+      title: 'Chronicle & Daily Wisdom',
       description:
-        'Quotes and short feature tips rotate automatically every 6 hours. They are curated from your Personal interests, and fall back to Productivity / Atomic Habits when signed out of cloud quotes or when no category match exists.',
+        'Swipe horizontally across this card to cycle quotes, or tap to open your 3-phase Chronicle. Each morning, "See the plan of today by you" displays your Phase 3 strategy written yesterday.',
       side: 'bottom',
       align: 'center',
     },
@@ -76,9 +86,9 @@ const HOME_STEPS: DriveStep[] = [
   {
     element: '[data-tour="habit-card"]',
     popover: {
-      title: 'Habit card gestures',
+      title: 'Habit Gestures & 3D Flight',
       description:
-        'Swipe right to complete at 100%. Swipe left to switch to the 50% fallback micro-habit. Tap once to flip the card and read your Purpose Anchor.',
+        'Swipe right to complete at 100%. Swipe left for a 50% fallback micro-habit. Watch a 3D marble launch along a dynamic Bezier flight trajectory into the bowl! Tap once to flip the card.',
       side: 'top',
       align: 'center',
     },

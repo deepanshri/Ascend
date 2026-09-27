@@ -1,12 +1,11 @@
 import { Habit, HabitCompletionEvent, MomentumEvent, UserSession } from '../types';
 import { isSeedHabitId } from '../data/initialHabits';
 import { fetchUserProfile, persistUserProfile } from './profile';
-import { fetchHabitsFromTable, omitDeletedHabitRefs, omitDeletedHabits, persistHabitsToTable, purgeSeedHabitsFromTable } from './habitsApi';
+import { fetchHabitsFromTable, omitDeletedHabits, persistHabitsToTable, purgeSeedHabitsFromTable } from './habitsApi';
 import {
   fetchHabitLogsFromTable,
   mergeCompletionEvents,
   mergeMomentumEvents,
-  upsertHabitLog,
 } from '../utils/momentum';
 import { fetchMomentumEventsFromTable, pushMomentumEventsRemote } from './momentumEvents';
 import { pushHabitLogRemote } from './offlineSync';
@@ -49,7 +48,7 @@ async function pushLocalLogs(userId: string, events: HabitCompletionEvent[]): Pr
 export async function persistMomentumHistory(
   userId: string,
   score: number,
-  dayIndex: number = getTodayDayIndex()
+  _dayIndex: number = getTodayDayIndex()
 ): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase || !userId || userId.startsWith('guest_')) return false;
   try {

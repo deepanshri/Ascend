@@ -390,7 +390,7 @@ const ReportViewInner: React.FC<ReportViewProps> = ({
   onSelectDayIso,
   cycleDays = 7,
   cycleStartIso,
-  isActive = true,
+  isActive: _isActive = true,
 }) => {
   const habits = asArray(habitsProp);
   const activeHabitIds = useMemo(() => new Set(habits.map((habit) => habit.id)), [habits]);
@@ -680,15 +680,17 @@ const ReportViewInner: React.FC<ReportViewProps> = ({
         localLogs: completionEvents,
         evidenceList,
       });
-      downloadCsvFile(`ascend-report-${timeFilter}-${todayIso}.csv`, csv);
+      await downloadCsvFile(`ascend-report-${timeFilter}-${todayIso}.csv`, csv);
       setDownloadSuccess(true);
       window.setTimeout(() => setDownloadSuccess(false), 2400);
+    } catch (err) {
+      console.warn('Failed to export CSV report:', err);
     } finally {
       setExporting(false);
     }
   };
 
-  const cx = 160;
+  const cx = 165;
   const cy = 110;
   const strokeW = 7.5;
   /** Clamp 0–1 rate → SVG circle stroke props (dashoffset form; avoids NaN / empty arcs). */
@@ -793,9 +795,9 @@ const ReportViewInner: React.FC<ReportViewProps> = ({
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.96 }}
                 transition={{ duration: 0.22, ease: VISUALIZER_EASE }}
-                className="relative w-full max-w-[340px] h-[210px] flex items-center justify-center transform-gpu"
+                className="relative w-full max-w-[360px] h-[210px] flex items-center justify-center transform-gpu"
               >
-                <svg className="w-full h-full overflow-visible" viewBox="0 0 320 220">
+                <svg className="w-full h-full overflow-visible" viewBox="0 0 360 220">
                   <circle cx={cx} cy={cy} r={80} fill="none" stroke={isDark ? '#334155' : '#F1F5F9'} strokeWidth="1" strokeDasharray="3 3" />
                   {ringLayout.map((ring) => {
                     const { circumference, dashOffset } = ringStroke(ring.r, ring.rate);
@@ -1016,7 +1018,7 @@ const ReportViewInner: React.FC<ReportViewProps> = ({
               type="button"
               whileTap={tapPress}
               onClick={() => setTimeFilter(tab)}
-              className={`relative flex-1 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-xl cursor-pointer text-center ${
+              className={`relative flex-1 py-1.5 text-[11px] min-[390px]:text-[12.5px] font-bold rounded-xl cursor-pointer text-center whitespace-nowrap ${
                 isActive
                   ? 'text-emerald-800 dark:text-white'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'

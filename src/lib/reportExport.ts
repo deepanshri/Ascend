@@ -81,8 +81,8 @@ export async function buildReportCsv(options: {
   const isAuthed = Boolean(userId && !userId.startsWith('guest_'));
 
   const [remoteMomentum, remoteLogs] = await Promise.all([
-    isAuthed ? fetchMomentumEventsFromTable(userId) : Promise.resolve([] as MomentumEvent[]),
-    isAuthed ? fetchHabitLogsForExport(userId) : Promise.resolve([] as HabitLogExportRow[]),
+    isAuthed ? fetchMomentumEventsFromTable(userId).catch(() => []) : Promise.resolve([] as MomentumEvent[]),
+    isAuthed ? fetchHabitLogsForExport(userId).catch(() => []) : Promise.resolve([] as HabitLogExportRow[]),
   ]);
 
   const momentumById = new Map<string, MomentumEvent>();
@@ -176,14 +176,62 @@ export async function buildReportCsv(options: {
   return lines.join('\n');
 }
 
-export function downloadCsvFile(filename: string, csvContent: string): void {
+export async function downloadCsvFile(filename: string, csvContent: string): Promise<void> {
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+
+  // On mobile / Capacitor, use Web Share API with File when supported
+  // (allows Android/iOS users to Save to Files, Drive, etc. reliably inside WebViews)
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      const file = new File([blob], filename, { type: 'text/csv;charset=utf-8;' });
+      if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: filename,
+        });
+        return;
+      }
+    } catch (shareErr: unknown) {
+      if (shareErr instanceof Error && shareErr.name === 'AbortError') {
+        return; // User cancelled native share sheet
+      }
+      // Fall through to browser anchor download
+    }
+  }
+
+  // Standard web browser download:
+  try {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    // Defer revocation so mobile browser download manager has time to stream the blob
+    window.setTimeout(() => {
+      try {
+        if (link.parentNode) link.parentNode.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch {
+        /* ignore */
+      }
+    }, 3000);
+  } catch {
+    // Data URI fallback for restrictive environments where createObjectURL is blocked
+    const encoded = encodeURIComponent(csvContent);
+    const link = document.createElement('a');
+    link.href = `data:text/csv;charset=utf-8,${encoded}`;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    window.setTimeout(() => {
+      try {
+        if (link.parentNode) link.parentNode.removeChild(link);
+      } catch {
+        /* ignore */
+      }
+    }, 3000);
+  }
 }

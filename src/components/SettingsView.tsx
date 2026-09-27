@@ -10,6 +10,7 @@ import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import { SettingsModal } from './SettingsModal';
 import type { NotificationWindowKey, PsychologyNotificationWindows } from '../lib/notifications';
 import type { EveningJournalSettings } from '../lib/eveningJournal';
+import { downloadCsvFile } from '../lib/reportExport';
 
 interface SettingsViewProps {
   habits: Habit[];
@@ -58,7 +59,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
   onCompletionSoundChange,
   hapticVibration = true,
   onHapticVibrationChange,
-  onResetData,
+  onResetData: _onResetData,
   onRestoreHabit,
   onDeleteHabit,
   onImportJSON,
@@ -71,7 +72,6 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
 }) => {
   const [isInterestsModalOpen, setIsInterestsModalOpen] = useState(false);
   const [startMonday, setStartMonday] = useState(true);
-  const [resetFeedback, setResetFeedback] = useState(false);
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [cacheFeedback, setCacheFeedback] = useState(false);
@@ -157,14 +157,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
     });
 
     const csvContent = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ascend-habits-log-${toISODate()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-
+    void downloadCsvFile(`ascend-habits-log-${toISODate()}.csv`, csvContent);
     flashFeedback('CSV Exported ✓');
   };
 

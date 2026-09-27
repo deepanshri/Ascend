@@ -1,48 +1,7 @@
 import { Habit, IdentityEvidence, HabitCompletionEvent } from '../types';
-import { formatEvidenceDate, getWeekDates, seedCompletedDays, toISODate } from '../utils/dates';
+import { seedCompletedDays } from '../utils/dates';
 
 const seededDays = seedCompletedDays(3);
-const weekDates = getWeekDates();
-
-function seedEventsForHabit(habitId: string): HabitCompletionEvent[] {
-  const events: HabitCompletionEvent[] = [];
-  seededDays.forEach((done, dayIndex) => {
-    if (!done) return;
-    const date = weekDates[dayIndex] ?? new Date();
-    events.push({
-      id: `evt-init-${habitId}-${dayIndex}`,
-      habitId,
-      dayIndex,
-      date: toISODate(date),
-      type: 'full',
-      timestamp: date.getTime() + 9 * 3600000,
-    });
-  });
-  return events;
-}
-
-function seedEvidenceForHabit(
-  habitId: string,
-  habitName: string,
-  identityStatement: string,
-  category: Habit['category']
-): IdentityEvidence[] {
-  const evidence: IdentityEvidence[] = [];
-  seededDays.forEach((done, dayIndex) => {
-    if (!done) return;
-    const date = weekDates[dayIndex] ?? new Date();
-    evidence.push({
-      id: `ev-${habitId}-${dayIndex}`,
-      habitId,
-      habitName,
-      identityStatement,
-      category,
-      date: `${formatEvidenceDate(date)} • Completed 09:12 AM`,
-      dayNumber: dayIndex + 1,
-    });
-  });
-  return evidence;
-}
 
 export const INITIAL_HABITS: Habit[] = [
   {

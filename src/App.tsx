@@ -161,6 +161,8 @@ const DeleteHabitConfirmModal = React.lazy(() => import('./components/DeleteHabi
 const IdentityLedgerModal = React.lazy(() => import('./components/IdentityLedgerModal').then((m) => ({ default: m.IdentityLedgerModal })));
 const FrictionAuditModal = React.lazy(() => import('./components/FrictionAuditModal').then((m) => ({ default: m.FrictionAuditModal })));
 const EveningJournalModal = React.lazy(() => import('./components/EveningJournalModal').then((m) => ({ default: m.EveningJournalModal })));
+const ChronicleModal = React.lazy(() => import('./components/ChronicleModal').then((m) => ({ default: m.ChronicleModal })));
+import { getYesterdayPlanForToday } from './lib/chronicle';
 const AuthView = React.lazy(() => import('./components/AuthView').then((m) => ({ default: m.AuthView })));
 const OnboardingView = React.lazy(() => import('./components/OnboardingView').then((m) => ({ default: m.OnboardingView })));
 const RemindersView = React.lazy(() => import('./components/RemindersView').then((m) => ({ default: m.RemindersView })));
@@ -332,6 +334,12 @@ export default function App() {
     loadEveningJournalEntries()
   );
   const [isEveningJournalOpen, setIsEveningJournalOpen] = useState(false);
+  const [isChronicleOpen, setIsChronicleOpen] = useState(false);
+  const [chronicleVersion, setChronicleVersion] = useState(0);
+
+  const handleOpenChronicle = useCallback(() => setIsChronicleOpen(true), []);
+  const handleCloseChronicle = useCallback(() => setIsChronicleOpen(false), []);
+  const handleChronicleSave = useCallback(() => setChronicleVersion((v) => v + 1), []);
 
   const handleEveningJournalChange = useCallback((next: EveningJournalSettings) => {
     setEveningJournal(next);
@@ -1024,6 +1032,10 @@ export default function App() {
   const morningIntention = useMemo(
     () => previousMorningIntention(eveningJournalEntries, activeHabits),
     [eveningJournalEntries, activeHabits]
+  );
+  const yesterdayPlan = useMemo(
+    () => getYesterdayPlanForToday(calendarOrigin),
+    [calendarOrigin, chronicleVersion]
   );
   const { morningHabits, nightHabits } = useHabits(activeHabits);
 
@@ -2188,7 +2200,9 @@ setMomentumEvents((prev) =>
         journalSettings={eveningJournal}
         journalCompletedToday={journalCompletedToday}
         morningIntention={morningIntention}
+        yesterdayPlan={yesterdayPlan}
         onOpenJournal={handleOpenEveningJournal}
+        onOpenChronicle={handleOpenChronicle}
       />
     ),
     [
@@ -2197,14 +2211,15 @@ setMomentumEvents((prev) =>
       eveningJournal,
       journalCompletedToday,
       morningIntention,
+      yesterdayPlan,
       handleOpenEveningJournal,
+      handleOpenChronicle,
     ]
   );
   const handleOpenHomeTab = useCallback(() => setActiveTab('home'), []);
   const handleOpenLedgerModal = useCallback(() => setIsLedgerModalOpen(true), []);
   const handleCloseLedgerModal = useCallback(() => setIsLedgerModalOpen(false), []);
   const handleOpenPasswordModal = useCallback(() => setIsPasswordModalOpen(true), []);
-  const handleOpenExamShieldModal = useCallback(() => setIsExamShieldModalOpen(true), []);
 
 
   useEffect(() => {
@@ -2837,6 +2852,17 @@ setMomentumEvents((prev) =>
               frictionAudits={frictionAudits}
               onClose={() => setIsEveningJournalOpen(false)}
               onComplete={handleEveningJournalComplete}
+            />
+          </Suspense>
+        )}
+
+        {isChronicleOpen && (
+          <Suspense fallback={null}>
+            <ChronicleModal
+              isOpen={isChronicleOpen}
+              todayIso={todayIso}
+              onClose={handleCloseChronicle}
+              onSave={handleChronicleSave}
             />
           </Suspense>
         )}
