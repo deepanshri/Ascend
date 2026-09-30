@@ -1,0 +1,354 @@
+[
+  {
+    "file": "src/App.tsx",
+    "startLine": 1079,
+    "endLine": 1084,
+    "count": 6,
+    "type": "commented_code_block",
+    "sample": "*\n* Theme only skins the bowl (morning glass + green vs night glass + blue).\n* Pieces are derived ONLY from habit_logs / local completionEvents in the active"
+  },
+  {
+    "file": "src/components/FlyingPieceOverlay.tsx",
+    "startLine": 288,
+    "endLine": 292,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Resolve card swipe point → bowl rim opening (handoff).\n* Destination is the aperture at the top of the bowl — never mid-glass —"
+  },
+  {
+    "file": "src/hooks/useHabits.ts",
+    "startLine": 18,
+    "endLine": 24,
+    "count": 7,
+    "type": "commented_code_block",
+    "sample": "*\n* Foreground & Midnight Auto-Reset Listener:\n* - Tracks currentDateString in state, initialized with getLocalDateString()."
+  },
+  {
+    "file": "src/hooks/useHabits.ts",
+    "startLine": 169,
+    "endLine": 173,
+    "count": 5,
+    "type": "commented_code_block",
+    "sample": "*\n* Merge authoritative cycle pieces with optimistic drops so marbles appear at t=0\n* before (or without waiting on) remote hydration. Optimistic rows lose once the"
+  },
+  {
+    "file": "src/hooks/useHorizontalSwipeDrag.ts",
+    "startLine": 17,
+    "endLine": 22,
+    "count": 6,
+    "type": "commented_code_block",
+    "sample": "*\n* Isolates horizontal card swipes from vertical list scrolling via Motion\n* `drag=\"x\"`. Touch-action is CSS `pan-y` by default; callers must set"
+  },
+  {
+    "file": "src/index.css",
+    "startLine": 233,
+    "endLine": 237,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* While a habit/task card is mid horizontal swipe, freeze vertical scrollers.\n* Prevents Capacitor WebView gesture deadlock (scroll + Motion drag fighting)."
+  },
+  {
+    "file": "src/index.css",
+    "startLine": 256,
+    "endLine": 261,
+    "count": 6,
+    "type": "doc_comment_block",
+    "sample": "*\n* Swipeable habit / reminder cards: allow vertical list scroll by default.\n* Horizontal lock is applied in JS (el.style.touchAction = 'none') once drag"
+  },
+  {
+    "file": "src/lib/accountSync.ts",
+    "startLine": 75,
+    "endLine": 79,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Guest → authenticated (and returning-user) hydration.\n* Pulls profiles / habits / habit_logs / momentum_history, merges with local guest"
+  },
+  {
+    "file": "src/lib/bowlPhysics.ts",
+    "startLine": 18,
+    "endLine": 22,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Continuous physical simulation for marbles settling inside the 3D bowl.\n* Handles gravity, static bowl boundary collision, rim constraint,"
+  },
+  {
+    "file": "src/lib/chronicle.ts",
+    "startLine": 104,
+    "endLine": 108,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Save or update a single chronicle entry.\n* Syncs directly to Supabase public.chronicle_entries and maintains local cache."
+  },
+  {
+    "file": "src/lib/chronicle.ts",
+    "startLine": 248,
+    "endLine": 252,
+    "count": 5,
+    "type": "commented_code_block",
+    "sample": "*\n* Next-day transition lookup (T-1 -> T0):\n* Queries yesterday's Phase 3 plan (\"Plan your strategy for tomorrow\") for display today."
+  },
+  {
+    "file": "src/lib/completionFeedback.ts",
+    "startLine": 1,
+    "endLine": 5,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Completion reward feedback — haptic + optional procedural chime.\n* Identity-reinforcing only (never used for misses). Does not touch momentum_events."
+  },
+  {
+    "file": "src/lib/friends.ts",
+    "startLine": 743,
+    "endLine": 747,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Privacy-safe friend snapshot for Reports:\n* display name + identity statement + total completion ratio only."
+  },
+  {
+    "file": "src/lib/marbleRenderer.ts",
+    "startLine": 3,
+    "endLine": 7,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Shared WebGL renderer + camera framing for bowl & flying marbles.\n* Clamped up to 2.5 DPR to guarantee crystal-clear sharpness on 1080p/1440p"
+  },
+  {
+    "file": "src/lib/marbleRenderer.ts",
+    "startLine": 24,
+    "endLine": 28,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Same viewing angle as the bowl camera, scaled so a unit sphere fills the\n* tiny flight viewport — keeps specular/env response identical."
+  },
+  {
+    "file": "src/lib/motionPresets.ts",
+    "startLine": 1,
+    "endLine": 20,
+    "count": 20,
+    "type": "commented_code_block",
+    "sample": "*\n* ─────────────────────────────────────────────────────────────────────────────\n*  Ascend Motion Design System  ·  Spring Physics Token Library"
+  },
+  {
+    "file": "src/lib/motionPresets.ts",
+    "startLine": 68,
+    "endLine": 74,
+    "count": 7,
+    "type": "doc_comment_block",
+    "sample": "*\n* Default tap press for all interactive elements.\n* Pair with springSnappy on the parent's `transition` prop."
+  },
+  {
+    "file": "src/lib/motionPresets.ts",
+    "startLine": 143,
+    "endLine": 151,
+    "count": 9,
+    "type": "commented_code_block",
+    "sample": "*\n* Container that drives staggered children.\n* Wrap a list with this so items flow in sequentially."
+  },
+  {
+    "file": "src/lib/motionPresets.ts",
+    "startLine": 223,
+    "endLine": 233,
+    "count": 11,
+    "type": "commented_code_block",
+    "sample": "*\n* Returns a transition with a staggered delay based on item index.\n* Used when you can't use variant stagger (e.g., mixed lists)."
+  },
+  {
+    "file": "src/lib/supabase.ts",
+    "startLine": 806,
+    "endLine": 810,
+    "count": 5,
+    "type": "commented_code",
+    "sample": "// ==========================================\n// NATIVE LOCAL NOTIFICATION SCHEDULER\n// =========================================="
+  },
+  {
+    "file": "src/lib/supabase.ts",
+    "startLine": 432,
+    "endLine": 436,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Change the signed-in user's password via Supabase Auth.\n* Issues a real Auth `updateUser` (PATCH /auth/v1/user) — never a local fake success."
+  },
+  {
+    "file": "src/lib/supabase.ts",
+    "startLine": 459,
+    "endLine": 467,
+    "count": 9,
+    "type": "commented_code_block",
+    "sample": "*\n* Permanently delete the signed-in user's account.\n*"
+  },
+  {
+    "file": "src/lib/supabase.ts",
+    "startLine": 660,
+    "endLine": 665,
+    "count": 6,
+    "type": "doc_comment_block",
+    "sample": "*\n* Upsert one reminder into `public.reminders`.\n* Always writes id, user_id, habit_id, target_time, days_of_week, is_enabled,"
+  },
+  {
+    "file": "src/lib/swipeScrollLock.ts",
+    "startLine": 1,
+    "endLine": 5,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Document-level scroll lock for in-flight card swipes.\n* Uses a CSS class only (no React setState) so the main thread never"
+  },
+  {
+    "file": "src/services/ledgerService.ts",
+    "startLine": 54,
+    "endLine": 58,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Identity Ledger tally: one vote per habit per calendar day among remaining\n* habits, plus manual ledger entries. Deleted habits are excluded. Unchecking"
+  },
+  {
+    "file": "src/services/notificationService.ts",
+    "startLine": 30,
+    "endLine": 36,
+    "count": 7,
+    "type": "commented_code_block",
+    "sample": "*\n* Target time habit reminder with natural, action-oriented copy.\n* Directly replaces awkward template strings with clean phrasing:"
+  },
+  {
+    "file": "src/services/reportService.ts",
+    "startLine": 91,
+    "endLine": 95,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Reads the active Bowl epoch. When no start is stored yet, returns an empty\n* startIso so `activeCycleWindow` can fall back to the full sliding cycle"
+  },
+  {
+    "file": "src/services/reportService.ts",
+    "startLine": 186,
+    "endLine": 193,
+    "count": 8,
+    "type": "commented_code_block",
+    "sample": "*\n* Active Bowl window: always ends on today.\n* Start is the later of (epoch start, today − (D−1)) so:"
+  },
+  {
+    "file": "src/utils/categories.ts",
+    "startLine": 15,
+    "endLine": 20,
+    "count": 6,
+    "type": "commented_code_block",
+    "sample": "*\n* WCAG AA status / category chips — solid brand fill + white text.\n* Light: --ascend-accent (#15803d) on white ≈ 5.02:1"
+  },
+  {
+    "file": "src/utils/categories.ts",
+    "startLine": 24,
+    "endLine": 28,
+    "count": 5,
+    "type": "commented_code_block",
+    "sample": "*\n* Self-improvement category chip — mint soft + accent ink (not orange/red).\n* Orange is reserved for needs-attention only. Soft fill + solid accent text"
+  },
+  {
+    "file": "src/utils/colors.ts",
+    "startLine": 3,
+    "endLine": 7,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Locked bowl marble palette (blue / green / orange system).\n* Theme × completion mapping lives in `getMarbleColor`."
+  },
+  {
+    "file": "src/utils/colors.ts",
+    "startLine": 22,
+    "endLine": 30,
+    "count": 9,
+    "type": "doc_comment_block",
+    "sample": "*\n* Central marble color resolver — theme + completion type only.\n* Same hex MUST be used for the flying overlay and the bowl physics marble."
+  },
+  {
+    "file": "src/utils/feedback.ts",
+    "startLine": 1,
+    "endLine": 6,
+    "count": 6,
+    "type": "doc_comment_block",
+    "sample": "*\n* Procedural audio chime & throttled haptic feedback utility for Ascend.\n* Pure Web Audio API synthesis (zero external audio files) + Capacitor Haptics."
+  },
+  {
+    "file": "src/utils/feedback.ts",
+    "startLine": 95,
+    "endLine": 100,
+    "count": 6,
+    "type": "doc_comment_block",
+    "sample": "*\n* Triumphant victory fanfare — ascending C5→E5→G5→C6 major arpeggio with\n* layered triangle + sine oscillators for richness, a bright shimmer overtone,"
+  },
+  {
+    "file": "src/utils/feedback.ts",
+    "startLine": 187,
+    "endLine": 193,
+    "count": 7,
+    "type": "commented_code_block",
+    "sample": "*\n* Throttled, ultra-short haptic pulse.\n* Respects user vibration preference (ascend_setting_vibration)."
+  },
+  {
+    "file": "src/utils/momentum.ts",
+    "startLine": 59,
+    "endLine": 66,
+    "count": 8,
+    "type": "commented_code_block",
+    "sample": "*\n* Exponential moving average step (δ defaults to MOMENTUM_DECAY_FACTOR = 0.12).\n*"
+  },
+  {
+    "file": "src/utils/momentum.ts",
+    "startLine": 208,
+    "endLine": 212,
+    "count": 5,
+    "type": "commented_code_block",
+    "sample": "*\n* Identity Ledger totals COUNT distinct (habitId, calendar day) pairs among\n* full/fallback rows. Multiple toggles on the same day still count as one vote."
+  },
+  {
+    "file": "src/utils/momentum.ts",
+    "startLine": 279,
+    "endLine": 284,
+    "count": 6,
+    "type": "commented_code_block",
+    "sample": "*\n* Dynamic Priority Weight Multipliers:\n* - HIGH priority (or default) = 1.5x (Highest Impact)"
+  },
+  {
+    "file": "src/utils/momentum.ts",
+    "startLine": 441,
+    "endLine": 445,
+    "count": 5,
+    "type": "commented_code_block",
+    "sample": "*\n* Replays the immutable append-only event log (local + habit_logs) to reconstruct\n* the habit's weekly projection (days, microDays) against the rolling 7-day window."
+  },
+  {
+    "file": "src/utils/momentum.ts",
+    "startLine": 498,
+    "endLine": 502,
+    "count": 5,
+    "type": "commented_code_block",
+    "sample": "*\n* Same-day weighted snapshot (0–100) for the 7-day fan dots.\n* Dynamic Priority: High = 1.5x, Medium = 1.0x, Low = 0.7x."
+  },
+  {
+    "file": "src/utils/momentum.ts",
+    "startLine": 546,
+    "endLine": 552,
+    "count": 7,
+    "type": "doc_comment_block",
+    "sample": "*\n* Event-sourced reversal cancellation:\n* Scans events chronologically and matches each 'reversal' event with its"
+  },
+  {
+    "file": "src/utils/momentum.ts",
+    "startLine": 593,
+    "endLine": 602,
+    "count": 10,
+    "type": "commented_code_block",
+    "sample": "*\n* Rolling momentum from the append-only `momentum_events` log.\n* - Filters out reversed completions before the replay fold (zero drift)."
+  },
+  {
+    "file": "src/utils/notifications.ts",
+    "startLine": 1,
+    "endLine": 5,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Ascend Notification Utilities & Phrasing\n* Bridge module providing direct access to native notification scheduling,"
+  },
+  {
+    "file": "src/utils/quotes.ts",
+    "startLine": 1,
+    "endLine": 5,
+    "count": 5,
+    "type": "doc_comment_block",
+    "sample": "*\n* Ascend Curated Quotes Repository\n* Comprehensive high-impact quote bank across 11 interest categories"
+  }
+]
