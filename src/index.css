@@ -50,6 +50,7 @@
 
 *, *::before, *::after {
   -webkit-tap-highlight-color: transparent !important;
+  touch-action: manipulation;
 }
 
 html, body, #root, button, input, select, textarea, span, p, div, h1, h2, h3, h4, h5, h6 {
@@ -90,6 +91,10 @@ html, body, #root {
 canvas, .webgl-canvas-container canvas {
   background-color: transparent !important;
   background: transparent !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  image-rendering: auto;
 }
 
 #app-root,
@@ -126,8 +131,11 @@ html {
  */
 .gpu-layer {
   transform: translateZ(0);
+  -webkit-transform: translateZ(0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+  perspective: 1000px;
+  will-change: transform, opacity;
 }
 
 .gpu-accelerated,

@@ -2,15 +2,17 @@ import * as THREE from 'three';
 
 /**
  * Shared WebGL renderer + camera framing for bowl & flying marbles.
- * Both canvases MUST use these so tone-mapped color output matches at handoff.
+ * Clamped up to 2.5 DPR to guarantee crystal-clear sharpness on 1080p/1440p
+ * high-DPI Android OLED screens without GPU memory exhaustion.
  */
-export const MARBLE_CANVAS_DPR: [number, number] = [1, 1.5];
+export const MARBLE_CANVAS_DPR: [number, number] = [1, 2.5];
 
-/** WebGLRenderer constructor args only (tone mapping applied in configureMarbleRenderer). */
+/** WebGLRenderer constructor args: highp precision, high-performance, and native antialiasing. */
 export const MARBLE_CANVAS_GL = {
   alpha: true,
   antialias: true,
   powerPreference: 'high-performance' as const,
+  precision: 'highp' as const,
 };
 
 /** Bowl overview camera (looks at origin). */
@@ -45,7 +47,7 @@ export const HANDOFF_DEFAULT_VEL = { vx: 0, vy: -3.4, vz: 0 } as const;
 export const HANDOFF_PX_TO_WORLD = 0.0046;
 
 /**
- * Shared lighting rig (~35% softer than the prior 0.4 / 1.1 / 0.45 / 0.3 setup)
+ * Shared lighting rig with calibrated specular response
  * so Normal Blue (#2563eb) and Light Blue (#60a5fa) stay distinguishable.
  */
 export const MARBLE_LIGHTS = {
@@ -54,22 +56,26 @@ export const MARBLE_LIGHTS = {
   fill: 0.25,
   rim: 0.2,
   /** PMREM / RoomEnvironment contribution on MeshPhysicalMaterial. */
-  environmentIntensity: 0.4,
+  environmentIntensity: 0.6,
 } as const;
 
-/** Apply after Canvas mounts — locks tone mapping / color space / exposure. */
+/** Apply after Canvas mounts — locks tone mapping / color space / exposure and scales DPR dynamically. */
 export function configureMarbleRenderer(gl: THREE.WebGLRenderer): void {
   gl.toneMapping = THREE.ACESFilmicToneMapping;
   gl.toneMappingExposure = MARBLE_TONE_EXPOSURE;
   gl.outputColorSpace = THREE.SRGBColorSpace;
+  if (typeof window !== 'undefined') {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    gl.setPixelRatio(dpr);
+  }
 }
 
 /**
- * RigidMarble / FlyingSphereMesh — sharp clearcoat highlight without white-out glare.
+ * RigidMarble / FlyingSphereMesh — sharp clearcoat highlight with crystal reflection without glare.
  */
 export const MARBLE_PHYSICAL_MATERIAL = {
-  roughness: 0.15,
-  metalness: 0.12,
-  clearcoat: 0.6,
-  clearcoatRoughness: 0.22,
+  roughness: 0.12,
+  metalness: 0.15,
+  clearcoat: 0.8,
+  clearcoatRoughness: 0.15,
 } as const;

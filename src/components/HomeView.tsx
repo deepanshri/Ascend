@@ -4,10 +4,11 @@ import { Bowl } from './Bowl';
 import { MomentumPill } from './MomentumPill';
 import type { AccumulationPiece, BowlFill, CycleDays } from '../services/reportService';
 import type { Habit } from '../types';
-import { getTodayDayIndex } from '../utils/dates';
+import { getTodayDayIndex, getLocalDateString } from '../utils/dates';
 import type { FlightHandoffVelocity } from './FlyingPieceOverlay';
 
 interface HomeViewProps {
+  isActive?: boolean;
   pieces: AccumulationPiece[];
   bowlFill: BowlFill;
   momentumScore: number;
@@ -29,6 +30,7 @@ interface HomeViewProps {
 const EMPTY_PIECES: AccumulationPiece[] = [];
 
 const HomeViewInner: React.FC<HomeViewProps> = ({
+  isActive = true,
   pieces,
   bowlFill,
   momentumScore,
@@ -68,7 +70,25 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   });
 
   const initializedRef = useRef(false);
+  const lastActiveDateRef = useRef(getLocalDateString());
+
   useEffect(() => {
+    const todayStr = getLocalDateString();
+    if (lastActiveDateRef.current !== todayStr) {
+      lastActiveDateRef.current = todayStr;
+      pendingTimersRef.current.forEach((id) => window.clearTimeout(id));
+      pendingTimersRef.current.clear();
+      pendingBatchChangesRef.current.clear();
+      const freshSet = new Set<string>();
+      for (const habit of habits || []) {
+        if (Boolean(habit.days?.[checkDay])) {
+          freshSet.add(habit.id);
+        }
+      }
+      setVisualCompletedIds(freshSet);
+      return;
+    }
+
     if (!initializedRef.current && habits && habits.length > 0) {
       initializedRef.current = true;
       const initialSet = new Set<string>();
@@ -81,41 +101,61 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
     }
   }, [habits, checkDay]);
 
-  // Maintain 5000ms deferred reordering timers when actual completion changes
+  // Maintain 5000ms debounced batch reordering timer when actual completion changes
   const pendingTimersRef = useRef<Map<string, number>>(new Map());
+  const pendingBatchChangesRef = useRef<Map<string, boolean>>(new Map());
 
   useEffect(() => {
     if (!habits) return;
-    const timers = pendingTimersRef.current;
 
     for (const habit of habits) {
       const isActualDone = Boolean(habit.days?.[checkDay]);
       const isVisualDone = visualCompletedIds.has(habit.id);
 
       if (isActualDone !== isVisualDone) {
-        if (!timers.has(habit.id)) {
-          const timerId = window.setTimeout(() => {
-            timers.delete(habit.id);
-            setVisualCompletedIds((prev) => {
-              const next = new Set(prev);
-              if (isActualDone) {
-                next.add(habit.id);
-              } else {
-                next.delete(habit.id);
-              }
-              return next;
-            });
-          }, 5000);
-          timers.set(habit.id, timerId);
-        }
+        pendingBatchChangesRef.current.set(habit.id, isActualDone);
       } else {
-        // State reverted within 5000ms — cancel pending timer
-        if (timers.has(habit.id)) {
-          window.clearTimeout(timers.get(habit.id));
-          timers.delete(habit.id);
-        }
+        // State reverted or settled — remove from pending batch
+        pendingBatchChangesRef.current.delete(habit.id);
       }
     }
+
+    if (pendingBatchChangesRef.current.size === 0) {
+      const existingBatch = pendingTimersRef.current.get('batch');
+      if (existingBatch !== undefined) {
+        window.clearTimeout(existingBatch);
+        pendingTimersRef.current.delete('batch');
+      }
+      return;
+    }
+
+    // Debounce batch transition: reset timer so multiple completions within 5s merge into a single tick
+    const existingBatch = pendingTimersRef.current.get('batch');
+    if (existingBatch !== undefined) {
+      window.clearTimeout(existingBatch);
+    }
+
+    const timerId = window.setTimeout(() => {
+      pendingTimersRef.current.delete('batch');
+      const batchToApply = new Map(pendingBatchChangesRef.current);
+      pendingBatchChangesRef.current.clear();
+
+      if (batchToApply.size > 0) {
+        setVisualCompletedIds((prev) => {
+          const next = new Set(prev);
+          for (const [habitId, isDone] of batchToApply.entries()) {
+            if (isDone) {
+              next.add(habitId);
+            } else {
+              next.delete(habitId);
+            }
+          }
+          return next;
+        });
+      }
+    }, 5000);
+
+    pendingTimersRef.current.set('batch', timerId);
   }, [habits, checkDay, visualCompletedIds]);
 
   useEffect(() => {
@@ -124,6 +164,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
         window.clearTimeout(timerId);
       }
       pendingTimersRef.current.clear();
+      pendingBatchChangesRef.current.clear();
     };
   }, []);
 
@@ -164,6 +205,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
 
       <div className="mx-auto mt-0 flex w-full flex-col items-center justify-center">
         <Bowl
+          isActive={isActive}
           completedCount={safePieces.length}
           pieces={safePieces}
           fillPercent={fillPercent}
@@ -218,6 +260,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
 
 function homeViewPropsAreEqual(prev: HomeViewProps, next: HomeViewProps): boolean {
   return (
+    prev.isActive === next.isActive &&
     prev.momentumScore === next.momentumScore &&
     prev.momentumPulse === next.momentumPulse &&
     prev.celebrating === next.celebrating &&

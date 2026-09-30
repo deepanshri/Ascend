@@ -10,6 +10,7 @@ import {
   HANDOFF_DEFAULT_VEL,
   HANDOFF_PX_TO_WORLD,
   MARBLE_CANVAS_DPR,
+  MARBLE_CANVAS_GL,
   MARBLE_PHYSICAL_MATERIAL,
   configureMarbleRenderer,
 } from '../lib/marbleRenderer';
@@ -238,7 +239,7 @@ function SingleFlyingMarble({
 
   return (
     <mesh ref={meshRef} visible={false} scale={[0, 0, 0]}>
-      <sphereGeometry args={[1, 24, 24]} />
+      <sphereGeometry args={[1, 32, 32]} />
       <meshPhysicalMaterial
         ref={materialRef}
         color={initialColor}
@@ -258,13 +259,8 @@ export default function FlyingPieceOverlay({
   return (
     <div className="fixed inset-0 pointer-events-none z-50" style={{ touchAction: 'none' }}>
       <Canvas
-        style={{ pointerEvents: 'none', background: 'transparent' }}
-        gl={{
-          alpha: true,
-          antialias: true,
-          preserveDrawingBuffer: false,
-          powerPreference: 'high-performance',
-        }}
+        style={{ pointerEvents: 'none', background: 'transparent', width: '100%', height: '100%', display: 'block' }}
+        gl={MARBLE_CANVAS_GL}
         dpr={MARBLE_CANVAS_DPR}
         camera={FLIGHT_CAMERA}
         onCreated={({ gl }) => {

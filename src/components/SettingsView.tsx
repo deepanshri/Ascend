@@ -8,7 +8,7 @@ import { toISODate } from '../utils/dates';
 import { NotificationWindowToggles } from './NotificationWindowToggles';
 import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import type { NotificationWindowKey, PsychologyNotificationWindows } from '../lib/notifications';
-import type { EveningJournalSettings } from '../lib/eveningJournal';
+import type { EveningChronicleSettings } from '../lib/chronicle';
 import { downloadCsvFile } from '../lib/reportExport';
 
 interface SettingsViewProps {
@@ -20,8 +20,8 @@ interface SettingsViewProps {
   onThemeChange: (theme: ThemeMode) => void;
   notificationWindows: PsychologyNotificationWindows;
   onToggleNotificationWindow: (key: NotificationWindowKey) => void;
-  eveningJournal: EveningJournalSettings;
-  onEveningJournalChange: (settings: EveningJournalSettings) => void;
+  eveningChronicle: EveningChronicleSettings;
+  onEveningChronicleChange: (settings: EveningChronicleSettings) => void;
   completionSound: boolean;
   onCompletionSoundChange: (enabled: boolean) => void;
   hapticVibration?: boolean;
@@ -50,8 +50,8 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
   onThemeChange,
   notificationWindows,
   onToggleNotificationWindow,
-  eveningJournal,
-  onEveningJournalChange,
+  eveningChronicle,
+  onEveningChronicleChange,
   completionSound,
   onCompletionSoundChange,
   hapticVibration = true,
@@ -294,16 +294,16 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
             <button
               type="button"
               role="switch"
-              aria-checked={eveningJournal.enabled}
-              onClick={() => onEveningJournalChange({ ...eveningJournal, enabled: !eveningJournal.enabled })}
+              aria-checked={eveningChronicle.enabled}
+              onClick={() => onEveningChronicleChange({ ...eveningChronicle, enabled: !eveningChronicle.enabled })}
               className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition duration-200 cursor-pointer ${
-                eveningJournal.enabled ? 'bg-accent' : 'bg-slate-300 dark:bg-slate-700'
+                eveningChronicle.enabled ? 'bg-accent' : 'bg-slate-300 dark:bg-slate-700'
               }`}
             >
-              <div className={`bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition duration-200 ${eveningJournal.enabled ? 'translate-x-4.5' : 'translate-x-0'}`} />
+              <div className={`bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition duration-200 ${eveningChronicle.enabled ? 'translate-x-4.5' : 'translate-x-0'}`} />
             </button>
           </div>
-          {eveningJournal.enabled && (
+          {eveningChronicle.enabled && (
             <label className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 px-3 py-2">
               <span>
                 <span className="block text-[11.5px] font-semibold text-slate-700 dark:text-slate-200">Chronicle ready time</span>
@@ -311,8 +311,8 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
               </span>
               <input
                 type="time"
-                value={eveningJournal.time}
-                onChange={(event) => onEveningJournalChange({ ...eveningJournal, time: event.target.value })}
+                value={eveningChronicle.time}
+                onChange={(event) => onEveningChronicleChange({ ...eveningChronicle, time: event.target.value })}
                 className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-accent"
               />
             </label>

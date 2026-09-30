@@ -1,7 +1,9 @@
 import { memo } from 'react';
 import { motion } from 'motion/react';
 import { ActiveTab } from '../types';
-import { navLayoutSpring, navTabPress, springSnappy } from '../lib/motionPresets';
+import { navTabPress, springSnappy } from '../lib/motionPresets';
+
+const navActiveTransition = { type: 'tween', duration: 0.18, ease: 'easeInOut' } as const;
 
 interface BottomNavProps {
   activeTab: ActiveTab;
@@ -44,7 +46,7 @@ function BottomNavInner({
         {activeTab === 'home' && (
           <motion.div
             layoutId="nav-active-pill"
-            transition={navLayoutSpring}
+            transition={navActiveTransition}
             className="absolute inset-y-1.5 inset-x-1 bg-[#E8F8EE] dark:bg-blue-950/70 rounded-full -z-0"
           />
         )}
@@ -57,7 +59,7 @@ function BottomNavInner({
         {activeTab === 'home' && (
           <motion.div
             layoutId="nav-active-indicator-dot"
-            transition={navLayoutSpring}
+            transition={navActiveTransition}
             className="w-6 h-0.5 bg-[#0B5938] dark:bg-blue-400 rounded-full mt-0.5 z-10"
           />
         )}
@@ -77,7 +79,7 @@ function BottomNavInner({
         {activeTab === 'reminders' && (
           <motion.div
             layoutId="nav-active-pill"
-            transition={navLayoutSpring}
+            transition={navActiveTransition}
             className="absolute inset-y-1.5 inset-x-1 bg-[#E8F8EE] dark:bg-blue-950/70 rounded-full -z-0"
           />
         )}
@@ -101,7 +103,7 @@ function BottomNavInner({
         {activeTab === 'reminders' && (
           <motion.div
             layoutId="nav-active-indicator-dot"
-            transition={navLayoutSpring}
+            transition={navActiveTransition}
             className="w-6 h-0.5 bg-[#0B5938] dark:bg-blue-400 rounded-full mt-0.5 z-10"
           />
         )}
@@ -121,7 +123,7 @@ function BottomNavInner({
         {activeTab === 'report' && (
           <motion.div
             layoutId="nav-active-pill"
-            transition={navLayoutSpring}
+            transition={navActiveTransition}
             className="absolute inset-y-1.5 inset-x-1 bg-[#E8F8EE] dark:bg-blue-950/70 rounded-full -z-0"
           />
         )}
@@ -136,7 +138,7 @@ function BottomNavInner({
         {activeTab === 'report' && (
           <motion.div
             layoutId="nav-active-indicator-dot"
-            transition={navLayoutSpring}
+            transition={navActiveTransition}
             className="w-6 h-0.5 bg-[#0B5938] dark:bg-blue-400 rounded-full mt-0.5 z-10"
           />
         )}
@@ -156,7 +158,7 @@ function BottomNavInner({
         {activeTab === 'personal' && (
           <motion.div
             layoutId="nav-active-pill"
-            transition={navLayoutSpring}
+            transition={navActiveTransition}
             className="absolute inset-y-1.5 inset-x-1 bg-[#E8F8EE] dark:bg-blue-950/70 rounded-full -z-0"
           />
         )}
@@ -169,7 +171,7 @@ function BottomNavInner({
         {activeTab === 'personal' && (
           <motion.div
             layoutId="nav-active-indicator-dot"
-            transition={navLayoutSpring}
+            transition={navActiveTransition}
             className="w-6 h-0.5 bg-[#0B5938] dark:bg-blue-400 rounded-full mt-0.5 z-10"
           />
         )}

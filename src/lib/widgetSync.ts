@@ -285,19 +285,24 @@ export function parseWidgetRoute(url?: string | null): WidgetRoute | null {
     if (parsed.protocol !== `${WIDGET_SCHEME}:`) return null;
     const path = `${parsed.host}${parsed.pathname}`.replace(/\/+$/, '').replace(/^\/+/, '');
     const reminderId = parsed.searchParams.get('id') || parsed.searchParams.get('reminder') || undefined;
-    const habitId = parsed.searchParams.get('habit') || parsed.searchParams.get('habitId') || undefined;
-    if (path === 'app/report' || path === 'report') return { tab: 'report' };
-    if (path === 'app/create-task' || path === 'create-task') {
+    const habitId = parsed.searchParams.get('id') || parsed.searchParams.get('habit') || parsed.searchParams.get('habitId') || undefined;
+    if (path === 'widget/report' || path === 'app/report' || path === 'report') return { tab: 'report' };
+    if (path === 'widget/create-task' || path === 'app/create-task' || path === 'create-task') {
       return { tab: 'reminders', openCreate: true };
     }
-    if (path === 'app/reminders' || path === 'reminders' || path === 'app/tasks' || path === 'tasks') {
+    if (path === 'widget/reminders' || path === 'app/reminders' || path === 'reminders' || path === 'app/tasks' || path === 'tasks') {
       return { tab: 'reminders', reminderId };
     }
-    if (path === 'app/ledger' || path === 'ledger') return { tab: 'ledger' };
-    if (path === 'app/create-habit' || path === 'create-habit') {
+    if (path === 'widget/ledger' || path === 'app/ledger' || path === 'ledger') return { tab: 'ledger' };
+    if (path === 'widget/quick-add' || path === 'widget/create-habit' || path === 'app/create-habit' || path === 'create-habit') {
       return { tab: 'home', openCreate: true };
     }
-    if (path === 'app/home' || path === 'home' || path === 'app') return { tab: 'home', habitId };
+    if (path === 'widget/log' || path === 'app/log') {
+      return { tab: 'home', habitId };
+    }
+    if (path === 'widget/open' || path === 'app/home' || path === 'home' || path === 'app' || path === 'widget') {
+      return { tab: 'home', habitId };
+    }
     return null;
   } catch {
     return null;

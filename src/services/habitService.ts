@@ -1,4 +1,4 @@
-import { deleteHabitCascade } from '../lib/habitsApi';
+import { deleteHabit as deleteHabitFromApi, deleteHabitCascade } from '../lib/habitsApi';
 
 export {
   BOWL_MODE_STORAGE_KEY,
@@ -37,9 +37,10 @@ export function stableHabitLogId(habitId: string, loggedDate: string): string {
   return `${h1.slice(0, 8)}-${h2.slice(0, 4)}-4${h2.slice(4, 7)}-a${h3.slice(0, 3)}-${h3.slice(3, 7)}${h4.slice(0, 8)}`;
 }
 
-/** User deletion is a soft archive; historical records are never removed. */
-export async function deleteHabit(userId: string | null | undefined, habitId: string): Promise<void> {
-  await deleteHabitCascade(userId, habitId);
+/** Delete a habit via delete_habit_cascade RPC. */
+export async function deleteHabit(habitIdOrUserId: string | null | undefined, maybeHabitId?: string): Promise<boolean> {
+  return deleteHabitFromApi(habitIdOrUserId, maybeHabitId);
 }
 
 export { deleteHabitCascade };
+

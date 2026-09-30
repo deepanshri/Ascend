@@ -6,14 +6,14 @@
 const SWIPE_LOCK_CLASS = 'ascend-swiping';
 let swipeLockCount = 0;
 
-export function acquireSwipeScrollLock(): void {
+export function acquireSwipeScrollLock(_targetSelector?: string): void {
   swipeLockCount += 1;
   if (swipeLockCount === 1) {
     document.documentElement.classList.add(SWIPE_LOCK_CLASS);
   }
 }
 
-export function releaseSwipeScrollLock(): void {
+export function releaseSwipeScrollLock(_targetSelector?: string): void {
   swipeLockCount = Math.max(0, swipeLockCount - 1);
   if (swipeLockCount === 0) {
     document.documentElement.classList.remove(SWIPE_LOCK_CLASS);

@@ -40,6 +40,7 @@
     "android",
     "ios",
     "build",
-    "coverage"
+    "coverage",
+    "supabase"
   ]
 }

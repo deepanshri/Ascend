@@ -17,4 +17,6 @@
     <string name="widget_reminders_empty">No tasks yet</string>
     <string name="widget_habits_empty">No habits scheduled today</string>
     <string name="widget_habits_add">Open Ascend to add</string>
+    <string name="today_ledger_widget_name">Today\'s Ledger (1x1)</string>
+    <string name="today_ledger_widget_description">Glanceable 1x1 habit completion ratio widget.</string>
 </resources>

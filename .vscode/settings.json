@@ -13,11 +13,28 @@
   },
   "java.configuration.updateBuildConfiguration": "automatic",
   "java.errors.incompleteClasspath.severity": "ignore",
+  "java.jdt.ls.androidSupport.enabled": "off",
+  "java.jdt.ls.java.home": "C:/Users/deepa/.jdks/jbr-21.0.11",
+  "java.import.gradle.java.home": "C:/Users/deepa/.jdks/jbr-21.0.11",
+  "gradle.java.home": "C:/Users/deepa/.jdks/jbr-21.0.11",
+  "gradle.nestedProjects": false,
+  "gradle.autoDetect": "off",
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-21",
+      "path": "C:/Users/deepa/.jdks/jbr-21.0.11",
+      "default": true
+    }
+  ],
+  "java.autobuild.enabled": false,
   "java.import.gradle.enabled": false,
+  "java.import.gradle.wrapper.enabled": false,
+  "java.import.maven.enabled": false,
   "java.import.exclusions": [
     "**/node_modules/**",
     "**/.metadata/**",
     "**/archetype/**",
+    "**/archetype-resources/**",
     "**/META-INF/maven/**",
     "**/android/**"
   ]

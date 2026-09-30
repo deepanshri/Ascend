@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { ContactShadows, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
@@ -18,11 +18,13 @@ import {
 import { MarbleLightRig, StudioEnvironment } from '../lib/marbleScene';
 import { getThemeIsDark, subscribeTheme } from '../lib/themeStore';
 import type { FlightHandoffVelocity } from './FlyingPieceOverlay';
+import { BowlPhysicsWorld } from '../lib/bowlPhysics';
 
 // Preload the 3D bowl model at module scope for instant rendering
 useGLTF.preload('/assets/bowl.glb');
 
 export interface BowlProps {
+  isActive?: boolean;
   completedCount?: number;
   pieces?: AccumulationPiece[];
   fillPercent?: number;
@@ -324,6 +326,7 @@ function getContactShadowTexture(): THREE.CanvasTexture {
 }
 
 interface MarbleScatterProps {
+  isActive?: boolean;
   completedCount: number;
   pieces?: AccumulationPiece[];
   deferredPieceIds?: ReadonlySet<string>;
@@ -341,40 +344,30 @@ interface RigidMarbleProps {
   shadowTexture: THREE.CanvasTexture;
   isFloorContact: boolean;
   shadowY: number;
+  onRegisterMesh?: (id: string | number, mesh: THREE.Mesh | null, shadow: THREE.Mesh | null) => void;
 }
 
 function RigidMarble({
+  id,
   targetPos,
   rotation,
   isFallback,
-  isSettling,
-  handoffVel,
   shadowTexture,
   isFloorContact,
   shadowY,
+  onRegisterMesh,
 }: RigidMarbleProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const shadowRef = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.MeshPhysicalMaterial>(null);
 
-  // Physics state for physical drop and settling
-  const physicsRef = useRef<{
-    active: boolean;
-    x: number;
-    y: number;
-    z: number;
-    vx: number;
-    vy: number;
-    vz: number;
-  }>({
-    active: false,
-    x: targetPos.x,
-    y: targetPos.y,
-    z: targetPos.z,
-    vx: 0,
-    vy: 0,
-    vz: 0,
-  });
+  // Register mesh & shadow with parent physics loop
+  useEffect(() => {
+    onRegisterMesh?.(id, meshRef.current, shadowRef.current);
+    return () => {
+      onRegisterMesh?.(id, null, null);
+    };
+  }, [id, onRegisterMesh]);
 
   // Theme → mutate existing material color (no shader recompile / canvas remount)
   useEffect(() => {
@@ -386,82 +379,6 @@ function RigidMarble({
     sync();
     return subscribeTheme(sync);
   }, [isFallback]);
-
-  useEffect(() => {
-    if (isSettling) {
-      const vx = Number.isFinite(handoffVel.vx) ? handoffVel.vx : HANDOFF_DEFAULT_VEL.vx;
-      const vy = Number.isFinite(handoffVel.vy) ? handoffVel.vy : HANDOFF_DEFAULT_VEL.vy;
-      const vz = Number.isFinite(handoffVel.vz) ? handoffVel.vz : HANDOFF_DEFAULT_VEL.vz;
-      const spawnZ = 0.12 + Math.random() * 0.1;
-      physicsRef.current = {
-        active: true,
-        // Spawn near the opening center in the foreground (+Z) so the 3D drop lands in front
-        x: targetPos.x * 0.2,
-        y: HANDOFF_RIM_Y,
-        z: spawnZ,
-        vx,
-        vy: Math.min(vy, HANDOFF_DEFAULT_VEL.vy),
-        vz: Math.max(0, vz),
-      };
-      if (meshRef.current) {
-        meshRef.current.position.set(
-          physicsRef.current.x,
-          physicsRef.current.y,
-          physicsRef.current.z
-        );
-      }
-    }
-  }, [isSettling, handoffVel.vx, handoffVel.vy, handoffVel.vz, targetPos.x, targetPos.y, targetPos.z]);
-
-  useFrame((_, delta) => {
-    const p = physicsRef.current;
-    if (!p.active) {
-      if (meshRef.current) {
-        meshRef.current.position.set(targetPos.x, targetPos.y, targetPos.z);
-      }
-      return;
-    }
-
-    const dt = Math.min(delta, 1 / 60);
-    p.vy -= 14.0 * dt;
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    p.z += p.vz * dt;
-    const converge = Math.min(1, dt * 4.2);
-    p.x += (targetPos.x - p.x) * converge;
-    p.z += (targetPos.z - p.z) * converge;
-    p.vx *= 1 - Math.min(1, dt * 3.5);
-    p.vz *= 1 - Math.min(1, dt * 3.5);
-
-    // Keep the marble inside the rim while falling — no glass clip-through.
-    const rc = Math.hypot(p.x, p.z);
-    if (rc > RIM_MAX_CENTER_R && rc > 1e-6) {
-      const s = RIM_MAX_CENTER_R / rc;
-      p.x *= s;
-      p.z *= s;
-      p.vx *= 0.25;
-      p.vz *= 0.25;
-    }
-
-    // Collide with the bowl interior floor at the current (x, z), not only the final slot.
-    const floorY = Math.max(getBowlFloorY(Math.hypot(p.x, p.z)), targetPos.y);
-
-    if (p.y <= floorY) {
-      p.y = floorY;
-      p.vy = 0;
-      p.vx *= 0.6;
-      p.vz *= 0.6;
-      if (Math.abs(p.x - targetPos.x) < 0.02 && Math.abs(p.z - targetPos.z) < 0.02) {
-        p.active = false;
-      }
-    }
-
-    if (meshRef.current) {
-      meshRef.current.position.set(p.x, p.y, p.z);
-      meshRef.current.rotation.x += dt * (Math.abs(p.vy) * 2.0 + 1.2);
-      meshRef.current.rotation.y += dt * 2.5;
-    }
-  });
 
   const initialColor = getMarbleColor(getThemeIsDark(), isFallback);
 
@@ -491,7 +408,7 @@ function RigidMarble({
         castShadow
         receiveShadow
       >
-        <sphereGeometry args={[SPHERE_RADIUS, 24, 24]} />
+        <sphereGeometry args={[SPHERE_RADIUS, 32, 32]} />
         <meshPhysicalMaterial
           ref={materialRef}
           color={initialColor}
@@ -507,8 +424,14 @@ function RigidMarble({
   );
 }
 
+interface MeshRegistration {
+  mesh: THREE.Mesh | null;
+  shadow: THREE.Mesh | null;
+}
+
 /** Physically plausible 3D bottom-up settling marble scattering with contact shadows & real drop handoff */
 function MarbleScatter({
+  isActive = true,
   completedCount,
   pieces,
   deferredPieceIds,
@@ -524,8 +447,42 @@ function MarbleScatter({
   const count = visiblePieces !== null
     ? visiblePieces.length
     : (completedCount !== undefined ? completedCount : 0);
-  const positions = useMemo(() => getPlacedPositions(count), [count]);
+
+  // Defer heavy resting position calculations by 1 frame to keep gesture release 60 FPS
+  const [positions, setPositions] = useState<PlacedPosition[]>(() => getPlacedPositions(count));
+
+  useEffect(() => {
+    let cancelled = false;
+    const rafId = requestAnimationFrame(() => {
+      if (cancelled) return;
+      startTransition(() => {
+        setPositions(getPlacedPositions(count));
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
+  }, [count]);
+
   const shadowTexture = useMemo(() => getContactShadowTexture(), []);
+
+  // Shared continuous physics world
+  const worldRef = useRef<BowlPhysicsWorld>(
+    new BowlPhysicsWorld(getBowlFloorY, SPHERE_RADIUS, RIM_MAX_CENTER_R)
+  );
+  const meshesRef = useRef<Map<string | number, MeshRegistration>>(new Map());
+
+  const handleRegisterMesh = useCallback(
+    (id: string | number, mesh: THREE.Mesh | null, shadow: THREE.Mesh | null) => {
+      if (!mesh) {
+        meshesRef.current.delete(id);
+      } else {
+        meshesRef.current.set(id, { mesh, shadow });
+      }
+    },
+    []
+  );
 
   const marbles = useMemo(() => {
     return Array.from({ length: count }).map((_, i) => {
@@ -557,6 +514,118 @@ function MarbleScatter({
     });
   }, [count, visiblePieces, positions, settlePieceIds, settleHandoffs]);
 
+  // Synchronize physics world bodies with current marbles
+  useEffect(() => {
+    let cancelled = false;
+    const rafId = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const world = worldRef.current;
+      const currentIds = new Set<string | number>();
+
+      marbles.forEach((m) => {
+        currentIds.add(m.id);
+        if (!world.hasBody(m.id)) {
+          const initialPos = m.isSettling
+            ? new THREE.Vector3(m.pos.x * 0.2, HANDOFF_RIM_Y, 0.12 + Math.random() * 0.1)
+            : new THREE.Vector3(m.pos.x, m.pos.y, m.pos.z);
+
+          const initialVel = m.isSettling
+            ? new THREE.Vector3(
+                Number.isFinite(m.handoffVel.vx) ? m.handoffVel.vx : HANDOFF_DEFAULT_VEL.vx,
+                Math.min(
+                  Number.isFinite(m.handoffVel.vy) ? m.handoffVel.vy : HANDOFF_DEFAULT_VEL.vy,
+                  HANDOFF_DEFAULT_VEL.vy
+                ),
+                Math.max(0, Number.isFinite(m.handoffVel.vz) ? m.handoffVel.vz : HANDOFF_DEFAULT_VEL.vz)
+              )
+            : new THREE.Vector3(0, 0, 0);
+
+          const rotQuat = new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(m.rotation[0], m.rotation[1], m.rotation[2])
+          );
+
+          world.addBody({
+            id: m.id,
+            position: initialPos,
+            velocity: initialVel,
+            quaternion: rotQuat,
+            angularVelocity: new THREE.Vector3(),
+            radius: SPHERE_RADIUS,
+            mass: 1.0,
+            restitution: 0.35,
+            friction: 0.25,
+            isSettled: !m.isSettling,
+            settleTimer: 0,
+            targetSlot: m.pos,
+          });
+        } else {
+          const body = world.getBody(m.id);
+          if (body) {
+            body.targetSlot = m.pos;
+            if (m.isSettling) {
+              body.isSettled = false;
+              body.settleTimer = 0;
+              body.position.set(m.pos.x * 0.2, HANDOFF_RIM_Y, 0.12 + Math.random() * 0.1);
+              body.velocity.set(
+                Number.isFinite(m.handoffVel.vx) ? m.handoffVel.vx : HANDOFF_DEFAULT_VEL.vx,
+                Math.min(
+                  Number.isFinite(m.handoffVel.vy) ? m.handoffVel.vy : HANDOFF_DEFAULT_VEL.vy,
+                  HANDOFF_DEFAULT_VEL.vy
+                ),
+                Math.max(0, Number.isFinite(m.handoffVel.vz) ? m.handoffVel.vz : HANDOFF_DEFAULT_VEL.vz)
+              );
+            }
+          }
+        }
+      });
+
+      // Remove bodies no longer in marbles
+      for (const id of Array.from(world.bodies.keys())) {
+        if (!currentIds.has(id)) {
+          world.removeBody(id);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
+  }, [marbles]);
+
+  // Main animation frame physics loop: step simulation & sync body transforms to meshes
+  useFrame((_, delta) => {
+    if (!isActive) return; // Skip physics steps and matrix recalculations when off-screen
+
+    const fixedTimeStep = 1 / 60;
+    const maxSubSteps = 3;
+    const dt = Math.min(delta, 0.1);
+
+    // Step physics engine
+    worldRef.current.step(fixedTimeStep, dt, maxSubSteps);
+
+    // Sync physics body positions & quaternions to Three.js meshes
+    meshesRef.current.forEach((marble, id) => {
+      const body = worldRef.current.getBody(id);
+      if (!body) return;
+
+      if (marble.mesh) {
+        marble.mesh.position.copy(body.position);
+        marble.mesh.quaternion.copy(body.quaternion);
+      }
+
+      if (marble.shadow) {
+        const floorY = getBowlFloorY(Math.hypot(body.position.x, body.position.z));
+        marble.shadow.position.set(body.position.x, floorY - SPHERE_RADIUS + 0.005, body.position.z);
+        const distAbove = Math.max(0, body.position.y - floorY);
+        const shadowMat = marble.shadow.material as THREE.MeshBasicMaterial;
+        if (shadowMat) {
+          shadowMat.opacity = Math.max(0, 0.7 - distAbove * 1.5);
+        }
+      }
+    });
+  });
+
   return (
     <group renderOrder={1}>
       {marbles.map((m) => (
@@ -571,6 +640,7 @@ function MarbleScatter({
           shadowTexture={shadowTexture}
           isFloorContact={m.isFloorContact}
           shadowY={m.shadowY}
+          onRegisterMesh={handleRegisterMesh}
         />
       ))}
     </group>
@@ -578,6 +648,7 @@ function MarbleScatter({
 }
 
 interface BowlCanvasProps {
+  isActive?: boolean;
   completedCount: number;
   pieces?: AccumulationPiece[];
   deferredPieceIds?: ReadonlySet<string>;
@@ -586,6 +657,7 @@ interface BowlCanvasProps {
 }
 
 const BowlCanvasInner: React.FC<BowlCanvasProps> = ({
+  isActive = true,
   completedCount,
   pieces,
   deferredPieceIds,
@@ -594,6 +666,7 @@ const BowlCanvasInner: React.FC<BowlCanvasProps> = ({
 }) => {
   return (
     <Canvas
+      frameloop={isActive ? 'always' : 'never'}
       shadows
       camera={BOWL_CAMERA}
       dpr={MARBLE_CANVAS_DPR}
@@ -602,12 +675,13 @@ const BowlCanvasInner: React.FC<BowlCanvasProps> = ({
         gl.setClearColor(0x000000, 0);
         configureMarbleRenderer(gl);
       }}
-      className="h-full w-full pointer-events-none"
+      className="h-full w-full pointer-events-none block"
     >
       <MarbleLightRig castShadow />
       <Suspense fallback={null}>
         <StudioEnvironment />
         <MarbleScatter
+          isActive={isActive}
           completedCount={completedCount}
           pieces={pieces}
           deferredPieceIds={deferredPieceIds}
@@ -623,6 +697,7 @@ const BowlCanvasInner: React.FC<BowlCanvasProps> = ({
 
 const BowlCanvas = React.memo(BowlCanvasInner, (prev, next) => {
   return (
+    prev.isActive === next.isActive &&
     prev.completedCount === next.completedCount &&
     prev.pieces === next.pieces &&
     prev.deferredPieceIds === next.deferredPieceIds &&
@@ -632,6 +707,7 @@ const BowlCanvas = React.memo(BowlCanvasInner, (prev, next) => {
 });
 
 function BowlInner({
+  isActive = true,
   completedCount,
   pieces,
   fillPercent = 0,
@@ -711,6 +787,7 @@ function BowlInner({
 
         {/* Real-Time 3D WebGL Canvas — never keyed on theme */}
         <BowlCanvas
+          isActive={isActive}
           completedCount={resolvedCount}
           pieces={pieces}
           deferredPieceIds={deferredPieceIds}
@@ -787,6 +864,7 @@ function BowlInner({
 
 function bowlPropsAreEqual(prev: BowlProps, next: BowlProps): boolean {
   return (
+    prev.isActive === next.isActive &&
     prev.completedCount === next.completedCount &&
     prev.pieces === next.pieces &&
     prev.fillPercent === next.fillPercent &&

@@ -9,6 +9,7 @@ interface HabitLongPressOverlayProps {
   habit: Habit;
   rect: DOMRect | null;
   todayIndex?: number;
+  isCompletedToday?: boolean;
   isFallbackActive?: boolean;
   onClose: () => void;
   onOpenEdit: (habit: Habit) => void;
@@ -19,6 +20,7 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
   habit,
   rect,
   todayIndex = getTodayDayIndex(),
+  isCompletedToday,
   isFallbackActive = false,
   onClose,
   onOpenEdit,
@@ -35,7 +37,7 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const isTodayDone = Boolean(habit.days?.[todayIndex]);
+  const isTodayDone = isCompletedToday !== undefined ? isCompletedToday : Boolean(habit.days?.[todayIndex]);
   const isTodayMicro = Boolean(habit.microDays?.[todayIndex]);
   const isFallbackActiveToday = isFallbackActive && !isTodayDone;
   const isMicroCompletedToday = isTodayDone && isTodayMicro;

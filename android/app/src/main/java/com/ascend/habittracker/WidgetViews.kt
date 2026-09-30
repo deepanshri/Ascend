@@ -31,6 +31,7 @@ object WidgetViews {
             updateReminders(context, manager, ids(context, manager, RemindersWidget::class.java))
             updateHabits(context, manager, ids(context, manager, HabitsWidget::class.java))
             updateIdentity(context, manager, ids(context, manager, IdentityLedgerWidget::class.java))
+            updateTodayLedger(context, manager, ids(context, manager, TodayLedgerWidgetProvider::class.java))
         }
         if (Looper.myLooper() == Looper.getMainLooper()) task()
         else Handler(Looper.getMainLooper()).post(task)
@@ -193,6 +194,26 @@ object WidgetViews {
             views.setOnClickPendingIntent(
                 R.id.widget_identity_root,
                 openApp(context, WidgetContract.ROUTE_LEDGER, id)
+            )
+            manager.updateAppWidget(id, views)
+        }
+    }
+
+    fun updateTodayLedger(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
+        val snapshot = WidgetStore.readSnapshot(context)
+        val palette = WidgetTheme.palette(snapshot)
+        val done = snapshot.optInt("habitsCompleted", 0)
+        val total = snapshot.optInt("totalHabits", 0)
+        val ratio = "$done/$total"
+
+        appWidgetIds.forEach { id ->
+            val views = RemoteViews(context.packageName, R.layout.widget_today_ledger_1x1)
+            views.setInt(R.id.widget_today_ledger_root, "setBackgroundResource", palette.cardBg)
+            views.setTextColor(R.id.widget_today_ledger_ratio, palette.text)
+            views.setTextViewText(R.id.widget_today_ledger_ratio, ratio)
+            views.setOnClickPendingIntent(
+                R.id.widget_today_ledger_root,
+                openApp(context, WidgetContract.ROUTE_HOME, id)
             )
             manager.updateAppWidget(id, views)
         }

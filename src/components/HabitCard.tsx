@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback, memo, startTransition } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo, startTransition, useMemo } from 'react';
 import { motion, useMotionValue, useTransform, animate as motionAnimate } from 'motion/react';
 import { Habit } from '../types';
-import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
+import { getTodayDayIndex, getWeekDateNumber, getLocalDateString } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
 import { getMarbleColor } from '../utils/colors';
@@ -39,6 +39,8 @@ interface HabitCardProps {
   habit: Habit;
   todayIndex?: number;
   viewIndex?: number;
+  isCompletedToday?: boolean;
+  theme?: string;
   gesturesLocked?: boolean;
   isLongPressed?: boolean;
   isOtherLongPressed?: boolean;
@@ -65,6 +67,8 @@ function HabitCardInner({
   habit,
   todayIndex = getTodayDayIndex(),
   viewIndex,
+  isCompletedToday,
+  theme: _theme,
   gesturesLocked = false,
   isLongPressed = false,
   isOtherLongPressed = false,
@@ -86,6 +90,7 @@ function HabitCardInner({
   const [celebration, setCelebration] = useState<'none' | 'full' | 'fallback'>('none');
   /** Optimistic done during the undo grace after an immediate complete. */
   const [optimisticDone, setOptimisticDone] = useState(false);
+  const [optimisticLoggedDate, setOptimisticLoggedDate] = useState<string | null>(null);
   const pendingCompleteRef = useRef<{ timer: number; isFallback: boolean } | null>(null);
 
   const x = useMotionValue(0);
@@ -147,7 +152,28 @@ function HabitCardInner({
   const origin = weekOrigin ?? new Date();
   const isScheduledOnActiveDay = isHabitScheduledOnDayIndex(habit, activeIndex, origin);
   const isScheduledToday = isHabitScheduledOnDayIndex(habit, todayIndex, origin);
-  const isTodayDone = Boolean(habit.days?.[activeIndex]) || optimisticDone;
+
+  const todayStr = getLocalDateString();
+  const isOptimisticValid = optimisticDone && optimisticLoggedDate === todayStr;
+
+  // Clear optimistic UI updates immediately if logged_date does not equal getLocalDateString()
+  useEffect(() => {
+    if (optimisticLoggedDate && optimisticLoggedDate !== getLocalDateString()) {
+      setOptimisticDone(false);
+      setOptimisticLoggedDate(null);
+    }
+  }, [optimisticLoggedDate]);
+
+  // Compute completed status dynamically from isCompletedToday or habit.days
+  const dynamicDoneToday = useMemo(() => {
+    if (isCompletedToday !== undefined) return isCompletedToday;
+    return Boolean(habit.days?.[todayIndex]);
+  }, [isCompletedToday, habit.days, todayIndex]);
+
+  const isViewingToday = activeIndex === todayIndex;
+  const isTodayDone = isViewingToday
+    ? dynamicDoneToday || isOptimisticValid
+    : Boolean(habit.days?.[activeIndex]);
   const isTodayMicro = Boolean(habit.microDays?.[activeIndex]);
   const isFallbackActiveToday = isFallbackActive && !isTodayDone;
   const isMicroCompletedToday = isTodayDone && isTodayMicro;
@@ -166,8 +192,11 @@ function HabitCardInner({
   }, [celebration]);
 
   useEffect(() => {
-    if (habit.days?.[activeIndex]) setOptimisticDone(false);
-  }, [habit.days, activeIndex]);
+    if (dynamicDoneToday || habit.days?.[activeIndex]) {
+      setOptimisticDone(false);
+      setOptimisticLoggedDate(null);
+    }
+  }, [dynamicDoneToday, habit.days, activeIndex]);
 
   useEffect(
     () => () => {
@@ -200,6 +229,7 @@ function HabitCardInner({
     (isFallback: boolean, originCoord?: { x: number; y: number; touchRatio?: number }) => {
       clearPendingComplete();
       setOptimisticDone(true);
+      setOptimisticLoggedDate(getLocalDateString());
       void triggerCompletionHaptic();
       // Exact same boolean used for flight color and App → habit_logs type.
       const fallback = Boolean(isFallback);
@@ -228,6 +258,7 @@ function HabitCardInner({
   const undoOrResetToday = useCallback(() => {
     clearPendingComplete();
     setOptimisticDone(false);
+    setOptimisticLoggedDate(null);
     setCelebration('none');
     onResetTodayRef.current(habitRef.current.id);
   }, [clearPendingComplete]);
@@ -981,25 +1012,20 @@ function habitVisualEqual(prev: Habit, next: Habit): boolean {
 
 function habitCardPropsEqual(prev: HabitCardProps, next: HabitCardProps): boolean {
   return (
-    habitVisualEqual(prev.habit, next.habit) &&
-    prev.todayIndex === next.todayIndex &&
-    prev.viewIndex === next.viewIndex &&
-    prev.gesturesLocked === next.gesturesLocked &&
+    prev.habit.id === next.habit.id &&
+    prev.isCompletedToday === next.isCompletedToday &&
+    prev.theme === next.theme &&
+    prev.isFallbackActive === next.isFallbackActive &&
     prev.isLongPressed === next.isLongPressed &&
     prev.isOtherLongPressed === next.isOtherLongPressed &&
-    prev.isFallbackActive === next.isFallbackActive &&
+    prev.gesturesLocked === next.gesturesLocked &&
+    prev.todayIndex === next.todayIndex &&
+    prev.viewIndex === next.viewIndex &&
     prev.isTourTarget === next.isTourTarget &&
     prev.keystoneAtCap === next.keystoneAtCap &&
     prev.keystoneBoosted === next.keystoneBoosted &&
     prev.weekOrigin === next.weekOrigin &&
-    prev.onCompleteToday === next.onCompleteToday &&
-    prev.onToggleFallbackMode === next.onToggleFallbackMode &&
-    prev.onResetToday === next.onResetToday &&
-    prev.onLongPress === next.onLongPress &&
-    prev.onDismissLongPress === next.onDismissLongPress &&
-    prev.onOpenEdit === next.onOpenEdit &&
-    prev.onOpenDeleteConfirm === next.onOpenDeleteConfirm &&
-    prev.onToggleKeystone === next.onToggleKeystone
+    habitVisualEqual(prev.habit, next.habit)
   );
 }
 

@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { AnimatePresence, motion, type PanInfo } from 'motion/react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { mergeQuoteBank, resolveRotatingQuoteIndex } from '../data/quotes';
-import { isJournalReady, type EveningJournalSettings } from '../lib/eveningJournal';
-import { getYesterdayPlanForToday } from '../lib/chronicle';
+import { isChronicleReady, type EveningChronicleSettings, getYesterdayPlanForToday } from '../lib/chronicle';
+import { acquireSwipeScrollLock, releaseSwipeScrollLock } from '../lib/swipeScrollLock';
 import {
   type Quote,
   INTEREST_QUOTES,
@@ -77,22 +77,18 @@ const ROTATE_MS = 6 * 60 * 60 * 1000;
 export interface QuoteCardProps {
   selectedInterests?: string[];
   isGuest?: boolean;
-  journalSettings?: EveningJournalSettings;
-  journalCompletedToday?: boolean;
-  morningIntention?: { text: string; habitName?: string } | null;
+  chronicleSettings?: EveningChronicleSettings;
+  chronicleCompletedToday?: boolean;
   yesterdayPlan?: string | null;
-  onOpenJournal?: () => void;
   onOpenChronicle?: () => void;
 }
 
 const QuoteCardInner: React.FC<QuoteCardProps> = ({
   selectedInterests,
   isGuest = false,
-  journalSettings,
-  journalCompletedToday = false,
-  morningIntention = null,
+  chronicleSettings,
+  chronicleCompletedToday = false,
   yesterdayPlan,
-  onOpenJournal,
   onOpenChronicle,
 }) => {
   const [now, setNow] = useState(() => new Date());
@@ -103,8 +99,8 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
     return () => window.clearInterval(id);
   }, []);
 
-  const journalReady = Boolean(
-    journalSettings && isJournalReady(journalSettings, journalCompletedToday, now)
+  const chronicleReady = Boolean(
+    chronicleSettings && isChronicleReady(chronicleSettings, chronicleCompletedToday, now)
   );
 
   // T-1 Phase 3 strategy lookup for today
@@ -112,9 +108,6 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
     if (yesterdayPlan !== undefined) return yesterdayPlan;
     return getYesterdayPlanForToday(now);
   }, [yesterdayPlan, now]);
-
-  const activeMorningIntention =
-    journalSettings?.enabled && now.getHours() < 12 ? morningIntention : null;
 
   // Listen for local storage changes if selectedInterests prop is not explicitly passed
   const [storedInterests, setStoredInterests] = useState<string[]>(() => getStoredUserInterests());
@@ -216,16 +209,25 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
   const isTip = currentQuote.kind === 'tip' || currentQuote.category === 'Tip';
 
   // Mode resolution
-  // Mode 2: Evening journal ready
+  // Mode 2: Evening chronicle ready
   // Mode 1: Next-day strategy ("See the plan of today by you")
   // Mode 3: Default quote rotation
-  const isModeEvening = journalReady;
+  const isModeEvening = chronicleReady;
   const isModeNextDayPlan = Boolean(!isModeEvening && resolvedYesterdayPlan);
 
+  const isDraggingRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (isDraggingRef.current) {
+        releaseSwipeScrollLock('#app-main-content');
+      }
+    };
+  }, []);
+
   const handleClick = useCallback(() => {
-    if (isModeEvening) {
-      onOpenJournal?.();
-    } else if (isModeNextDayPlan) {
+    if (isDraggingRef.current) return;
+    if (isModeEvening || isModeNextDayPlan) {
       if (onOpenChronicle) {
         onOpenChronicle();
       } else {
@@ -234,19 +236,27 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
     } else {
       goNext();
     }
-  }, [isModeEvening, isModeNextDayPlan, onOpenJournal, onOpenChronicle, goNext]);
+  }, [isModeEvening, isModeNextDayPlan, onOpenChronicle, goNext]);
+
+  const handleDragStart = useCallback(() => {
+    isDraggingRef.current = true;
+    acquireSwipeScrollLock('#app-main-content');
+  }, []);
 
   const handleDragEnd = useCallback(
     (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      releaseSwipeScrollLock('#app-main-content');
+      window.setTimeout(() => {
+        isDraggingRef.current = false;
+      }, 50);
+
       const deltaX = info.offset.x;
       const velocityX = info.velocity.x;
-      const SWIPE_PX = 45;
+      const SWIPE_PX = 30;
       const VELOCITY_THRESHOLD = 250;
 
       if (Math.abs(deltaX) > SWIPE_PX || Math.abs(velocityX) > VELOCITY_THRESHOLD) {
-        if (isModeEvening) {
-          onOpenJournal?.();
-        } else if (onOpenChronicle) {
+        if (onOpenChronicle) {
           onOpenChronicle();
         } else {
           // Standard quote navigation fallback: Left -> next, Right -> prev
@@ -258,7 +268,7 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
         }
       }
     },
-    [isModeEvening, isModeNextDayPlan, onOpenJournal, onOpenChronicle, goNext, goPrev]
+    [onOpenChronicle, goNext, goPrev]
   );
 
   return (
@@ -270,7 +280,8 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
       drag="x"
       dragDirectionLock
       dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.2}
+      dragElastic={0.45}
+      onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
       onKeyDown={(e) => {
@@ -281,50 +292,44 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
       }}
       title={
         isModeEvening
-          ? 'Evening Journal is ready'
+          ? 'Evening Chronicle is ready'
           : isModeNextDayPlan
           ? 'See the plan of today by you'
-          : activeMorningIntention
-          ? 'Your morning intention'
           : isTip
           ? 'Tip · swipe or tap for next'
           : 'Quote · swipe or tap for next'
       }
       aria-label={
         isModeEvening
-          ? 'Evening Journal is ready, tap to begin'
+          ? 'Evening Chronicle is ready, tap to begin'
           : isModeNextDayPlan
           ? `See the plan of today by you: ${resolvedYesterdayPlan}`
-          : activeMorningIntention
-          ? `Morning intention: ${activeMorningIntention.text}`
           : isTip
           ? 'App tip, swipe or tap for next'
           : 'Quote, swipe or tap for next'
       }
       layout={false}
-      className={`touch-pan-y relative my-1 w-full h-auto cursor-grab active:cursor-grabbing rounded-xl p-3.5 select-none text-left transition-all duration-300 overflow-visible border ${
+      className={`touch-pan-y gpu-layer relative my-1 w-full h-auto cursor-grab active:cursor-grabbing rounded-xl p-3.5 select-none text-left transition-colors duration-300 overflow-visible border ${
         isModeEvening
           ? 'bg-accent-soft border-accent shadow-sm'
           : isModeNextDayPlan
           ? 'bg-emerald-50/90 dark:bg-blue-950/40 border-emerald-300/80 dark:border-blue-700/70 shadow-xs'
-          : activeMorningIntention
-          ? 'bg-orange-50/80 dark:bg-orange-950/25 border-orange-300/70 dark:border-orange-700/60'
           : 'bg-slate-50/80 dark:bg-slate-800/40 border-transparent'
       }`}
     >
       <AnimatePresence mode="wait" initial={false}>
         {isModeEvening ? (
           <motion.div
-            key="evening-journal-ready"
+            key="evening-chronicle-ready"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="flex items-center gap-3"
           >
-            <span className="w-8 h-8 rounded-xl bg-accent text-accent-fg flex items-center justify-center text-[16px] shrink-0" aria-hidden="true">☾</span>
+            <span className="w-8 h-8 rounded-xl bg-accent text-accent-fg flex items-center justify-center text-[16px] shrink-0" aria-hidden="true">📖</span>
             <span className="min-w-0">
-              <span className="block text-[12.5px] font-bold text-ink">Evening Journal is ready</span>
-              <span className="block text-[10.5px] text-ink-muted mt-0.5">Reflect on today and choose tomorrow’s first action.</span>
+              <span className="block text-[12.5px] font-bold text-ink">Evening Chronicle is ready</span>
+              <span className="block text-[10.5px] text-ink-muted mt-0.5">Reflect on today and plan tomorrow’s focus.</span>
             </span>
           </motion.div>
         ) : isModeNextDayPlan ? (
@@ -348,21 +353,6 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
               <span className="block text-[9.5px] text-emerald-700/90 dark:text-blue-300/80 mt-1 font-medium">
                 Swipe or tap to record your 3-phase Chronicle →
               </span>
-            </span>
-          </motion.div>
-        ) : activeMorningIntention ? (
-          <motion.div
-            key={`morning-${activeMorningIntention.text}`}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center gap-3"
-          >
-            <span className="w-8 h-8 rounded-xl bg-orange-400 text-white flex items-center justify-center text-[15px] shrink-0" aria-hidden="true">☀</span>
-            <span className="min-w-0">
-              <span className="block text-[10px] font-bold uppercase tracking-wider text-orange-700 dark:text-orange-300">Your first action</span>
-              <span className="block text-[12px] font-semibold text-slate-800 dark:text-slate-100 mt-0.5">{activeMorningIntention.text}</span>
-              {activeMorningIntention.habitName && <span className="block text-[9.5px] text-slate-500 dark:text-slate-400 mt-0.5">{activeMorningIntention.habitName}</span>}
             </span>
           </motion.div>
         ) : (
@@ -396,13 +386,10 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
 
 export const QuoteCard = React.memo(QuoteCardInner, (prev, next) => {
   if (Boolean(prev.isGuest) !== Boolean(next.isGuest)) return false;
-  if (prev.journalSettings?.enabled !== next.journalSettings?.enabled) return false;
-  if (prev.journalSettings?.time !== next.journalSettings?.time) return false;
-  if (Boolean(prev.journalCompletedToday) !== Boolean(next.journalCompletedToday)) return false;
-  if (prev.morningIntention?.text !== next.morningIntention?.text) return false;
-  if (prev.morningIntention?.habitName !== next.morningIntention?.habitName) return false;
+  if (prev.chronicleSettings?.enabled !== next.chronicleSettings?.enabled) return false;
+  if (prev.chronicleSettings?.time !== next.chronicleSettings?.time) return false;
+  if (Boolean(prev.chronicleCompletedToday) !== Boolean(next.chronicleCompletedToday)) return false;
   if (prev.yesterdayPlan !== next.yesterdayPlan) return false;
-  if (prev.onOpenJournal !== next.onOpenJournal) return false;
   if (prev.onOpenChronicle !== next.onOpenChronicle) return false;
   const pList = prev.selectedInterests || [];
   const nList = next.selectedInterests || [];

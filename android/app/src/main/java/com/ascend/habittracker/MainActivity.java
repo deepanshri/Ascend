@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Display;
+import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -55,27 +56,31 @@ public class MainActivity extends BridgeActivity {
     @SuppressWarnings("deprecation")
     private void enableHighRefreshRate() {
         try {
-            // API 30+ (R): use Activity.getDisplay() — the modern path.
-            // API 26–29 (minSdk=26): fall back to the deprecated getDefaultDisplay().
-            Display display;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                display = getDisplay();
-            } else {
-                display = getWindowManager().getDefaultDisplay();
-            }
-            if (display == null) return;
-
-            Display.Mode[] modes = display.getSupportedModes();
-            Display.Mode maxMode = null;
-            for (Display.Mode mode : modes) {
-                if (maxMode == null || mode.getRefreshRate() > maxMode.getRefreshRate()) {
-                    maxMode = mode;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Window window = getWindow();
+                window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+                Display display;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    display = getDisplay();
+                } else {
+                    display = getWindowManager().getDefaultDisplay();
                 }
-            }
-            if (maxMode != null && maxMode.getRefreshRate() > 60.0f) {
-                WindowManager.LayoutParams params = getWindow().getAttributes();
-                params.preferredDisplayModeId = maxMode.getModeId();
-                getWindow().setAttributes(params);
+                if (display == null) return;
+
+                Display.Mode[] modes = display.getSupportedModes();
+                Display.Mode maxMode = null;
+                float maxRefresh = 60.0f;
+                for (Display.Mode mode : modes) {
+                    if (mode.getRefreshRate() > maxRefresh) {
+                        maxRefresh = mode.getRefreshRate();
+                        maxMode = mode;
+                    }
+                }
+                if (maxMode != null) {
+                    WindowManager.LayoutParams params = window.getAttributes();
+                    params.preferredDisplayModeId = maxMode.getModeId();
+                    window.setAttributes(params);
+                }
             }
         } catch (Throwable ignored) {
             // Guard against OEM-specific quirks where display APIs throw.

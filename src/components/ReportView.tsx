@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Habit, HabitCategory, HabitCompletionEvent, IdentityEvidence, FrictionAudit, MomentumEvent } from '../types';
 import {
@@ -368,7 +368,7 @@ const EMPTY_LINE_GRAPH = {
   momentumPath: '',
 };
 
-const ReportViewInner: React.FC<ReportViewProps> = ({
+const ReportViewContent: React.FC<ReportViewProps> = ({
   habits: habitsProp,
   evidenceList: evidenceProp,
   identityVoteCount,
@@ -390,7 +390,6 @@ const ReportViewInner: React.FC<ReportViewProps> = ({
   onSelectDayIso,
   cycleDays = 7,
   cycleStartIso,
-  isActive: _isActive = true,
 }) => {
   const habits = asArray(habitsProp);
   const activeHabitIds = useMemo(() => new Set(habits.map((habit) => habit.id)), [habits]);
@@ -1232,6 +1231,16 @@ const ReportViewInner: React.FC<ReportViewProps> = ({
       />
     </div>
   );
+};
+
+const ReportViewInner: React.FC<ReportViewProps> = (props) => {
+  const cachedRef = useRef<React.ReactElement | null>(null);
+  if (!props.isActive && cachedRef.current) {
+    return cachedRef.current;
+  }
+  const content = <ReportViewContent {...props} />;
+  cachedRef.current = content;
+  return content;
 };
 
 export const ReportView = React.memo(ReportViewInner);

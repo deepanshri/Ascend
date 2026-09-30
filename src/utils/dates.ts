@@ -41,11 +41,14 @@ export function formatEvidenceDate(date: Date = new Date()): string {
   });
 }
 
+/** Return YYYY-MM-DD in user's local timezone (en-CA standard). */
+export function getLocalDateString(date: Date = new Date()): string {
+  const valid = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
+  return valid.toLocaleDateString('en-CA');
+}
+
 export function toISODate(date: Date = new Date()): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return getLocalDateString(date);
 }
 
 export function parseIsoDateParts(iso: string): { year: number; month: number; day: number } | null {

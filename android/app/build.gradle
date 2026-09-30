@@ -36,6 +36,11 @@ android {
     kotlinOptions {
         jvmTarget = '21'
     }
+    sourceSets {
+        main {
+            java.srcDirs = ['src/main/java']
+        }
+    }
     signingConfigs {
         release {
             if (hasReleaseKeystore) {
@@ -51,11 +56,12 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             if (hasReleaseKeystore) {
-                signingConfig signingConfigs.release
+                signingConfig = signingConfigs.release
             }
         }
     }
 }
+ 
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])

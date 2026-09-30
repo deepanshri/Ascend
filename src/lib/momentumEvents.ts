@@ -236,3 +236,6 @@ export function mergeFetchedMomentumEvents(
 ): MomentumEvent[] {
   return mergeMomentumEvents(local, remote);
 }
+
+export { createMomentumEvent, habitWeight } from '../utils/momentum';
+

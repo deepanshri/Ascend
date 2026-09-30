@@ -17,7 +17,7 @@ import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from './schedule';
 import { resolveHabitTimeOfDay } from './timeOfDay';
 
 export const WORK_HABIT_WEIGHT = 1.5;
-export const SELF_IMPROVEMENT_HABIT_WEIGHT = 1.0;
+export const SELF_IMPROVEMENT_HABIT_WEIGHT = 1.5;
 export const FULL_COMPLETION_VALUE = 1.0;
 export const FALLBACK_COMPLETION_VALUE = 0.5;
 export const MISSED_COMPLETION_VALUE = 0.0;
@@ -139,7 +139,7 @@ export async function fetchSequentialMomentumEventsLog(
 }
 
 export function createMomentumEvent(
-  habit: Pick<Habit, 'id' | 'category'> & Partial<Pick<Habit, 'timeOfDay' | 'timestamp'>>,
+  habit: Pick<Habit, 'id'> & Partial<Pick<Habit, 'category' | 'priority' | 'timeOfDay' | 'timestamp'>>,
   eventType: MomentumEventType,
   loggedDate: string = toISODate(),
   timestamp: number = Date.now(),
@@ -150,7 +150,7 @@ export function createMomentumEvent(
     id: `evt_${habitId}_${loggedDate}_${eventType}`,
     habitId,
     eventType,
-    weight: weight !== undefined ? weight : habitWeight({ category: habit.category } as Habit),
+    weight: weight !== undefined ? weight : habitWeight(habit as Habit),
     timestamp,
     loggedDate,
     timeOfDay: resolveHabitTimeOfDay({
@@ -276,9 +276,26 @@ export interface HabitLogRow {
   created_at?: string;
 }
 
-/** Category priority weights: Work (W) = 1.5, Self Improvement (SI) = 1.0. */
-export function habitWeight(habit: Habit): number {
-  return habit.category === 'work' ? WORK_HABIT_WEIGHT : SELF_IMPROVEMENT_HABIT_WEIGHT;
+/**
+ * Dynamic Priority Weight Multipliers:
+ * - HIGH priority (or default) = 1.5x (Highest Impact)
+ * - MEDIUM / MID priority     = 1.0x (Standard Impact)
+ * - LOW priority              = 0.7x (Low Friction)
+ */
+export function habitWeight(habit: Habit | Partial<Habit>): number {
+  const priority = (habit?.priority || 'high').toLowerCase().trim();
+
+  switch (priority) {
+    case 'high':
+      return 1.5;
+    case 'mid':
+    case 'medium':
+      return 1.0;
+    case 'low':
+      return 0.7;
+    default:
+      return 1.5; // Default highest priority for all categories
+  }
 }
 
 /** Full swipe = 1.0, fallback swipe = 0.5, unlogged/missed = 0.0. */
@@ -480,7 +497,7 @@ export function deriveHabitsFromEventLog(
 
 /**
  * Same-day weighted snapshot (0–100) for the 7-day fan dots.
- * Work (W) = 1.5, Self Improvement (SI) = 1.0.
+ * Dynamic Priority: High = 1.5x, Medium = 1.0x, Low = 0.7x.
  * Full swipe = 1.0, fallback = 0.5, unlogged/missed = 0.0.
  */
 export function calculateDailyWeightedScore(

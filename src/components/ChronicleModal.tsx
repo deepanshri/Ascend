@@ -45,15 +45,18 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
     setDirection(1);
   }, [isOpen, todayIso]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    const trimmedPhase1 = phase1.trim();
+    const trimmedPhase2 = phase2.trim();
+    const trimmedPhase3 = phase3.trim();
     const entry: ChronicleEntry = {
       isoDate: todayIso,
-      phase1: phase1.trim(),
-      phase2: phase2.trim(),
-      phase3: phase3.trim(),
+      phase1: trimmedPhase1,
+      phase2: trimmedPhase2,
+      phase3: trimmedPhase3,
       updatedAt: new Date().toISOString(),
     };
-    saveChronicleEntry(entry);
+    void saveChronicleEntry(todayIso, trimmedPhase1, trimmedPhase2, trimmedPhase3);
     onSave?.(entry);
     setIsSavedRecently(true);
     setTimeout(() => {
@@ -124,7 +127,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
             <span>Daily Chronicle</span>
           </div>
           <h2 className="mt-0.5 text-[18px] font-black text-slate-900 dark:text-white">
-            3-Phase Intentional Journal
+            3-Phase Intentional Chronicle
           </h2>
           <p className="text-[11.5px] text-slate-500 dark:text-slate-400 mt-0.5">
             {formatEvidenceDate(new Date())}
@@ -187,7 +190,8 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.2}
             onDragEnd={handleDragEnd}
-            className="touch-pan-y"
+            layout={false}
+            className="touch-pan-y gpu-layer"
           >
             {activePage === 1 && (
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 space-y-2">
