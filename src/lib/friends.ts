@@ -203,7 +203,7 @@ export async function connectByFriendCode(
       status: 'pending',
     });
     if (insertError) {
-      console.warn('friend code connect failed:', insertError.message);
+      if (import.meta.env.DEV) console.warn('friend code connect failed:', insertError.message);
       return { ok: false, message: 'Could not send request.' };
     }
     return { ok: true, message: 'Friend request sent.' };
@@ -218,7 +218,7 @@ export async function searchProfiles(query: string): Promise<ProfileDirectoryHit
   try {
     const { data, error } = await supabase.rpc('search_profiles', { query: q });
     if (error) {
-      console.warn('search_profiles failed:', error.message);
+      if (import.meta.env.DEV) console.warn('search_profiles failed:', error.message);
       return [];
     }
     return (data || [])
@@ -311,7 +311,7 @@ export async function fetchFriendships(userId: string): Promise<FriendEdge[]> {
       .or(`user_id.eq.${userId},friend_id.eq.${userId}`)
       .order('created_at', { ascending: false });
     if (error) {
-      console.warn('friendships fetch failed:', error.message);
+      if (import.meta.env.DEV) console.warn('friendships fetch failed:', error.message);
       return [];
     }
     const rows = data || [];
@@ -375,7 +375,7 @@ export async function sendFriendRequest(userId: string, friendId: string): Promi
       status: 'pending',
     });
     if (error) {
-      console.warn('friend request failed:', error.message);
+      if (import.meta.env.DEV) console.warn('friend request failed:', error.message);
       return { ok: false, message: 'Could not send request.' };
     }
     return { ok: true, message: 'Friend request sent.' };
@@ -538,7 +538,7 @@ export async function sendAffirmationGlow(
       if (String(error.message || '').toLowerCase().includes('duplicate') || error.code === '23505') {
         return { ok: true, message: 'Glow already sent.' };
       }
-      console.warn('affirmation glow failed:', error.message);
+      if (import.meta.env.DEV) console.warn('affirmation glow failed:', error.message);
       return { ok: false, message: 'Could not send glow.' };
     }
     return { ok: true, message: 'Affirmation Glow sent.' };
@@ -635,7 +635,7 @@ export async function fetchFriendTodayCompletionCounts(
     ]);
 
     if (error) {
-      console.warn('friend today counts fetch failed:', error.message);
+      if (import.meta.env.DEV) console.warn('friend today counts fetch failed:', error.message);
       return counts;
     }
 
@@ -676,7 +676,7 @@ export async function fetchFriendActivity(userId: string, edges: FriendEdge[]): 
     ]);
 
     if (error) {
-      console.warn('friend momentum_events fetch failed:', error.message);
+      if (import.meta.env.DEV) console.warn('friend momentum_events fetch failed:', error.message);
       return [];
     }
 

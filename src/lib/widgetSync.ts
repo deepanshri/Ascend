@@ -121,10 +121,13 @@ function habitStreak(habit: Habit, iso: string, momentumEvents: MomentumEvent[],
   for (let offset = 0; offset < 60; offset += 1) {
     const day = addDaysIso(iso, -offset);
     if (!isHabitScheduledOnIso(habit, day)) {
+      continue;
+    }
+    const score = bestScoreOnIso(habit.id, day, momentumEvents, completionEvents);
+    if (score <= 0) {
       if (offset === 0) continue;
       break;
     }
-    if (bestScoreOnIso(habit.id, day, momentumEvents, completionEvents) <= 0) break;
     streak += 1;
   }
   return streak;

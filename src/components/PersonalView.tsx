@@ -30,7 +30,20 @@ import { persistUserProfile } from '../lib/profile';
 import { AVATAR_OPTIONS, persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from '../data/avatars';
 import type { ProtectionModeStatus } from '../lib/protection';
 import { normalizeCategoryKey } from '../utils/quotes';
-import { ALL_INTEREST_CATEGORIES } from './SettingsModal';
+
+const ALL_INTEREST_CATEGORIES: { name: string; icon: string; key: string }[] = [
+  { name: 'Fitness & Gym', icon: '💪', key: 'Fitness/Gym' },
+  { name: 'Coding & Tech', icon: '💻', key: 'Coding/Tech' },
+  { name: 'Focus & Mindset', icon: '🧠', key: 'Focus/Mindset' },
+  { name: 'Motion Design', icon: '✨', key: 'Motion Design' },
+  { name: 'Language Learning', icon: '🗣️', key: 'Language Learning' },
+  { name: 'Running', icon: '🏃', key: 'Running' },
+  { name: 'Books', icon: '📚', key: 'Books' },
+  { name: 'Movies', icon: '🎬', key: 'Movies' },
+  { name: 'Anime', icon: '⚔️', key: 'Anime' },
+  { name: 'Music', icon: '🎵', key: 'Music' },
+  { name: 'Gaming', icon: '🎮', key: 'Gaming' },
+];
 
 interface PersonalViewProps {
   userSession: UserSession;
@@ -228,7 +241,24 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
 
   const handleSendFeedback = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!feedbackText.trim()) return;
+    const text = feedbackText.trim();
+    if (!text) return;
+
+    try {
+      const stored = localStorage.getItem('ascend_user_feedback_history');
+      const list = stored ? JSON.parse(stored) : [];
+      const updated = Array.isArray(list) ? list : [];
+      updated.push({
+        id: `fb-${Date.now()}`,
+        feedback: text,
+        timestamp: new Date().toISOString(),
+        email: userSession?.email || null,
+      });
+      localStorage.setItem('ascend_user_feedback_history', JSON.stringify(updated.slice(-50)));
+    } catch {
+      // Local storage full or private mode
+    }
+
     setFeedbackSent(true);
     if (feedbackTimerRef.current != null) window.clearTimeout(feedbackTimerRef.current);
     feedbackTimerRef.current = window.setTimeout(() => {

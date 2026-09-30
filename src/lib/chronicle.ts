@@ -34,7 +34,7 @@ export function saveEveningChronicleSettings(settings: EveningChronicleSettings)
   try {
     localStorage.setItem(EVENING_CHRONICLE_SETTINGS_KEY, JSON.stringify(settings));
   } catch (err) {
-    console.warn('Failed to save evening chronicle settings:', err);
+    if (import.meta.env.DEV) console.warn('Failed to save evening chronicle settings:', err);
   }
 }
 
@@ -156,7 +156,7 @@ export async function saveChronicleEntry(
     cached[isoDate] = payload;
     localStorage.setItem('ascend_chronicle', JSON.stringify(cached));
   } catch (err) {
-    console.warn('Failed to update ascend_chronicle cache:', err);
+    if (import.meta.env.DEV) console.warn('Failed to update ascend_chronicle cache:', err);
   }
 
   // Update local cache 'ascend_chronicle_entries' (90-day FIFO retention)
@@ -179,7 +179,7 @@ export async function saveChronicleEntry(
     }
     localStorage.setItem(CHRONICLE_STORAGE_KEY, JSON.stringify(trimmed));
   } catch (err) {
-    console.warn('Failed to update ascend_chronicle_entries cache:', err);
+    if (import.meta.env.DEV) console.warn('Failed to update ascend_chronicle_entries cache:', err);
   }
 
   // Remote sync to Supabase
@@ -190,7 +190,7 @@ export async function saveChronicleEntry(
     .upsert(payload, { onConflict: 'user_id,iso_date' });
 
   if (error) {
-    console.error('Failed to sync chronicle entry to Supabase:', error);
+    if (import.meta.env.DEV) console.error('Failed to sync chronicle entry to Supabase:', error);
   }
 }
 
@@ -232,7 +232,7 @@ export async function fetchRemoteChronicleEntries(): Promise<ChronicleEntriesMap
     localStorage.setItem(CHRONICLE_STORAGE_KEY, JSON.stringify(map));
     return map;
   } catch (err) {
-    console.warn('Failed to fetch remote chronicle entries:', err);
+    if (import.meta.env.DEV) console.warn('Failed to fetch remote chronicle entries:', err);
     return loadChronicleEntries();
   }
 }

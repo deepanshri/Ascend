@@ -1879,6 +1879,11 @@ setMomentumEvents((prev) =>
 
   // Clear Cache
   const handleClearCache = useCallback(() => {
+    localStorage.removeItem('ascend_reminders_cache');
+    localStorage.removeItem('ascend_habit_logs_cache');
+    localStorage.removeItem('ascend_chronicle_entries');
+    localStorage.removeItem('ascend_chronicle');
+    localStorage.removeItem('ascend_reminders');
     localStorage.removeItem('ascend_cache_timestamp');
   }, []);
 

@@ -193,7 +193,7 @@ export async function fetchHabitsFromTable(userId?: string | null): Promise<{
     );
 
     if (error) {
-      console.warn('Habits fetch failed:', error.message);
+      if (import.meta.env.DEV) console.warn('Habits fetch failed:', error.message);
       return { ok: false, habits: [], error: error.message };
     }
 
@@ -209,7 +209,7 @@ export async function fetchHabitsFromTable(userId?: string | null): Promise<{
 
     return { ok: true, habits };
   } catch (err) {
-    console.warn('Habits fetch offline:', err);
+    if (import.meta.env.DEV) console.warn('Habits fetch offline:', err);
     return { ok: false, habits: [], error: 'Offline or network error' };
   }
 }
@@ -235,12 +235,12 @@ export async function persistHabitsToTable(userId: string, habits: Habit[]): Pro
       error = retry.error;
     }
     if (error) {
-      console.warn('Habits upsert failed:', error.message);
+      if (import.meta.env.DEV) console.warn('Habits upsert failed:', error.message);
       return false;
     }
     return true;
   } catch (err) {
-    console.warn('Habits upsert offline:', err);
+    if (import.meta.env.DEV) console.warn('Habits upsert offline:', err);
     return false;
   }
 }
@@ -252,19 +252,19 @@ export async function purgeSeedHabitsFromTable(userId?: string | null): Promise<
   const uuidSeedIds = seedIds.filter(isUuid);
   try {
     const logs = await supabase.from('habit_logs').delete().eq('user_id', userId).in('habit_id', seedIds);
-    if (logs.error) console.warn('Seed habit_logs purge failed:', logs.error.message);
+    if (logs.error && import.meta.env.DEV) console.warn('Seed habit_logs purge failed:', logs.error.message);
     if (uuidSeedIds.length > 0) {
       const habits = await supabase.from('habits').delete().eq('user_id', userId).in('id', uuidSeedIds);
-      if (habits.error) console.warn('Seed habits purge failed:', habits.error.message);
+      if (habits.error && import.meta.env.DEV) console.warn('Seed habits purge failed:', habits.error.message);
     }
     const onboardingLogs = await supabase
       .from('habit_logs')
       .delete()
       .eq('user_id', userId)
       .like('habit_id', 'habit-onboarding-%');
-    if (onboardingLogs.error) console.warn('Onboarding habit_logs purge failed:', onboardingLogs.error.message);
+    if (onboardingLogs.error && import.meta.env.DEV) console.warn('Onboarding habit_logs purge failed:', onboardingLogs.error.message);
   } catch (err) {
-    console.warn('Seed habit purge offline:', err);
+    if (import.meta.env.DEV) console.warn('Seed habit purge offline:', err);
   }
 }
 
@@ -288,12 +288,12 @@ export async function countActiveHabitsRemote(userId?: string | null): Promise<n
     }
 
     if (error) {
-      console.warn('Active habit count failed:', error.message);
+      if (import.meta.env.DEV) console.warn('Active habit count failed:', error.message);
       return null;
     }
     return count ?? 0;
   } catch (err) {
-    console.warn('Active habit count offline:', err);
+    if (import.meta.env.DEV) console.warn('Active habit count offline:', err);
     return null;
   }
 }
@@ -306,7 +306,7 @@ export async function insertHabitToSupabase(
   if (!canSync(userId) || !supabase) return false;
   const remoteCount = await countActiveHabitsRemote(userId);
   if (remoteCount != null && remoteCount >= MAX_ACTIVE_HABITS && !habit.archived) {
-    console.warn(`Maximum limit of ${MAX_ACTIVE_HABITS} active habits reached.`);
+    if (import.meta.env.DEV) console.warn(`Maximum limit of ${MAX_ACTIVE_HABITS} active habits reached.`);
     return false;
   }
   try {
@@ -317,12 +317,12 @@ export async function insertHabitToSupabase(
       error = retry.error;
     }
     if (error) {
-      console.warn('Habit insert failed:', error.message);
+      if (import.meta.env.DEV) console.warn('Habit insert failed:', error.message);
       return false;
     }
     return true;
   } catch (err) {
-    console.warn('Habit insert offline:', err);
+    if (import.meta.env.DEV) console.warn('Habit insert offline:', err);
     return false;
   }
 }
@@ -348,7 +348,7 @@ export async function deleteHabit(
 
     if (!rpcErr) return true;
 
-    console.warn('delete_habit_cascade RPC failed, attempting direct table delete:', rpcErr);
+    if (import.meta.env.DEV) console.warn('delete_habit_cascade RPC failed, attempting direct table delete:', rpcErr);
 
     // Fallback: Direct table deletion
     const { error } = await supabase
@@ -357,12 +357,12 @@ export async function deleteHabit(
       .eq('id', habitId);
 
     if (error) {
-      console.error('Direct habit deletion failed:', error);
+      if (import.meta.env.DEV) console.error('Direct habit deletion failed:', error);
       return false;
     }
     return true;
   } catch (err) {
-    console.error('Error during habit deletion:', err);
+    if (import.meta.env.DEV) console.error('Error during habit deletion:', err);
     return false;
   }
 }
@@ -397,7 +397,7 @@ export async function fetchHabitLogsForDate(
     }
 
     if (error) {
-      console.warn('habit_logs date fetch failed:', error.message);
+      if (import.meta.env.DEV) console.warn('habit_logs date fetch failed:', error.message);
       return [];
     }
 
@@ -405,7 +405,7 @@ export async function fetchHabitLogsForDate(
       .map((row) => mapHabitLogRowToEvent(row))
       .filter((event): event is HabitCompletionEvent => event !== null && !isSeedHabitId(event.habitId));
   } catch (err) {
-    console.warn('habit_logs date fetch offline:', err);
+    if (import.meta.env.DEV) console.warn('habit_logs date fetch offline:', err);
     return [];
   }
 }
@@ -440,10 +440,12 @@ export async function fetchHabitLogsForDateRange(
       .lte('date', endIso);
 
     if (byLogged.error && byDate.error) {
-      console.warn(
-        'habit_logs range fetch failed:',
-        byLogged.error.message || byDate.error.message
-      );
+      if (import.meta.env.DEV) {
+        console.warn(
+          'habit_logs range fetch failed:',
+          byLogged.error.message || byDate.error.message
+        );
+      }
       return [];
     }
 
@@ -465,7 +467,7 @@ export async function fetchHabitLogsForDateRange(
         return Boolean(iso && iso >= startIso && iso <= endIso);
       });
   } catch (err) {
-    console.warn('habit_logs range fetch offline:', err);
+    if (import.meta.env.DEV) console.warn('habit_logs range fetch offline:', err);
     return [];
   }
 }
@@ -526,9 +528,9 @@ export async function persistHabitLogFrictionReason(
       },
       { onConflict: 'habit_id,logged_date' }
     );
-    if (error) console.warn('habit_logs friction_reason upsert failed:', error.message);
+    if (error && import.meta.env.DEV) console.warn('habit_logs friction_reason upsert failed:', error.message);
   } catch (err) {
-    console.warn('habit_logs friction_reason persist offline:', err);
+    if (import.meta.env.DEV) console.warn('habit_logs friction_reason persist offline:', err);
   }
 }
 
@@ -544,7 +546,7 @@ export async function fetchFrictionReasonsFromTable(
       .not('friction_reason', 'is', null);
 
     if (error) {
-      console.warn('habit_logs friction fetch failed:', error.message);
+      if (import.meta.env.DEV) console.warn('habit_logs friction fetch failed:', error.message);
       return [];
     }
 
@@ -558,7 +560,7 @@ export async function fetchFrictionReasonsFromTable(
       })
       .filter((row): row is { habitId: string; loggedDate: string; reason: string } => row !== null);
   } catch (err) {
-    console.warn('habit_logs friction fetch offline:', err);
+    if (import.meta.env.DEV) console.warn('habit_logs friction fetch offline:', err);
     return [];
   }
 }
@@ -578,7 +580,7 @@ export async function fetchHabitLogsForExport(userId?: string | null): Promise<H
   try {
     const { data, error } = await supabase.from('habit_logs').select('*').eq('user_id', userId);
     if (error) {
-      console.warn('habit_logs export fetch failed:', error.message);
+      if (import.meta.env.DEV) console.warn('habit_logs export fetch failed:', error.message);
       return [];
     }
     return (data || [])
@@ -602,7 +604,7 @@ export async function fetchHabitLogsForExport(userId?: string | null): Promise<H
       })
       .filter((row): row is HabitLogExportRow => row !== null);
   } catch (err) {
-    console.warn('habit_logs export fetch offline:', err);
+    if (import.meta.env.DEV) console.warn('habit_logs export fetch offline:', err);
     return [];
   }
 }

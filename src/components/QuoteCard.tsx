@@ -42,7 +42,7 @@ async function fetchQuotesFromSupabase(categories: string[]): Promise<Quote[]> {
       .in('category', uniqueCategories);
 
     if (error) {
-      console.warn('quotes category filter failed:', error.message);
+      if (import.meta.env.DEV) console.warn('quotes category filter failed:', error.message);
       const overlap = uniqueCategories
         .map((item) => item.replace(/[,()]/g, ''))
         .filter(Boolean)
@@ -56,7 +56,7 @@ async function fetchQuotesFromSupabase(categories: string[]): Promise<Quote[]> {
     }
 
     if (error) {
-      console.warn('quotes fetch failed:', error.message);
+      if (import.meta.env.DEV) console.warn('quotes fetch failed:', error.message);
       return [];
     }
 
@@ -67,7 +67,7 @@ async function fetchQuotesFromSupabase(categories: string[]): Promise<Quote[]> {
     const matched = mapped.filter((quote) => matchesCategory(quote.category, uniqueCategories));
     return matched;
   } catch (err) {
-    console.warn('quotes fetch offline:', err);
+    if (import.meta.env.DEV) console.warn('quotes fetch offline:', err);
     return [];
   }
 }

@@ -62,7 +62,8 @@ export function resolveMomentumEventDate(event: MomentumEvent): string {
  * observation = (eventScore * eventWeight / 1.5) * 100
  * nextScore   = clamp(prevScore * (1 - δ) + observation * δ, 0, 100)
  *
- * eventScore is 1 | 0.5 | 0 and eventWeight is 1.5 (W) | 1.0 (SI).
+ * eventScore is 1 (full) | 0.5 (fallback) | 0 (missed).
+ * Dynamic Priority Weight Multipliers: High = 1.5x, Medium = 1.0x, Low = 0.7x.
  */
 export function applyRollingMomentumStep(
   prevScore: number,
@@ -92,7 +93,9 @@ export function applyMomentumDecayStep(
 }
 
 /**
- * Reversal step: Inverts the observation added by a previous completion event.
+ * Reversal step: Legacy mathematical reversal for single-step evaluations.
+ * In rolling replay (calculateMomentumScore), event-pair cancellation via
+ * filterReversedMomentumEvents takes precedence to eliminate division drift.
  * nextScore = clamp((prevScore - observation * δ) / (1 - δ), 0, 100)
  */
 export function applyReversalMomentumStep(

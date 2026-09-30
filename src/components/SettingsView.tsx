@@ -65,7 +65,14 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
   onScroll,
   onOpenSettings,
 }) => {
-  const [startMonday, setStartMonday] = useState(true);
+  const [startMonday, setStartMonday] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ascend_start_monday');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [cacheFeedback, setCacheFeedback] = useState(false);
@@ -373,7 +380,15 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
           </div>
           <button
             type="button"
-            onClick={() => setStartMonday(!startMonday)}
+            role="switch"
+            aria-checked={startMonday}
+            onClick={() => {
+              const next = !startMonday;
+              setStartMonday(next);
+              try {
+                localStorage.setItem('ascend_start_monday', String(next));
+              } catch {}
+            }}
             className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition duration-200 cursor-pointer ${
               startMonday ? 'bg-emerald-600 dark:bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
             }`}

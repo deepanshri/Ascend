@@ -92,10 +92,10 @@ export async function insertMomentumEvent(record: MomentumEventInsert): Promise<
     if (!error) return true;
     const code = (error as { code?: string }).code;
     if (code === '23505' || /duplicate/i.test(error.message)) return true;
-    console.warn('momentum_events insert failed:', error.message);
+    if (import.meta.env.DEV) console.warn('momentum_events insert failed:', error.message);
     return false;
   } catch (err) {
-    console.warn('momentum_events insert offline:', err);
+    if (import.meta.env.DEV) console.warn('momentum_events insert offline:', err);
     return false;
   }
 }
@@ -121,7 +121,7 @@ export async function fetchSequentialMomentumEvents(
       : { data, error };
 
     if (query.error) {
-      console.warn('momentum_events fetch failed:', query.error.message);
+      if (import.meta.env.DEV) console.warn('momentum_events fetch failed:', query.error.message);
       return [];
     }
 
@@ -143,7 +143,7 @@ export async function fetchSequentialMomentumEvents(
       })
       .filter((row): row is NonNullable<typeof row> => row !== null);
   } catch (err) {
-    console.warn('momentum_events fetch offline:', err);
+    if (import.meta.env.DEV) console.warn('momentum_events fetch offline:', err);
     return [];
   }
 }
@@ -159,12 +159,12 @@ export async function countMomentumCompletedActions(userId?: string | null): Pro
       .in('event_type', ['full', 'fallback']);
 
     if (error) {
-      console.warn('momentum_events count failed:', error.message);
+      if (import.meta.env.DEV) console.warn('momentum_events count failed:', error.message);
       return null;
     }
     return count ?? 0;
   } catch (err) {
-    console.warn('momentum_events count offline:', err);
+    if (import.meta.env.DEV) console.warn('momentum_events count offline:', err);
     return null;
   }
 }
@@ -303,7 +303,7 @@ export const authService = {
     }
     try {
       const { data, error } = await supabase.auth.getSession();
-      if (error) console.warn('Auth getSession failed:', error.message);
+      if (error && import.meta.env.DEV) console.warn('Auth getSession failed:', error.message);
       if (data?.session?.user) {
         const session = sessionFromAuthUser(
           data.session.user,
@@ -320,7 +320,7 @@ export const authService = {
       if (stored && !stored.isGuest) return 'pending';
       return null;
     } catch (err) {
-      console.warn('Auth restore offline:', err);
+      if (import.meta.env.DEV) console.warn('Auth restore offline:', err);
       if (stored?.isGuest || stored?.id?.startsWith('guest_')) {
         setStoredSession(null);
         return null;
@@ -473,7 +473,7 @@ export const authService = {
     try {
       const { error } = await supabase.rpc('delete_own_account');
       if (error) {
-        console.warn('delete_own_account RPC error:', error.message);
+        if (import.meta.env.DEV) console.warn('delete_own_account RPC error:', error.message);
         return error.message || 'Account deletion failed. Please contact support.';
       }
       try {
@@ -484,7 +484,7 @@ export const authService = {
       setStoredSession(null);
       return null;
     } catch (err) {
-      console.warn('deleteAccount error:', err);
+      if (import.meta.env.DEV) console.warn('deleteAccount error:', err);
       return err instanceof Error ? err.message : 'Account deletion failed.';
     }
   },
@@ -645,14 +645,14 @@ export async function fetchPublicReminders(userId?: string | null): Promise<Stan
   try {
     const { data, error } = await supabase.from('reminders').select('*').eq('user_id', userId);
     if (error) {
-      console.warn('public.reminders fetch failed:', error.message);
+      if (import.meta.env.DEV) console.warn('public.reminders fetch failed:', error.message);
       return null;
     }
     return ((data || []) as ReminderRow[])
       .map((row) => fromReminderRow(row))
       .filter((item) => !item.deleted);
   } catch (err) {
-    console.warn('public.reminders fetch offline:', err);
+    if (import.meta.env.DEV) console.warn('public.reminders fetch offline:', err);
     return null;
   }
 }
@@ -673,15 +673,15 @@ export async function upsertPublicReminder(
   try {
     const { error } = await supabase.from('reminders').upsert(full);
     if (!error) return true;
-    console.warn('public.reminders upsert failed, retrying core columns:', error.message);
+    if (import.meta.env.DEV) console.warn('public.reminders upsert failed, retrying core columns:', error.message);
     const retry = await supabase.from('reminders').upsert(core);
     if (retry.error) {
-      console.warn('public.reminders core upsert failed:', retry.error.message);
+      if (import.meta.env.DEV) console.warn('public.reminders core upsert failed:', retry.error.message);
       return false;
     }
     return true;
   } catch (err) {
-    console.warn('public.reminders upsert offline:', err);
+    if (import.meta.env.DEV) console.warn('public.reminders upsert offline:', err);
     return false;
   }
 }
@@ -711,7 +711,7 @@ export const remindersSyncService = {
     try {
       const remote = await fetchRemoteReminderRows(userSession.id);
       if ('error' in remote) {
-        console.warn('Supabase reminders table query note:', remote.error);
+        if (import.meta.env.DEV) console.warn('Supabase reminders table query note:', remote.error);
         await rescheduleAllReminderDualAlerts(hydratedLocal);
         return {
           reminders: hydratedLocal.filter((item) => !item.deleted),
@@ -767,16 +767,16 @@ export const remindersSyncService = {
       if (toUpsertToRemote.length > 0) {
         const { error: upsertError } = await supabase.from(remote.table).upsert(toUpsertToRemote);
         if (upsertError && remote.table === 'reminders') {
-          console.warn('Supabase reminders upsert note, retrying core columns:', upsertError.message);
+          if (import.meta.env.DEV) console.warn('Supabase reminders upsert note, retrying core columns:', upsertError.message);
           const coreRows = hydratedLocal
             .filter((item) => toUpsertToRemote.some((row) => row.id === item.id))
             .map((item) => toPublicReminderCoreRow(userSession.id, item));
           const retry = await supabase.from('reminders').upsert(coreRows);
           if (retry.error) {
-            console.warn('Supabase reminders core upsert note:', retry.error.message);
+            if (import.meta.env.DEV) console.warn('Supabase reminders core upsert note:', retry.error.message);
           }
         } else if (upsertError) {
-          console.warn('Supabase reminders upsert note:', upsertError.message);
+          if (import.meta.env.DEV) console.warn('Supabase reminders upsert note:', upsertError.message);
         }
       }
 
@@ -792,7 +792,7 @@ export const remindersSyncService = {
         lastSyncedAt: now,
       };
     } catch (err) {
-      console.warn('Supabase LWW sync fallback:', err);
+      if (import.meta.env.DEV) console.warn('Supabase LWW sync fallback:', err);
       await rescheduleAllReminderDualAlerts(hydratedLocal);
       return {
         reminders: hydratedLocal.filter((item) => !item.deleted),
