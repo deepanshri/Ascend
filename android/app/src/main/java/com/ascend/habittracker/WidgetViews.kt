@@ -39,6 +39,7 @@ object WidgetViews {
 
     fun updateReport(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val snapshot = WidgetStore.readSnapshot(context)
+        val palette = WidgetTheme.palette(snapshot)
         val dark = WidgetTheme.isAppDark(snapshot)
         val work = snapshot.optDouble("workRate", 0.0).toFloat()
         val self = snapshot.optDouble("selfRate", 0.0).toFloat()
@@ -54,6 +55,7 @@ object WidgetViews {
 
         appWidgetIds.forEach { id ->
             val views = RemoteViews(context.packageName, R.layout.widget_report_ring)
+            applyReportTheme(views, palette)
             views.setImageViewBitmap(R.id.widget_report_rings, drawRings(work, self, sleep, dark))
             views.setTextViewText(R.id.widget_report_score, score.toString())
             views.setTextViewText(R.id.widget_report_label, "MOMENTUM")
@@ -164,6 +166,7 @@ object WidgetViews {
 
     fun updateIdentity(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val snapshot = WidgetStore.readSnapshot(context)
+        val palette = WidgetTheme.palette(snapshot)
         val today = LocalDate.now().toString()
         val fresh = snapshot.optString("todayIso") == today
         val identity = snapshot.optJSONObject("identity") ?: JSONObject()
@@ -172,6 +175,7 @@ object WidgetViews {
 
         appWidgetIds.forEach { id ->
             val views = RemoteViews(context.packageName, R.layout.widget_identity)
+            applyIdentityTheme(views, palette)
             views.setTextViewText(R.id.widget_identity_kicker, "TODAY'S LEDGER")
             views.setTextViewText(R.id.widget_identity_points, "$points pts")
             views.setViewVisibility(R.id.widget_identity_empty, if (lines.length() == 0) View.VISIBLE else View.GONE)
@@ -309,6 +313,24 @@ object WidgetViews {
         views.setTextColor(R.id.widget_reminders_empty, palette.muted)
         views.setInt(R.id.widget_tasks_add, "setBackgroundResource", palette.fabBg)
         views.setTextColor(R.id.widget_tasks_add, palette.accent)
+    }
+
+    private fun applyReportTheme(views: RemoteViews, palette: WidgetTheme.Palette) {
+        views.setInt(R.id.widget_report_root, "setBackgroundResource", palette.cardBg)
+        views.setTextColor(R.id.widget_report_score, palette.text)
+        views.setTextColor(R.id.widget_report_label, palette.muted)
+        views.setTextColor(R.id.widget_report_progress, palette.subtext)
+    }
+
+    private fun applyIdentityTheme(views: RemoteViews, palette: WidgetTheme.Palette) {
+        views.setInt(R.id.widget_identity_root, "setBackgroundResource", palette.cardBg)
+        views.setTextColor(R.id.widget_identity_kicker, palette.muted)
+        views.setTextColor(R.id.widget_identity_points, palette.accent)
+        views.setTextColor(R.id.widget_identity_empty, palette.muted)
+        views.setTextColor(R.id.widget_identity_line_1, palette.text)
+        views.setTextColor(R.id.widget_identity_line_2, palette.text)
+        views.setTextColor(R.id.widget_identity_line_3, palette.text)
+        views.setTextColor(R.id.widget_identity_line_4, palette.text)
     }
 
     private fun openApp(context: Context, url: String, requestCode: Int): PendingIntent {

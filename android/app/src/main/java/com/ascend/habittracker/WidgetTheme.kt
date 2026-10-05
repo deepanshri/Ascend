@@ -14,6 +14,7 @@ object WidgetTheme {
         val cardBg: Int,
         val pillBg: Int,
         val fabBg: Int,
+        val subtext: Int = muted,
     )
 
     private val light = Palette(
@@ -23,6 +24,7 @@ object WidgetTheme {
         cardBg = R.drawable.widget_card_bg_light,
         pillBg = R.drawable.shape_rounded_pill_light,
         fabBg = R.drawable.widget_fab_circle_light,
+        subtext = 0xFF64748B.toInt(),
     )
 
     private val dark = Palette(
@@ -32,6 +34,7 @@ object WidgetTheme {
         cardBg = R.drawable.widget_card_bg_dark,
         pillBg = R.drawable.shape_rounded_pill_dark,
         fabBg = R.drawable.widget_fab_circle_dark,
+        subtext = 0xFF94A3B8.toInt(),
     )
 
     fun isAppDark(snapshot: JSONObject): Boolean = snapshot.optBoolean("dark", false)
