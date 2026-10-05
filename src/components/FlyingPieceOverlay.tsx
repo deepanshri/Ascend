@@ -294,7 +294,7 @@ let cachedBowlRect: { rect: DOMRect; timestamp: number } | null = null;
 
 function getCachedBowlRect(): DOMRect | null {
   const now = Date.now();
-  if (cachedBowlRect && now - cachedBowlRect.timestamp < 1000) {
+  if (cachedBowlRect && now - cachedBowlRect.timestamp < 100) {
     return cachedBowlRect.rect;
   }
   const bowlFrame = document.getElementById('accumulation-bowl-frame');
@@ -309,9 +309,20 @@ function getCachedBowlRect(): DOMRect | null {
   return null;
 }
 
+export function isBowlElementOffscreen(): boolean {
+  if (typeof document === 'undefined') return false;
+  const bowlFrame = document.getElementById('accumulation-bowl-frame');
+  const bowl = bowlFrame || document.getElementById('accumulation-bowl');
+  if (!bowl) return false;
+  const r = bowl.getBoundingClientRect();
+  const screenH = typeof window !== 'undefined' ? window.innerHeight : 844;
+  return r.bottom <= 60 || r.top >= screenH;
+}
+
 export function measureCompletionFlight(
   habitId: string,
-  customOrigin?: { x: number; y: number; touchRatio?: number }
+  customOrigin?: { x: number; y: number; touchRatio?: number },
+  isBowlOffscreen?: boolean
 ): { from: { x: number; y: number }; to: { x: number; y: number }; touchRatio: number } {
   const screenW = typeof window !== 'undefined' ? window.innerWidth : 390;
   const screenH = typeof window !== 'undefined' ? window.innerHeight : 844;
@@ -340,17 +351,34 @@ export function measureCompletionFlight(
 
   touchRatio = Math.max(0, Math.min(1, touchRatio));
 
-  // Small lateral jitter only — keep Y on the rim so the drop stays vertical.
-  const rimJitterX = (Math.random() - 0.5) * 10;
+  const offscreen = isBowlOffscreen ?? isBowlElementOffscreen();
 
-  let toX = screenW * 0.5 + rimJitterX;
-  // Fallback: bowl rim visual height ≈ 35% of screen height
-  let toY = screenH * 0.35;
+  let toX: number;
+  let toY: number;
 
-  const b = getCachedBowlRect();
-  if (b) {
-    toX = b.left + b.width * 0.5 + rimJitterX;
-    toY = b.top + b.height * 0.2;
+  if (offscreen) {
+    const ghostTarget = typeof document !== 'undefined' ? document.getElementById('scrolled-bowl-target') : null;
+    if (ghostTarget) {
+      const gr = ghostTarget.getBoundingClientRect();
+      toX = gr.left + gr.width * 0.5 + (Math.random() - 0.5) * 4;
+      toY = gr.top + gr.height * 0.5;
+    } else {
+      // Default top-right floating ghost overlay coordinates (fixed top-4 right-4)
+      toX = Math.max(40, screenW - 56) + (Math.random() - 0.5) * 4;
+      toY = 32;
+    }
+  } else {
+    // Small lateral jitter only — keep Y on the rim so the drop stays vertical.
+    const rimJitterX = (Math.random() - 0.5) * 10;
+    toX = screenW * 0.5 + rimJitterX;
+    // Fallback: bowl rim visual height ≈ 35% of screen height
+    toY = screenH * 0.35;
+
+    const b = getCachedBowlRect();
+    if (b) {
+      toX = b.left + b.width * 0.5 + rimJitterX;
+      toY = b.top + b.height * 0.2;
+    }
   }
 
   return {

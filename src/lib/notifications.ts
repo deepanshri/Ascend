@@ -31,6 +31,7 @@ export const NOTIFICATION_WINDOWS_KEY = 'ascend_psychology_notifications';
 
 const CHANNEL_ID = 'ascend-momentum';
 export const REMINDER_CHANNEL_ID = 'ascend_reminders';
+export const NOTIFICATION_SMALL_ICON = 'ic_stat_notification';
 const NOTIFICATION_IDS = {
   morning: 81000,
   afternoon: 81300,
@@ -251,6 +252,7 @@ export async function schedulePsychologyNotifications(input: PsychologyScheduleI
       title: morning.title,
       body: morning.body,
       channelId: CHANNEL_ID,
+      smallIcon: NOTIFICATION_SMALL_ICON,
       schedule: dailyWindow(8, 0),
     });
   }
@@ -261,6 +263,7 @@ export async function schedulePsychologyNotifications(input: PsychologyScheduleI
       title: afternoon.title,
       body: afternoon.body,
       channelId: CHANNEL_ID,
+      smallIcon: NOTIFICATION_SMALL_ICON,
       schedule: dailyWindow(13, 30),
     });
   }
@@ -271,6 +274,7 @@ export async function schedulePsychologyNotifications(input: PsychologyScheduleI
       title: night.title,
       body: night.body,
       channelId: CHANNEL_ID,
+      smallIcon: NOTIFICATION_SMALL_ICON,
       schedule: dailyWindow(20, 30),
     });
   }
@@ -432,6 +436,7 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
       title: prior.title,
       body: prior.body,
       channelId: REMINDER_CHANNEL_ID,
+      smallIcon: NOTIFICATION_SMALL_ICON,
       extra: { reminderId: hydrated.id, kind: 'prior' },
       schedule: { at: tenMinBefore, allowWhileIdle: true },
     });
@@ -444,6 +449,7 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
       title: exact.title,
       body: exact.body,
       channelId: REMINDER_CHANNEL_ID,
+      smallIcon: NOTIFICATION_SMALL_ICON,
       extra: { reminderId: hydrated.id, kind: 'exact' },
       schedule: { at: target, allowWhileIdle: true },
     });
@@ -521,6 +527,7 @@ export async function scheduleHabitTargetTimeNotification(habit: Habit): Promise
           title: targetPayload.title,
           body: targetPayload.body,
           channelId: CHANNEL_ID,
+          smallIcon: NOTIFICATION_SMALL_ICON,
           extra: { habitId: habit.id, kind: 'habit_target' },
           schedule: {
             on: { hour: parsed.hour, minute: parsed.minute },

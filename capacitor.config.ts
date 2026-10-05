@@ -24,6 +24,7 @@ const config: CapacitorConfig = {
       splashImmersive: true,
     },
     LocalNotifications: {
+      smallIcon: 'ic_stat_notification',
       iconColor: '#23C15D',
     },
     Keyboard: {

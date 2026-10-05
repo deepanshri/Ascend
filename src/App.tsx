@@ -175,6 +175,7 @@ import FlyingPieceOverlay, {
   type FlightHandoffVelocity,
   type PieceFlight,
 } from './components/FlyingPieceOverlay';
+import { ScrolledBowlOverlay } from './components/ScrolledBowlOverlay';
 import {
   isCompletionSoundEnabled,
   isHapticVibrationEnabled,
@@ -558,6 +559,9 @@ export default function App() {
   );
   const [completionSound, setCompletionSound] = useState(() => isCompletionSoundEnabled());
   const [hapticVibration, setHapticVibration] = useState(() => isHapticVibrationEnabled());
+  const [isBowlOffscreen, setIsBowlOffscreen] = useState(false);
+  const [bowlArrivalPulse, setBowlArrivalPulse] = useState(false);
+  const bowlArrivalPulseTimerRef = useRef<number | null>(null);
   const settleTimersRef = useRef<Map<string, number>>(new Map());
   const [celebrationPieces, setCelebrationPieces] = useState<AccumulationPiece[] | null>(null);
   const bowlCelebrateLockRef = useRef(false);
@@ -1620,7 +1624,7 @@ setMomentumEvents((prev) =>
       const pieceId = `${habitId}::${loggedDate}`;
       try {
         const swipeDir = isMicro ? 'left' : 'right';
-        const points = measureCompletionFlight(habitId, originCoord);
+        const points = measureCompletionFlight(habitId, originCoord, isBowlOffscreen);
         const themeDark = getThemeIsDark();
         // Same isMicro boolean as habit_logs.type — light vs solid marble shade.
         const flightColor =
@@ -2149,6 +2153,10 @@ setMomentumEvents((prev) =>
   const handlePieceFlightComplete = useCallback(
     (flightId: string, pieceId: string, handoff: FlightHandoffVelocity) => {
       void pulseCompletionHaptic('fallback');
+      // Pulse floating overlay on marble arrival
+      setBowlArrivalPulse(true);
+      if (bowlArrivalPulseTimerRef.current) window.clearTimeout(bowlArrivalPulseTimerRef.current);
+      bowlArrivalPulseTimerRef.current = window.setTimeout(() => setBowlArrivalPulse(false), 600);
       // Same React batch: mount bowl marble at rim with V_terminal, then unmount overlay
       setSettleHandoffs((prev) => {
         const next = new Map(prev);
@@ -2565,6 +2573,15 @@ setMomentumEvents((prev) =>
         else if (delta < -8) nextVisible = true;
 
         lastScrollYRef.current = currentScrollY;
+
+        // Immediate check if bowl frame has scrolled off-screen
+        const frame = document.getElementById('accumulation-bowl-frame');
+        if (frame) {
+          const r = frame.getBoundingClientRect();
+          const isOff = r.bottom <= 60;
+          setIsBowlOffscreen((prev) => (prev !== isOff ? isOff : prev));
+        }
+
         if (nextVisible === navScrollVisibleRef.current) return;
         navScrollVisibleRef.current = nextVisible;
         syncNavChrome();
@@ -2572,6 +2589,58 @@ setMomentumEvents((prev) =>
     },
     [syncNavChrome]
   );
+
+  const handleScrollToTop = useCallback(() => {
+    const mainEl = document.getElementById('app-main-content');
+    if (mainEl) {
+      mainEl.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, []);
+
+  // Track viewport visibility of primary 3D bowl frame
+  useEffect(() => {
+    if (!isTabActive('home')) {
+      setIsBowlOffscreen(false);
+      return;
+    }
+
+    const checkBowlVisibility = () => {
+      const frame = document.getElementById('accumulation-bowl-frame');
+      const root = document.getElementById('app-main-content');
+      if (!frame || !root) return;
+      const r = frame.getBoundingClientRect();
+      const rootRect = root.getBoundingClientRect();
+      const isOff = r.bottom <= rootRect.top + 20;
+      setIsBowlOffscreen((prev) => (prev !== isOff ? isOff : prev));
+    };
+
+    const frame = document.getElementById('accumulation-bowl-frame');
+    const root = document.getElementById('app-main-content');
+    if (!frame || !root) {
+      const timer = window.setTimeout(checkBowlVisibility, 150);
+      return () => window.clearTimeout(timer);
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return;
+        const rootBounds = entry.rootBounds;
+        const isOff = !entry.isIntersecting && entry.boundingClientRect.bottom <= (rootBounds ? rootBounds.top + 20 : 60);
+        setIsBowlOffscreen((prev) => (prev !== isOff ? isOff : prev));
+      },
+      {
+        root,
+        threshold: [0, 0.1],
+      }
+    );
+
+    observer.observe(frame);
+    checkBowlVisibility();
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [isTabActive('home'), viewResetKey]);
 
   // Spotlight tutorial: only after onboarding, and only if the profile flag is false
   useEffect(() => {
@@ -2867,6 +2936,15 @@ setMomentumEvents((prev) =>
 
 
         <FlyingPieceOverlay flights={pieceFlights} onFlightComplete={handlePieceFlightComplete} />
+        <ScrolledBowlOverlay
+          isVisible={isTabActive('home') && isBowlOffscreen && !longPressedHabitId && !isAnyModalOpen}
+          votes={bowlFill.votes}
+          capacity={bowlFill.capacity}
+          fillPercent={bowlFill.fillPercent}
+          hasActiveFlight={pieceFlights.length > 0}
+          isPulsing={bowlArrivalPulse}
+          onScrollToTop={handleScrollToTop}
+        />
         </ErrorBoundary>
 
         {/* Floating Bottom Navigation: hide on scroll, keyboard, or modal */}
