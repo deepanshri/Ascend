@@ -9,6 +9,7 @@ export interface ScrolledBowlOverlayProps {
   fillPercent?: number;
   hasActiveFlight?: boolean;
   isPulsing?: boolean;
+  identityStatement?: string | null;
   onScrollToTop: () => void;
 }
 
@@ -19,9 +20,18 @@ export const ScrolledBowlOverlay: React.FC<ScrolledBowlOverlayProps> = ({
   fillPercent = 0,
   hasActiveFlight = false,
   isPulsing = false,
+  identityStatement,
   onScrollToTop,
 }) => {
   const roundedFill = Math.round(fillPercent);
+  const [showIdentityVote, setShowIdentityVote] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!isPulsing || !identityStatement) return;
+    setShowIdentityVote(true);
+    const timer = window.setTimeout(() => setShowIdentityVote(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, [isPulsing, identityStatement]);
 
   return (
     <AnimatePresence>
@@ -83,16 +93,29 @@ export const ScrolledBowlOverlay: React.FC<ScrolledBowlOverlayProps> = ({
           </div>
 
           {/* Progress / Votes details */}
-          <div className="flex flex-col text-left leading-tight">
-            <span className="text-[11px] font-bold tabular-nums text-slate-800 dark:text-slate-100 flex items-center gap-1">
-              {votes}/{capacity}
-              <span className="text-[9px] font-medium text-slate-500 dark:text-slate-400">
-                ({roundedFill}%)
-              </span>
-            </span>
-            <span className="text-[9px] font-medium text-emerald-600 dark:text-emerald-400">
-              Bowl active
-            </span>
+          <div className="flex flex-col text-left leading-tight min-w-0 max-w-[160px]">
+            {showIdentityVote && identityStatement ? (
+              <>
+                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 truncate">
+                  +1 Vote!
+                </span>
+                <span className="text-[9px] font-medium text-slate-600 dark:text-slate-300 italic truncate">
+                  &ldquo;{identityStatement}&rdquo;
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-[11px] font-bold tabular-nums text-slate-800 dark:text-slate-100 flex items-center gap-1">
+                  {votes}/{capacity}
+                  <span className="text-[9px] font-medium text-slate-500 dark:text-slate-400">
+                    ({roundedFill}%)
+                  </span>
+                </span>
+                <span className="text-[9px] font-medium text-emerald-600 dark:text-emerald-400">
+                  Bowl active
+                </span>
+              </>
+            )}
           </div>
 
           {/* Quick scroll-to-top cue */}

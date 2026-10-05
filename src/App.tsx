@@ -35,9 +35,11 @@ import {
 import { appendMomentumEventRemote, loadLocalMomentumEvents, MOMENTUM_EVENTS_STORAGE_KEY, saveLocalMomentumEvents } from './lib/momentumEvents';
 import {
   addDaysIso,
+  dayIndexForIso,
   diffDaysIso,
   endOfIsoDate,
   formatEvidenceDate,
+  formatIsoShort,
   getTodayDayIndex,
   getWeekDates,
   isIsoDate,
@@ -176,6 +178,7 @@ import FlyingPieceOverlay, {
   type PieceFlight,
 } from './components/FlyingPieceOverlay';
 import { ScrolledBowlOverlay } from './components/ScrolledBowlOverlay';
+import { IdentityNudgeToast } from './components/IdentityNudgeToast';
 import {
   isCompletionSoundEnabled,
   isHapticVibrationEnabled,
@@ -562,6 +565,19 @@ export default function App() {
   const [isBowlOffscreen, setIsBowlOffscreen] = useState(false);
   const [bowlArrivalPulse, setBowlArrivalPulse] = useState(false);
   const bowlArrivalPulseTimerRef = useRef<number | null>(null);
+  const [activeNudgeIdentity, setActiveNudgeIdentity] = useState<string | null>(null);
+  const activeNudgeTimerRef = useRef<number | null>(null);
+  const [rolledOverHabits, setRolledOverHabits] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('ascend_rolled_over_habits');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.date === getLocalDateString() && Array.isArray(parsed.habitIds)) {
+        return parsed.habitIds;
+      }
+    } catch {}
+    return [];
+  });
   const settleTimersRef = useRef<Map<string, number>>(new Map());
   const [celebrationPieces, setCelebrationPieces] = useState<AccumulationPiece[] | null>(null);
   const bowlCelebrateLockRef = useRef(false);
@@ -659,6 +675,7 @@ export default function App() {
         let runningEvents = momentumEventsRef.current;
         const accumulatedMissed: MomentumEvent[] = [];
         const accumulatedPrompts: { habitId: string; habitName: string; loggedDate: string }[] = [];
+        const newRolledOverHabits: string[] = [];
 
         // Loop day-by-day from originIso up to (today - 1 day)
         for (let step = 0; step < dayDiff; step++) {
@@ -676,18 +693,47 @@ export default function App() {
               stepOrigin
             );
             if (missed.length > 0) {
-              accumulatedMissed.push(...missed);
-              runningEvents = mergeMomentumEvents(runningEvents, missed);
-              missed.forEach((event) => {
-                const habit = habitsRef.current.find((item) => item.id === event.habitId);
-                accumulatedPrompts.push({
-                  habitId: event.habitId,
-                  habitName: habit?.name || 'Habit',
-                  loggedDate: stepIso,
+              if (dayDiff === 1) {
+                // Yesterday's roll-over: 24-hour grace window instead of immediately emitting hard 'missed' event
+                missed.forEach((event) => {
+                  newRolledOverHabits.push(event.habitId);
+                  const habit = habitsRef.current.find((item) => item.id === event.habitId);
+                  accumulatedPrompts.push({
+                    habitId: event.habitId,
+                    habitName: habit?.name || 'Habit',
+                    loggedDate: stepIso,
+                  });
                 });
-              });
+              } else {
+                // More than 24 hours elapsed: finalize hard 'missed' events as usual
+                accumulatedMissed.push(...missed);
+                runningEvents = mergeMomentumEvents(runningEvents, missed);
+                missed.forEach((event) => {
+                  const habit = habitsRef.current.find((item) => item.id === event.habitId);
+                  accumulatedPrompts.push({
+                    habitId: event.habitId,
+                    habitName: habit?.name || 'Habit',
+                    loggedDate: stepIso,
+                  });
+                });
+              }
             }
           }
+        }
+
+        if (dayDiff === 1) {
+          setRolledOverHabits(newRolledOverHabits);
+          try {
+            localStorage.setItem(
+              'ascend_rolled_over_habits',
+              JSON.stringify({ date: freshDate, habitIds: newRolledOverHabits })
+            );
+          } catch {}
+        } else {
+          setRolledOverHabits([]);
+          try {
+            localStorage.removeItem('ascend_rolled_over_habits');
+          } catch {}
         }
 
         if (accumulatedMissed.length > 0) {
@@ -1372,6 +1418,7 @@ setMomentumEvents((prev) =>
         reminders,
         momentumEvents,
         completionEvents,
+        graceHabitIds: rolledOverHabits,
       });
     }, 400);
     return () => window.clearTimeout(timer);
@@ -1384,6 +1431,7 @@ setMomentumEvents((prev) =>
     completionEvents,
     momentumEvents,
     isDark,
+    rolledOverHabits,
   ]);
 
   useEffect(() => {
@@ -1493,6 +1541,106 @@ setMomentumEvents((prev) =>
     setMomentumEvents((prev) => prev.filter((row) => row.id !== pending.event.id));
     return true;
   };
+
+  const handleRolloverSingleHabit = useCallback(
+    (targetHabit: Habit, dateIso: string) => {
+      const dayIndex = dayIndexForIso(dateIso, calendarOrigin);
+      const safeDayIndex = dayIndex >= 0 ? dayIndex : 2;
+      const completionEvent: HabitCompletionEvent = withHabitTimeOfDay(
+        {
+          id: stableHabitLogId(targetHabit.id, dateIso),
+          habitId: targetHabit.id,
+          dayIndex: safeDayIndex,
+          date: dateIso,
+          type: 'fallback_micro',
+          note: targetHabit.fallbackMicroHabit || 'Grace rollover (50% micro-habit)',
+          timestamp: endOfIsoDate(dateIso) - 60_000,
+        },
+        targetHabit
+      );
+
+      const baseWeight = habitWeight(targetHabit);
+      const eventWeight = baseWeight * 0.5;
+      const momentumEvent = createMomentumEvent(
+        targetHabit,
+        'fallback',
+        dateIso,
+        completionEvent.timestamp,
+        eventWeight
+      );
+
+      const newEvidence: IdentityEvidence = {
+        id: `ev-micro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        habitId: targetHabit.id,
+        habitName: targetHabit.name,
+        identityStatement: `Micro-Habit rollover: ${targetHabit.identityStatement || 'Consistency preserved'}`,
+        category: targetHabit.category || 'work',
+        date: `${formatIsoShort(dateIso)} • Grace rollover (50%)`,
+        dayNumber: safeDayIndex + 1,
+        loggedDate: dateIso,
+      };
+
+      startTransition(() => {
+        setCompletionEvents((prev) => replaceTodayCompletion(prev, completionEvent, calendarOrigin));
+        setMomentumEvents((prev) => mergeMomentumEvents(prev, [momentumEvent]));
+        setEvidenceList((prev) => upsertTodayEvidence(prev, newEvidence, dateIso, calendarOrigin));
+        setMomentumPulse((n) => n + 1);
+      });
+
+      const userId = sessionRef.current?.id;
+      void upsertHabitLog(userId, completionEvent).catch(() => {});
+      void appendMomentumEventRemote(userId, momentumEvent).catch(() => {});
+      try {
+        void pulseCompletionHaptic('fallback');
+      } catch {}
+    },
+    [calendarOrigin]
+  );
+
+  const handleRolloverAll = useCallback(() => {
+    if (rolledOverHabits.length === 0) return;
+    const yesterdayIso = addDaysIso(getLocalDateString(), -1);
+
+    rolledOverHabits.forEach((habitId) => {
+      const targetHabit = habits.find((h) => h.id === habitId);
+      if (targetHabit) {
+        handleRolloverSingleHabit(targetHabit, yesterdayIso);
+      }
+    });
+
+    setRolledOverHabits([]);
+    try {
+      localStorage.removeItem('ascend_rolled_over_habits');
+    } catch {}
+    setPendingFriction((prev) =>
+      prev.filter((p) => !(rolledOverHabits.includes(p.habitId) && p.loggedDate === yesterdayIso))
+    );
+  }, [rolledOverHabits, habits, handleRolloverSingleHabit]);
+
+  const handleFrictionRolloverMicro = useCallback(() => {
+    const prompt = pendingFriction[0];
+    if (!prompt) return;
+    const targetHabit = habits.find((h) => h.id === prompt.habitId);
+    if (targetHabit) {
+      handleRolloverSingleHabit(targetHabit, prompt.loggedDate);
+    }
+    markFrictionPrompted(prompt.habitId, prompt.loggedDate);
+    setPendingFriction((prev) => prev.slice(1));
+    setRolledOverHabits((prev) => {
+      const next = prev.filter((id) => id !== prompt.habitId);
+      try {
+        if (next.length === 0) {
+          localStorage.removeItem('ascend_rolled_over_habits');
+        } else {
+          localStorage.setItem(
+            'ascend_rolled_over_habits',
+            JSON.stringify({ date: getLocalDateString(), habitIds: next })
+          );
+        }
+      } catch {}
+      return next;
+    });
+  }, [pendingFriction, habits, handleRolloverSingleHabit]);
 
   const activeFrictionPrompt = pendingFriction[0] ?? null;
 
@@ -1615,6 +1763,13 @@ setMomentumEvents((prev) =>
     // Reward moment: haptic + optional chime immediately; piece flies card → bowl.
     // Does not touch momentum_events beyond the append above.
     if (!alreadyCompletedToday) {
+      const statement = targetHabit.identityStatement?.trim() || 'I am consistent and disciplined';
+      setActiveNudgeIdentity(statement);
+      if (activeNudgeTimerRef.current) window.clearTimeout(activeNudgeTimerRef.current);
+      activeNudgeTimerRef.current = window.setTimeout(() => {
+        setActiveNudgeIdentity(null);
+      }, 2200);
+
       const rewardKind = isMicro ? 'fallback' : 'full';
       try {
         void pulseCompletionHaptic(rewardKind);
@@ -1725,6 +1880,9 @@ setMomentumEvents((prev) =>
         setMomentumPulse((n) => n + 1);
       }
     });
+
+    if (activeNudgeTimerRef.current) window.clearTimeout(activeNudgeTimerRef.current);
+    setActiveNudgeIdentity(null);
 
     void deleteHabitLog(session?.id, habitId, loggedDate, todayDayIndex).catch(() => {});
 
@@ -2801,6 +2959,8 @@ setMomentumEvents((prev) =>
               todayIndex={todayDayIndex}
               renderHabit={renderHabit}
               examShieldActive={examShieldActive}
+              rolledOverHabits={rolledOverHabits}
+              onRolloverAll={handleRolloverAll}
             >
               {quoteCardElement}
             </HomeView>
@@ -2943,7 +3103,12 @@ setMomentumEvents((prev) =>
           fillPercent={bowlFill.fillPercent}
           hasActiveFlight={pieceFlights.length > 0}
           isPulsing={bowlArrivalPulse}
+          identityStatement={activeNudgeIdentity}
           onScrollToTop={handleScrollToTop}
+        />
+        <IdentityNudgeToast
+          statement={activeNudgeIdentity}
+          onClose={() => setActiveNudgeIdentity(null)}
         />
         </ErrorBoundary>
 
@@ -3048,6 +3213,7 @@ setMomentumEvents((prev) =>
               loggedDate={activeFrictionPrompt?.loggedDate}
               onSubmit={handleFrictionSubmit}
               onSkip={handleFrictionSkip}
+              onRolloverMicro={handleFrictionRolloverMicro}
             />
           </Suspense>
         )}

@@ -25,6 +25,8 @@ interface HomeViewProps {
   renderHabit?: (habit: Habit, index: number) => React.ReactNode;
   children?: React.ReactNode;
   examShieldActive?: boolean;
+  rolledOverHabits?: string[];
+  onRolloverAll?: () => void;
 }
 
 const EMPTY_PIECES: AccumulationPiece[] = [];
@@ -46,6 +48,8 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   renderHabit,
   children,
   examShieldActive = false,
+  rolledOverHabits,
+  onRolloverAll,
 }) => {
   const safePieces = Array.isArray(pieces) ? pieces : EMPTY_PIECES;
   const fillPercent = Number.isFinite(bowlFill?.fillPercent) ? bowlFill.fillPercent : 0;
@@ -227,6 +231,28 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
       <div className="mt-1.5 flex w-full flex-col gap-2">
         {children}
 
+        {rolledOverHabits && rolledOverHabits.length > 0 && onRolloverAll && (
+          <div
+            id="home-rollover-banner"
+            className="bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 rounded-2xl p-3.5 flex items-center justify-between text-xs gap-3 shadow-xs"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0 animate-pulse" />
+              <span className="text-amber-900 dark:text-amber-200 font-medium leading-snug">
+                Unfinished habits from yesterday available for 24h grace rollover.
+              </span>
+            </div>
+            <button
+              type="button"
+              id="home-rollover-all-btn"
+              onClick={onRolloverAll}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl shrink-0 transition-colors cursor-pointer shadow-xs active:scale-95"
+            >
+              Rollover All
+            </button>
+          </div>
+        )}
+
         {renderHabit && (
           <section id="habit-list" className="mt-0.5 flex flex-col gap-2.5 gpu-smooth bg-canvas">
             {activeHabits.length === 0 && sessionCompletedHabits.length === 0 ? (
@@ -277,7 +303,9 @@ function homeViewPropsAreEqual(prev: HomeViewProps, next: HomeViewProps): boolea
     prev.onCycleDaysChange === next.onCycleDaysChange &&
     prev.onCelebrationDone === next.onCelebrationDone &&
     prev.renderHabit === next.renderHabit &&
-    prev.children === next.children
+    prev.children === next.children &&
+    prev.rolledOverHabits === next.rolledOverHabits &&
+    prev.onRolloverAll === next.onRolloverAll
   );
 }
 

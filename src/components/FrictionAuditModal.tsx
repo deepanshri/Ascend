@@ -10,6 +10,7 @@ interface FrictionAuditModalProps {
   loggedDate?: string;
   onSubmit: (reason: string) => void;
   onSkip: () => void;
+  onRolloverMicro?: () => void;
 }
 
 export const FrictionAuditModal: React.FC<FrictionAuditModalProps> = ({
@@ -18,6 +19,7 @@ export const FrictionAuditModal: React.FC<FrictionAuditModalProps> = ({
   loggedDate,
   onSubmit,
   onSkip,
+  onRolloverMicro,
 }) => {
   const [customNote, setCustomNote] = useState('');
 
@@ -51,6 +53,20 @@ export const FrictionAuditModal: React.FC<FrictionAuditModalProps> = ({
               {habitName}
               {loggedDate ? ` · ${loggedDate}` : ''}
             </p>
+
+            {onRolloverMicro && (
+              <div className="mt-3.5">
+                <button
+                  type="button"
+                  id="friction-rollover-micro-btn"
+                  onClick={onRolloverMicro}
+                  className="w-full py-2.5 px-3 bg-amber-500/15 dark:bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/25 text-amber-800 dark:text-amber-200 font-bold text-[12.5px] rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0" />
+                  <span>Convert to 50% Micro-Habit Rollover</span>
+                </button>
+              </div>
+            )}
 
             <div className="mt-4 flex flex-wrap gap-1.5">
               {FRICTION_REASON_CHIPS.map((chip) => {

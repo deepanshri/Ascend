@@ -64,6 +64,7 @@ export interface WidgetSnapshotInput {
   momentumEvents: MomentumEvent[];
   completionEvents: HabitCompletionEvent[];
   sleepTodayHours?: number | null;
+  graceHabitIds?: string[] | ReadonlySet<string>;
 }
 
 export type WidgetRoute =
@@ -116,8 +117,20 @@ function categoryRate(
   return weightTotal <= 0 ? 0 : weightedSum / weightTotal;
 }
 
-function habitStreak(habit: Habit, iso: string, momentumEvents: MomentumEvent[], completionEvents: HabitCompletionEvent[]): number {
+function habitStreak(
+  habit: Habit,
+  iso: string,
+  momentumEvents: MomentumEvent[],
+  completionEvents: HabitCompletionEvent[],
+  graceHabitIds?: string[] | ReadonlySet<string>
+): number {
   let streak = 0;
+  const graceSet = graceHabitIds
+    ? Array.isArray(graceHabitIds)
+      ? new Set(graceHabitIds)
+      : graceHabitIds
+    : null;
+  const yesterdayIso = addDaysIso(iso, -1);
   for (let offset = 0; offset < 60; offset += 1) {
     const day = addDaysIso(iso, -offset);
     if (!isHabitScheduledOnIso(habit, day)) {
@@ -126,6 +139,10 @@ function habitStreak(habit: Habit, iso: string, momentumEvents: MomentumEvent[],
     const score = bestScoreOnIso(habit.id, day, momentumEvents, completionEvents);
     if (score <= 0) {
       if (offset === 0) continue;
+      // If yesterday is within 24h grace window for this habit, keep streak intact
+      if (offset === 1 && day === yesterdayIso && graceSet?.has(habit.id)) {
+        continue;
+      }
       break;
     }
     streak += 1;
@@ -218,7 +235,7 @@ export function buildWidgetSnapshot(input: WidgetSnapshotInput): WidgetSnapshot 
     id: habit.id,
     title: habit.name,
     completed: hasTodayLedgerEntry(input.completionEvents, habit.id, todayIso, origin),
-    streak: habitStreak(habit, todayIso, input.momentumEvents, input.completionEvents),
+    streak: habitStreak(habit, todayIso, input.momentumEvents, input.completionEvents, input.graceHabitIds),
     targetTime: formatTargetTimeDisplay(habit.targetTime),
   }));
 
