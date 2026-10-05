@@ -59,7 +59,7 @@ export interface Habit {
   microDays?: boolean[]; // Array of 7 booleans for fallback micro-habit completions
   fallbackMicroHabit?: string; // e.g., "Do 2 min warmup / read 2 pages"
   purposeAnchor?: string; // "Why I built this"
-  identityStatement: string; // e.g. "I am a focused builder"
+  identityStatement?: string; // deprecated — retained for data compat only
   targetDaysPerWeek: number;
   color?: string;
   archived?: boolean; // When archived, habit is hidden from active list without deleting logs

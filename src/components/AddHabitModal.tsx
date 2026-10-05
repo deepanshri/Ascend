@@ -83,7 +83,6 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
       timestamp: 'Daily',
       priority,
       purposeAnchor: purposeAnchor.trim() || `To reinforce my continuous momentum in ${name.trim()}.`,
-      identityStatement: `I consistently practice ${name.trim()}.`,
       fallbackMicroHabit: fallbackMicro.trim(),
       targetDaysPerWeek: days.length,
       scheduleType: scheduleTypeFromDays(days),

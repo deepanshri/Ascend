@@ -760,21 +760,6 @@ function HabitCardInner({
                       )}
                     </div>
 
-                    {habit.identityStatement?.trim() ? (
-                      <p
-                        id={`habit-identity-kicker-${habit.id}`}
-                        className={`text-[11px] truncate mt-0.5 select-none ${
-                          isTodayDone
-                            ? 'text-emerald-600 dark:text-emerald-400 font-medium'
-                            : 'text-slate-500 dark:text-slate-400'
-                        }`}
-                      >
-                        {isTodayDone
-                          ? `✓ Vote cast: "${habit.identityStatement.trim()}"`
-                          : `Voting for: "${habit.identityStatement.trim()}"`}
-                      </p>
-                    ) : null}
-
                     <div className="flex items-center space-x-1.5 mt-2.5">
                       {(habit.days ?? [false, false, false, false, false, false, false]).map((isDone, dayIdx) => {
                         const isPast = dayIdx < todayIndex;
@@ -983,11 +968,6 @@ function HabitCardInner({
                       ? `"${habit.purposeAnchor.trim()}"`
                       : 'No purpose anchor set yet. Long press to edit.'}
                   </p>
-                  {habit.identityStatement?.trim() ? (
-                    <p className="text-[12px] font-semibold text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-3">
-                      {habit.identityStatement.trim()}
-                    </p>
-                  ) : null}
                 </div>
               </div>
             </div>
@@ -1025,7 +1005,6 @@ function habitVisualEqual(prev: Habit, next: Habit): boolean {
     prev.category === next.category &&
     prev.priority === next.priority &&
     prev.fallbackMicroHabit === next.fallbackMicroHabit &&
-    prev.identityStatement === next.identityStatement &&
     prev.updatedAt === next.updatedAt &&
     prev.scheduleType === next.scheduleType &&
     prev.timeOfDay === next.timeOfDay &&

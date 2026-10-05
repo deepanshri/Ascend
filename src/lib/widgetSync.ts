@@ -184,7 +184,7 @@ export function buildTodaysIdentityLedger(
   habits
     .filter((habit) => !habit.archived)
     .forEach((habit) => {
-      const label = (habit.identityStatement || habit.name || 'Identity').trim();
+      const label = (habit.name || 'Identity').trim();
       const scheduled = isHabitScheduledOnIso(habit, todayIso);
       const done = doneSet.has(habit.id);
       if (!scheduled && !done) return;

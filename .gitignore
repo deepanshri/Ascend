@@ -11,3 +11,4 @@ coverage/
 android/key.properties
 *.keystore
 *.jks
+.kotlin/

@@ -178,7 +178,6 @@ import FlyingPieceOverlay, {
   type PieceFlight,
 } from './components/FlyingPieceOverlay';
 import { ScrolledBowlOverlay } from './components/ScrolledBowlOverlay';
-import { IdentityNudgeToast } from './components/IdentityNudgeToast';
 import {
   isCompletionSoundEnabled,
   isHapticVibrationEnabled,
@@ -565,8 +564,6 @@ export default function App() {
   const [isBowlOffscreen, setIsBowlOffscreen] = useState(false);
   const [bowlArrivalPulse, setBowlArrivalPulse] = useState(false);
   const bowlArrivalPulseTimerRef = useRef<number | null>(null);
-  const [activeNudgeIdentity, setActiveNudgeIdentity] = useState<string | null>(null);
-  const activeNudgeTimerRef = useRef<number | null>(null);
   const [rolledOverHabits, setRolledOverHabits] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem('ascend_rolled_over_habits');
@@ -1573,7 +1570,7 @@ setMomentumEvents((prev) =>
         id: `ev-micro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         habitId: targetHabit.id,
         habitName: targetHabit.name,
-        identityStatement: `Micro-Habit rollover: ${targetHabit.identityStatement || 'Consistency preserved'}`,
+        identityStatement: `Micro-Habit rollover: ${targetHabit.name || 'Consistency preserved'}`,
         category: targetHabit.category || 'work',
         date: `${formatIsoShort(dateIso)} • Grace rollover (50%)`,
         dayNumber: safeDayIndex + 1,
@@ -1703,8 +1700,8 @@ setMomentumEvents((prev) =>
       habitId,
       habitName: isMicro ? `${targetHabit.name} (Micro-Habit)` : targetHabit.name,
       identityStatement: isMicro
-        ? `Micro-Habit vote: ${targetHabit.identityStatement || 'Non-zero progress'}`
-        : (targetHabit.identityStatement || 'I am consistent and disciplined'),
+        ? `Micro-Habit vote: ${targetHabit.name || 'Non-zero progress'}`
+        : (targetHabit.name || 'Consistent and disciplined'),
       category: targetHabit.category || 'work',
       date: `${formatEvidenceDate()} • ${isMicro ? 'Fallback micro (50%)' : 'Completed (100%)'}`,
       dayNumber: todayDayIndex + 1,
@@ -1763,13 +1760,6 @@ setMomentumEvents((prev) =>
     // Reward moment: haptic + optional chime immediately; piece flies card → bowl.
     // Does not touch momentum_events beyond the append above.
     if (!alreadyCompletedToday) {
-      const statement = targetHabit.identityStatement?.trim() || 'I am consistent and disciplined';
-      setActiveNudgeIdentity(statement);
-      if (activeNudgeTimerRef.current) window.clearTimeout(activeNudgeTimerRef.current);
-      activeNudgeTimerRef.current = window.setTimeout(() => {
-        setActiveNudgeIdentity(null);
-      }, 2200);
-
       const rewardKind = isMicro ? 'fallback' : 'full';
       try {
         void pulseCompletionHaptic(rewardKind);
@@ -1881,8 +1871,6 @@ setMomentumEvents((prev) =>
       }
     });
 
-    if (activeNudgeTimerRef.current) window.clearTimeout(activeNudgeTimerRef.current);
-    setActiveNudgeIdentity(null);
 
     void deleteHabitLog(session?.id, habitId, loggedDate, todayDayIndex).catch(() => {});
 
@@ -3103,12 +3091,7 @@ setMomentumEvents((prev) =>
           fillPercent={bowlFill.fillPercent}
           hasActiveFlight={pieceFlights.length > 0}
           isPulsing={bowlArrivalPulse}
-          identityStatement={activeNudgeIdentity}
           onScrollToTop={handleScrollToTop}
-        />
-        <IdentityNudgeToast
-          statement={activeNudgeIdentity}
-          onClose={() => setActiveNudgeIdentity(null)}
         />
         </ErrorBoundary>
 

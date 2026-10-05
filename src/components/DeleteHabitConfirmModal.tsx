@@ -46,7 +46,7 @@ export const DeleteHabitConfirmModal: React.FC<DeleteHabitConfirmModalProps> = (
                   Purpose
                 </span>
                 <p className="text-[12.5px] text-slate-600 dark:text-slate-300 italic leading-relaxed">
-                  "{habit?.purposeAnchor || habit?.identityStatement || 'No specific purpose provided.'}"
+                  "{habit?.purposeAnchor || 'No specific purpose provided.'}"
                 </p>
               </div>
             </div>

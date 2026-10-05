@@ -152,7 +152,6 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
         `"${h.archived ? 'Archived' : 'Active'}"`,
         `"${h.scheduleType || 'daily'}"`,
         `"${(h.purposeAnchor || '').replace(/"/g, '""')}"`,
-        `"${(h.identityStatement || '').replace(/"/g, '""')}"`,
         ...dayStatuses.map((s) => `"${s}"`),
       ].join(',');
     });
