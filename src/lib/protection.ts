@@ -1,7 +1,7 @@
 import { Habit } from '../types';
 import { addDaysIso, diffDaysIso, formatIsoShort, toISODate } from '../utils/dates';
 
-export const MAX_ACTIVE_HABITS = 20;
+export const MAX_ACTIVE_HABITS = 10;
 export const EXAM_SHIELD_MAX_DAYS_PER_SEMESTER = 14;
 export const EXAM_SHIELD_COOLDOWN_DAYS = 30;
 export const VACATION_MAX_DAYS = 5;

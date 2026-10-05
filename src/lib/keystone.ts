@@ -3,7 +3,7 @@ import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/mome
 import { toISODate } from '../utils/dates';
 import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from '../utils/schedule';
 
-export const MAX_KEYSTONE_HABITS = 2;
+export const MAX_KEYSTONE_HABITS = 1;
 export const KEYSTONE_CORRELATION_MIN_DAYS_EACH = 3;
 export const KEYSTONE_CORRELATION_MIN_SPAN = 7;
 

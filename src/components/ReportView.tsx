@@ -993,7 +993,7 @@ const ReportViewContent: React.FC<ReportViewProps> = ({
           <div className="mt-2 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 px-4 space-y-2.5">
             {keystones.length === 0 ? (
               <p className="text-[12.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                Flag up to {MAX_KEYSTONE_HABITS} active habits as Keystone to track correlation.
+                Flag a Keystone habit to track correlation.
               </p>
             ) : (
               keystoneStats.map(({ habit, correlation }) => (

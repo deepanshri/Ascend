@@ -288,17 +288,28 @@ export interface HabitLogRow {
 export function habitWeight(habit: Habit | Partial<Habit>): number {
   const priority = (habit?.priority || 'high').toLowerCase().trim();
 
+  let weight = 1.5;
   switch (priority) {
     case 'high':
-      return 1.5;
+      weight = 1.5;
+      break;
     case 'mid':
     case 'medium':
-      return 1.0;
+      weight = 1.0;
+      break;
     case 'low':
-      return 0.7;
+      weight = 0.7;
+      break;
     default:
-      return 1.5; // Default highest priority for all categories
+      weight = 1.5; // Default highest priority for all categories
+      break;
   }
+
+  if (habit?.isKeystone) {
+    weight *= 1.25;
+  }
+
+  return weight;
 }
 
 /** Full swipe = 1.0, fallback swipe = 0.5, unlogged/missed = 0.0. */

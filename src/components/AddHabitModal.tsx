@@ -5,7 +5,6 @@ import { tapPress } from '../lib/motionPresets';
 import { Habit, HabitCategory, HabitPriority } from '../types';
 import { insertHabitToSupabase, toDbCategory } from '../lib/habitsApi';
 import { MAX_ACTIVE_HABITS } from '../lib/protection';
-import { MAX_KEYSTONE_HABITS } from '../lib/keystone';
 import { normalizeScheduledDays, scheduleTypeFromDays } from '../utils/schedule';
 import { WeekdayScheduleChips } from './WeekdayScheduleChips';
 import { inferBowlModeFromClock } from '../utils/timeOfDay';
@@ -38,18 +37,15 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   const [fallbackMicro, setFallbackMicro] = useState('');
   const [targetTime, setTargetTime] = useState('');
   const [isKeystone, setIsKeystone] = useState(false);
-  const [keystoneWarning, setKeystoneWarning] = useState(false);
   const [scheduledWeekdays, setScheduledWeekdays] = useState<number[]>([]);
   const [showMoreDetail, setShowMoreDetail] = useState(false);
   const [purposeError, setPurposeError] = useState<string | null>(null);
   const [fallbackError, setFallbackError] = useState<string | null>(null);
   const atCap = activeHabitCount >= MAX_ACTIVE_HABITS;
-  const keystoneCapReached = activeKeystoneCount >= MAX_KEYSTONE_HABITS;
 
   useEffect(() => {
     if (!isOpen) return;
     setIsKeystone(false);
-    setKeystoneWarning(false);
     setScheduledWeekdays([]);
     setTargetTime('');
     setShowMoreDetail(false);
@@ -58,12 +54,6 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
   }, [isOpen]);
 
   const handleKeystoneToggle = () => {
-    if (!isKeystone && keystoneCapReached) {
-      setShowMoreDetail(true);
-      setKeystoneWarning(true);
-      return;
-    }
-    setKeystoneWarning(false);
     setIsKeystone((prev) => !prev);
   };
 
@@ -75,18 +65,15 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
       purposeAnchor,
       fallbackMicro,
       isKeystone,
-      keystoneCapReached,
     });
     if (hiddenErrors.hasError) {
       setPurposeError(hiddenErrors.purpose);
       setFallbackError(hiddenErrors.fallback);
-      setKeystoneWarning(hiddenErrors.keystone);
       setShowMoreDetail(true);
       return;
     }
     setPurposeError(null);
     setFallbackError(null);
-    setKeystoneWarning(false);
 
     const dbCategory = toDbCategory(category);
     const days = normalizeScheduledDays(scheduledWeekdays);
@@ -103,7 +90,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
       scheduledDays: days,
       tags: [dbCategory],
       archived: false,
-      isKeystone: isKeystone && !keystoneCapReached,
+      isKeystone,
       timeOfDay: inferBowlModeFromClock(),
       targetTime: targetTime ? targetTime : undefined,
     });
@@ -125,7 +112,6 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
     setPriority('mid');
     setCategory('work');
     setIsKeystone(false);
-    setKeystoneWarning(false);
     setScheduledWeekdays([]);
     setShowMoreDetail(false);
     setPurposeError(null);
@@ -166,7 +152,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                   role="alert"
                   className="p-2.5 rounded-xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200/80 dark:border-orange-900 text-[12px] font-semibold text-orange-900 dark:text-orange-200"
                 >
-                  Maximum limit of 20 active habits reached.
+                  Maximum limit of {MAX_ACTIVE_HABITS} active habits reached.
                 </div>
               )}
               {/* Habit Name */}
@@ -394,9 +380,14 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
 
               <div>
                 <div className="flex items-center justify-between">
-                  <label htmlFor="add-keystone-toggle" className="font-semibold text-slate-700 dark:text-slate-200 text-[12px]">
-                    Is Keystone Habit?
-                  </label>
+                  <div>
+                    <label htmlFor="add-keystone-toggle" className="font-semibold text-slate-700 dark:text-slate-200 text-[12px]">
+                      Is Keystone Habit?
+                    </label>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Primary anchor. Enforcing strictly 1 Keystone habit.
+                    </p>
+                  </div>
                   <button
                     id="add-keystone-toggle"
                     type="button"
@@ -416,9 +407,9 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
                     />
                   </button>
                 </div>
-                {keystoneWarning && (
-                  <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-orange-700 dark:text-orange-300">
-                    You already have {MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.
+                {isKeystone && activeKeystoneCount >= 1 && (
+                  <p role="status" className="mt-1.5 text-[11.5px] font-semibold text-amber-600 dark:text-amber-400">
+                    Enabling this will automatically demote your current Keystone habit.
                   </p>
                 )}
               </div>

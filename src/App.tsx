@@ -122,12 +122,13 @@ import {
   getVacationStatus,
   isAtActiveHabitCap,
   loadProtectionState,
+  MAX_ACTIVE_HABITS,
   saveProtectionState,
   tickProtectionState,
   toggleExamShield,
   toggleVacation,
 } from './lib/protection';
-import { canEnableKeystone, countActiveKeystones, MAX_KEYSTONE_HABITS } from './lib/keystone';
+import { countActiveKeystones, MAX_KEYSTONE_HABITS } from './lib/keystone';
 import { closeProtectionWindow, fetchProtectionWindows, recordProtectionWindow } from './lib/protectionWindows';
 import {
   createMissedFrictionAudit,
@@ -439,6 +440,7 @@ export default function App() {
     } catch {}
     return [];
   });
+  habitsRef.current = habits;
 
   // Append-only immutable completion event log (ground truth for habit history)
   const [completionEvents, setCompletionEvents] = useState<HabitCompletionEvent[]>(() => {
@@ -1733,10 +1735,7 @@ setMomentumEvents((prev) =>
     if (isAtActiveHabitCap(habits)) {
       return null;
     }
-    let payload = newHabitData;
-    if (payload.isKeystone && !canEnableKeystone(habits)) {
-      payload = { ...payload, isKeystone: false };
-    }
+    const payload = newHabitData;
     const newHabit: Habit = {
       ...payload,
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'habit-' + Date.now(),
@@ -1747,7 +1746,12 @@ setMomentumEvents((prev) =>
       timeOfDay: resolveHabitTimeOfDay(payload),
       updatedAt: Date.now(),
     };
-    setHabits((prev) => [newHabit, ...prev]);
+    setHabits((prev) => {
+      const updatedPrev = payload.isKeystone
+        ? prev.map((h) => (h.isKeystone ? touchHabit({ ...h, isKeystone: false }) : h))
+        : prev;
+      return [newHabit, ...updatedPrev];
+    });
     if (newHabit.targetTime) {
       void scheduleHabitTargetTimeNotification(newHabit);
     }
@@ -1796,12 +1800,17 @@ setMomentumEvents((prev) =>
 
   // Update habit
   const handleUpdateHabit = (updatedHabit: Habit) => {
-    let next = updatedHabit;
-    if (next.isKeystone && !canEnableKeystone(habits, next.id)) {
-      next = { ...next, isKeystone: false };
-    }
+    const next = updatedHabit;
     setHabits((prev) =>
-      prev.map((h) => (h.id === next.id ? touchHabit(next) : h))
+      prev.map((h) => {
+        if (h.id === next.id) {
+          return touchHabit(next);
+        }
+        if (next.isKeystone && h.isKeystone) {
+          return touchHabit({ ...h, isKeystone: false });
+        }
+        return h;
+      })
     );
     setDetailHabit(touchHabit(next));
     if (next.targetTime && !next.archived) {
@@ -1821,11 +1830,16 @@ setMomentumEvents((prev) =>
   };
 
   const handleToggleKeystone = (habitId: string, nextValue: boolean) => {
-    if (nextValue && !canEnableKeystone(habits, habitId)) {
-      return;
-    }
     setHabits((prev) =>
-      prev.map((habit) => (habit.id === habitId ? touchHabit({ ...habit, isKeystone: nextValue }) : habit))
+      prev.map((habit) => {
+        if (habit.id === habitId) {
+          return touchHabit({ ...habit, isKeystone: nextValue });
+        }
+        if (nextValue && habit.isKeystone) {
+          return touchHabit({ ...habit, isKeystone: false });
+        }
+        return habit;
+      })
     );
   };
 
@@ -2329,7 +2343,7 @@ setMomentumEvents((prev) =>
       }
       if (route.tab === 'home') {
         setActiveTab('home');
-        if (route.openCreate) setIsAddModalOpen(true);
+        if (route.openCreate && !isAtActiveHabitCap(habitsRef.current)) setIsAddModalOpen(true);
         if (route.habitId) {
           const habit = derivedHabitsRef.current.find((item) => item.id === route.habitId);
           if (habit) setDetailHabit(habit);
@@ -2685,11 +2699,15 @@ setMomentumEvents((prev) =>
                     type="button"
                     whileTap={tapPress}
                     onClick={() => {
+                      if (isAtActiveHabitCap(habits)) {
+                        alert(`Maximum limit of ${MAX_ACTIVE_HABITS} active habits reached.`);
+                        return;
+                      }
                       destroyAscendSpotlightTutorial();
                       setIsAddModalOpen(true);
                     }}
                     aria-label="Add Habit"
-                    title="Add Habit"
+                    title={isAtActiveHabitCap(habits) ? `Maximum limit of ${MAX_ACTIVE_HABITS} active habits reached` : 'Add Habit'}
                     className={HEADER_ICON_BTN_CLASS}
                   >
                     <Plus className="w-5 h-5" strokeWidth={2.5} />

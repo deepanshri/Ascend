@@ -35,7 +35,6 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   const [targetTime, setTargetTime] = useState('');
   const [category, setCategory] = useState<HabitCategory>('self_improvement');
   const [isKeystone, setIsKeystone] = useState(false);
-  const [keystoneWarning, setKeystoneWarning] = useState(false);
   const [scheduledWeekdays, setScheduledWeekdays] = useState<number[]>([]);
 
   useEffect(() => {
@@ -47,18 +46,12 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
     setTargetTime(habit.targetTime || '');
     setCategory(habit.category === 'work' ? 'work' : 'self_improvement');
     setIsKeystone(Boolean(habit.isKeystone));
-    setKeystoneWarning(false);
     setScheduledWeekdays(normalizeScheduledDays(habit.scheduledDays));
   }, [habit, isOpen]);
 
   const othersAtCap = Boolean(habit && !habit.isKeystone && activeKeystoneCount >= MAX_KEYSTONE_HABITS);
 
   const handleKeystoneToggle = () => {
-    if (!isKeystone && othersAtCap) {
-      setKeystoneWarning(true);
-      return;
-    }
-    setKeystoneWarning(false);
     setIsKeystone((prev) => !prev);
   };
 
@@ -73,7 +66,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
       fallbackMicroHabit: fallback.trim(),
       tags: [category === 'work' ? 'W' : 'SI'],
       category,
-      isKeystone: isKeystone && !othersAtCap,
+      isKeystone,
       scheduledDays: days,
       scheduleType: scheduleTypeFromDays(days),
       targetDaysPerWeek: days.length,
@@ -283,9 +276,14 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
 
           <div>
             <div className="flex items-center justify-between">
-              <label htmlFor="edit-keystone-toggle" className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                Is Keystone Habit?
-              </label>
+              <div>
+                <label htmlFor="edit-keystone-toggle" className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  Is Keystone Habit?
+                </label>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Strictly 1 Keystone habit. Primary anchor for momentum.
+                </p>
+              </div>
               <button
                 id="edit-keystone-toggle"
                 type="button"
@@ -305,9 +303,9 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                 />
               </button>
             </div>
-            {keystoneWarning && (
-              <p role="alert" className="mt-1.5 text-[11.5px] font-semibold text-orange-700 dark:text-orange-300">
-                You already have {MAX_KEYSTONE_HABITS} keystone habits. Unflag one before adding another.
+            {isKeystone && othersAtCap && (
+              <p role="status" className="mt-1.5 text-[11.5px] font-semibold text-amber-600 dark:text-amber-400">
+                Saving will automatically demote your existing Keystone habit.
               </p>
             )}
           </div>

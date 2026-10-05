@@ -730,6 +730,16 @@ function HabitCardInner({
                         )}
                         {habitDisplayName}
                       </h3>
+                      {habit.isKeystone && (
+                        <span
+                          id={`keystone-badge-${habit.id}`}
+                          title="Keystone Habit · Primary Anchor"
+                          className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-400/20 dark:bg-amber-400/25 text-amber-800 dark:text-amber-200 border border-amber-500/40 dark:border-amber-400/40 shadow-xs shadow-amber-500/10 select-none"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 animate-pulse" />
+                          <span>KEYSTONE</span>
+                        </span>
+                      )}
                       <span
                         aria-label={`Priority: ${habit.priority || 'mid'}`}
                         className={`w-2 h-2 rounded-full shrink-0 ${

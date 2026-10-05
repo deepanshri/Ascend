@@ -182,6 +182,8 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
         active.push(habit);
       }
     }
+    // Pin uncompleted Keystone habit to index 0 at the very top of the list
+    active.sort((a, b) => (b.isKeystone ? 1 : 0) - (a.isKeystone ? 1 : 0));
     return { activeHabits: active, sessionCompletedHabits: completed };
   }, [habits, visualCompletedIds]);
 

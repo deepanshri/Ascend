@@ -65,7 +65,7 @@ export const FEATURE_TIPS: Quote[] = [
     kind: 'tip',
   },
   {
-    text: 'Flag at most two Keystone habits. Completing one lights up the rest of the list.',
+    text: 'Flag your single Keystone habit. Completing it lights up the rest of the list.',
     author: 'Ascend',
     source: 'Feature Tip',
     category: 'Tip',
