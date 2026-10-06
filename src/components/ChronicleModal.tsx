@@ -117,10 +117,10 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
       onClose={onClose}
       overlayId="chronicle-modal-overlay"
       cardId="chronicle-modal-card"
-      cardClassName="p-5 max-w-[420px] overflow-hidden"
+      cardClassName="p-5 max-w-lg h-[90dvh] flex flex-col overflow-hidden"
     >
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
         <div>
           <div className="flex items-center gap-1.5 text-emerald-600 dark:text-blue-400 font-bold text-[11px] uppercase tracking-wider">
             <span aria-hidden="true">📖</span>
@@ -144,7 +144,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
       </div>
 
       {/* 3-Step Pill Progress Bar */}
-      <div className="mt-3.5 flex items-center justify-between gap-1.5 px-0.5">
+      <div className="mt-3.5 flex items-center justify-between gap-1.5 px-0.5 shrink-0">
         {[
           { page: 1, label: 'Page 1 · Focus' },
           { page: 2, label: 'Page 2 · Reflection' },
@@ -175,7 +175,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
       </div>
 
       {/* Paginated Content Area */}
-      <div className="mt-3.5 relative min-h-[220px]">
+      <div className="mt-3.5 relative flex-1 min-h-0 flex flex-col">
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
             key={activePage}
@@ -191,11 +191,11 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
             dragElastic={0.2}
             onDragEnd={handleDragEnd}
             layout={false}
-            className="touch-pan-y gpu-layer"
+            className="touch-pan-y gpu-layer flex-1 min-h-0 flex flex-col"
           >
             {activePage === 1 && (
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 space-y-2">
-                <div className="flex items-center justify-between">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 flex-1 min-h-0 flex flex-col space-y-3">
+                <div className="flex items-center justify-between shrink-0">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-blue-400">
                     Phase 1 · Morning Focus
                   </span>
@@ -204,13 +204,13 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
 
                 <label
                   htmlFor="chronicle-phase1"
-                  className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug"
+                  className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug shrink-0"
                 >
                   What&apos;s your primary focus today?
                 </label>
 
                 {yesterdayPlan && !phase1.trim() && (
-                  <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-blue-950/60 border border-emerald-200 dark:border-blue-800 flex items-center justify-between gap-2">
+                  <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-blue-950/60 border border-emerald-200 dark:border-blue-800 flex items-center justify-between gap-2 shrink-0">
                     <span className="text-[11px] text-emerald-900 dark:text-blue-200 truncate italic">
                       &ldquo;{yesterdayPlan}&rdquo;
                     </span>
@@ -226,18 +226,17 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
 
                 <textarea
                   id="chronicle-phase1"
-                  rows={4}
                   value={phase1}
                   onChange={(e) => setPhase1(e.target.value)}
                   placeholder=""
-                  className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[13px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 dark:focus:border-blue-500 resize-none font-medium"
+                  className="w-full flex-1 min-h-[200px] p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
             )}
 
             {activePage === 2 && (
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 space-y-2">
-                <div className="flex items-center justify-between">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 flex-1 min-h-0 flex flex-col space-y-3">
+                <div className="flex items-center justify-between shrink-0">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
                     Phase 2 · Daily Reflection
                   </span>
@@ -246,25 +245,24 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
 
                 <label
                   htmlFor="chronicle-phase2"
-                  className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug"
+                  className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug shrink-0"
                 >
                   Enter what all you did today
                 </label>
 
                 <textarea
                   id="chronicle-phase2"
-                  rows={4}
                   value={phase2}
                   onChange={(e) => setPhase2(e.target.value)}
                   placeholder=""
-                  className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[13px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 dark:focus:border-amber-500 resize-none font-medium"
+                  className="w-full flex-1 min-h-[200px] p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
             )}
 
             {activePage === 3 && (
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 space-y-2">
-                <div className="flex items-center justify-between">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 flex-1 min-h-0 flex flex-col space-y-3">
+                <div className="flex items-center justify-between shrink-0">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-400">
                     Phase 3 · Tomorrow&apos;s Strategy
                   </span>
@@ -273,21 +271,20 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
 
                 <label
                   htmlFor="chronicle-phase3"
-                  className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug"
+                  className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug shrink-0"
                 >
                   Plan your strategy for tomorrow
                 </label>
 
                 <textarea
                   id="chronicle-phase3"
-                  rows={4}
                   value={phase3}
                   onChange={(e) => setPhase3(e.target.value)}
                   placeholder=""
-                  className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[13px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 dark:focus:border-purple-500 resize-none font-medium"
+                  className="w-full flex-1 min-h-[200px] p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
 
-                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 italic">
+                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 italic shrink-0">
                   This strategy will display on your Home quote panel tomorrow morning.
                 </p>
               </div>
@@ -297,7 +294,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
       </div>
 
       {/* Navigation & Action Controls */}
-      <div className="mt-4 flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+      <div className="mt-4 flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
         {/* Prev Chevron Button */}
         <motion.button
           type="button"

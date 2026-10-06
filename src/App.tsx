@@ -170,6 +170,8 @@ const RemindersView = React.lazy(() => import('./components/RemindersView').then
 const ReportView = React.lazy(() => import('./components/ReportView').then((m) => ({ default: m.ReportView })));
 const PersonalView = React.lazy(() => import('./components/PersonalView').then((m) => ({ default: m.PersonalView })));
 const SettingsView = React.lazy(() => import('./components/SettingsView').then((m) => ({ default: m.SettingsView })));
+import { VisionReminderModal } from './components/VisionReminderModal';
+import { calculateThreeDayCompletionRate, getUserVisionStatement } from './lib/vision';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { HabitLongPressOverlay } from './components/HabitLongPressOverlay';
 import FlyingPieceOverlay, {
@@ -336,6 +338,12 @@ export default function App() {
   );
   const [isChronicleOpen, setIsChronicleOpen] = useState(false);
   const [chronicleVersion, setChronicleVersion] = useState(0);
+  const CHRONICLE_LAST_AUTO_LAUNCH_KEY = 'ascend_chronicle_last_auto_launch_date';
+
+  const [isVisionReminderOpen, setIsVisionReminderOpen] = useState(false);
+  const [visionReminderText, setVisionReminderText] = useState(() => getUserVisionStatement());
+  const handleDismissVisionReminder = useCallback(() => setIsVisionReminderOpen(false), []);
+  const VISION_REMINDER_LAST_DATE_KEY = 'ascend_vision_reminder_last_date';
 
   const handleOpenChronicle = useCallback(() => setIsChronicleOpen(true), []);
   const handleCloseChronicle = useCallback(() => setIsChronicleOpen(false), []);
@@ -756,6 +764,42 @@ export default function App() {
   const { currentDateString } = useHabitAutoReset(handleDayRollOver);
   const [currentSelectedDate, setCurrentSelectedDate] = useState<string>(() => getLocalDateString());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+ 
+  // Startup trigger: 3-day low completion rate Vision Reminder & Daily Chronicle auto-launch
+  useEffect(() => {
+    if (!isOnboarded) return;
+    const todayIso = getLocalDateString();
+    if (!isTabActive('home')) return;
+
+    let suppressChronicle = false;
+    const lastVisionDate = localStorage.getItem(VISION_REMINDER_LAST_DATE_KEY);
+    if (lastVisionDate !== todayIso) {
+      const { completionRate } = calculateThreeDayCompletionRate(
+        completionEvents,
+        habits,
+        todayIso
+      );
+      const visionText = getUserVisionStatement();
+      if (completionRate <= 0.30 && visionText.trim().length > 0) {
+        try {
+          localStorage.setItem(VISION_REMINDER_LAST_DATE_KEY, todayIso);
+        } catch {}
+        setVisionReminderText(visionText);
+        setIsVisionReminderOpen(true);
+        suppressChronicle = true;
+      }
+    }
+
+    if (!suppressChronicle) {
+      const lastLaunch = localStorage.getItem(CHRONICLE_LAST_AUTO_LAUNCH_KEY);
+      if (lastLaunch !== todayIso) {
+        try {
+          localStorage.setItem(CHRONICLE_LAST_AUTO_LAUNCH_KEY, todayIso);
+        } catch {}
+        setIsChronicleOpen(true);
+      }
+    }
+  }, [isOnboarded, isTabActive, currentDateString, completionEvents, habits]);
 
   useEffect(() => {
     (window as any).__setCalendarOrigin = (target: Date | string) => {
@@ -2047,6 +2091,8 @@ setMomentumEvents((prev) =>
     localStorage.removeItem('ascend_habit_logs_cache');
     localStorage.removeItem('ascend_chronicle_entries');
     localStorage.removeItem('ascend_chronicle');
+    localStorage.removeItem(CHRONICLE_LAST_AUTO_LAUNCH_KEY);
+    localStorage.removeItem(VISION_REMINDER_LAST_DATE_KEY);
     localStorage.removeItem('ascend_reminders');
     localStorage.removeItem('ascend_cache_timestamp');
   }, []);
@@ -3200,6 +3246,16 @@ setMomentumEvents((prev) =>
             />
           </Suspense>
         )}
+
+        <AnimatePresence>
+          {isVisionReminderOpen && (
+            <VisionReminderModal
+              isOpen={isVisionReminderOpen}
+              visionText={visionReminderText}
+              onDismiss={handleDismissVisionReminder}
+            />
+          )}
+        </AnimatePresence>
 
         {isChronicleOpen && (
           <Suspense fallback={null}>

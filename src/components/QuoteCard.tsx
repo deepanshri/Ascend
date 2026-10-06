@@ -213,7 +213,9 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
   // Mode 1: Next-day strategy ("See the plan of today by you")
   // Mode 3: Default quote rotation
   const isModeEvening = chronicleReady;
-  const isModeNextDayPlan = Boolean(!isModeEvening && resolvedYesterdayPlan);
+
+  // Card face: 'quote' by default even if plan exists, toggled via swipe
+  const [cardFace, setCardFace] = useState<'quote' | 'plan'>('quote');
 
   const isDraggingRef = useRef(false);
 
@@ -227,16 +229,12 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
 
   const handleClick = useCallback(() => {
     if (isDraggingRef.current) return;
-    if (isModeEvening || isModeNextDayPlan) {
-      if (onOpenChronicle) {
-        onOpenChronicle();
-      } else {
-        goNext();
-      }
+    if (onOpenChronicle) {
+      onOpenChronicle();
     } else {
       goNext();
     }
-  }, [isModeEvening, isModeNextDayPlan, onOpenChronicle, goNext]);
+  }, [onOpenChronicle, goNext]);
 
   const handleDragStart = useCallback(() => {
     isDraggingRef.current = true;
@@ -253,11 +251,11 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
       const deltaX = info.offset.x;
       const velocityX = info.velocity.x;
       const SWIPE_PX = 30;
-      const VELOCITY_THRESHOLD = 250;
+      const VELOCITY_THRESHOLD = 200;
 
       if (Math.abs(deltaX) > SWIPE_PX || Math.abs(velocityX) > VELOCITY_THRESHOLD) {
-        if (onOpenChronicle) {
-          onOpenChronicle();
+        if (resolvedYesterdayPlan) {
+          setCardFace((prev) => (prev === 'quote' ? 'plan' : 'quote'));
         } else {
           // Standard quote navigation fallback: Left -> next, Right -> prev
           if (deltaX < 0 || velocityX < 0) {
@@ -268,8 +266,10 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
         }
       }
     },
-    [onOpenChronicle, goNext, goPrev]
+    [resolvedYesterdayPlan, goNext, goPrev]
   );
+
+  const showPlanFace = !isModeEvening && cardFace === 'plan' && Boolean(resolvedYesterdayPlan);
 
   return (
     <motion.div
@@ -293,7 +293,7 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
       title={
         isModeEvening
           ? 'Evening Chronicle is ready'
-          : isModeNextDayPlan
+          : showPlanFace
           ? 'See the plan of today by you'
           : isTip
           ? 'Tip · swipe or tap for next'
@@ -302,7 +302,7 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
       aria-label={
         isModeEvening
           ? 'Evening Chronicle is ready, tap to begin'
-          : isModeNextDayPlan
+          : showPlanFace
           ? `See the plan of today by you: ${resolvedYesterdayPlan}`
           : isTip
           ? 'App tip, swipe or tap for next'
@@ -312,7 +312,7 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
       className={`touch-pan-y gpu-layer relative my-1 w-full h-auto cursor-grab active:cursor-grabbing rounded-xl p-3.5 select-none text-left transition-colors duration-300 overflow-visible border ${
         isModeEvening
           ? 'bg-accent-soft border-accent shadow-sm'
-          : isModeNextDayPlan
+          : showPlanFace
           ? 'bg-emerald-50/90 dark:bg-blue-950/40 border-emerald-300/80 dark:border-blue-700/70 shadow-xs'
           : 'bg-slate-50/80 dark:bg-slate-800/40 border-transparent'
       }`}
@@ -332,7 +332,7 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
               <span className="block text-[10.5px] text-ink-muted mt-0.5">Reflect on today and plan tomorrow’s focus.</span>
             </span>
           </motion.div>
-        ) : isModeNextDayPlan ? (
+        ) : showPlanFace ? (
           <motion.div
             key={`next-day-plan-${resolvedYesterdayPlan}`}
             initial={{ opacity: 0 }}
@@ -344,14 +344,26 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
               🎯
             </span>
             <span className="min-w-0 flex-1">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 dark:text-blue-300">
-                See the plan of today by you
-              </span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 dark:text-blue-300">
+                  See the plan of today by you
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCardFace('quote');
+                  }}
+                  className="text-[9.5px] text-slate-500 dark:text-slate-400 font-medium hover:underline cursor-pointer"
+                >
+                  ← Swipe for Quote
+                </button>
+              </div>
               <span className="block text-[12px] font-semibold text-slate-900 dark:text-slate-100 mt-0.5 leading-snug line-clamp-2 italic">
                 &ldquo;{resolvedYesterdayPlan}&rdquo;
               </span>
               <span className="block text-[9.5px] text-emerald-700/90 dark:text-blue-300/80 mt-1 font-medium">
-                Swipe or tap to record your 3-phase Chronicle →
+                Tap to open 3-phase Chronicle →
               </span>
             </span>
           </motion.div>
@@ -363,6 +375,22 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
+            {resolvedYesterdayPlan && (
+              <div className="mb-1.5 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCardFace('plan');
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-semibold bg-emerald-100/90 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300/50 dark:border-emerald-700/50 shadow-2xs hover:bg-emerald-200/80 transition-colors cursor-pointer"
+                >
+                  <span>🎯</span>
+                  <span>Swipe for Today&apos;s Plan →</span>
+                </button>
+              </div>
+            )}
+
             <p className="text-[11px] font-medium text-slate-800 dark:text-slate-100 italic leading-snug">
               {isTip ? currentQuote.text : `\u201C${currentQuote.text}\u201D`}
             </p>
