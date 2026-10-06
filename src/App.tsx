@@ -765,40 +765,44 @@ export default function App() {
   const [currentSelectedDate, setCurrentSelectedDate] = useState<string>(() => getLocalDateString());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
  
-  // Startup trigger: 3-day low completion rate Vision Reminder & Daily Chronicle auto-launch
+  // Startup trigger: 3-day low completion rate Vision Reminder & Daily Chronicle auto-launch (deferred 150ms post-paint)
   useEffect(() => {
     if (!isOnboarded) return;
     const todayIso = getLocalDateString();
     if (!isTabActive('home')) return;
 
-    let suppressChronicle = false;
-    const lastVisionDate = localStorage.getItem(VISION_REMINDER_LAST_DATE_KEY);
-    if (lastVisionDate !== todayIso) {
-      const { completionRate } = calculateThreeDayCompletionRate(
-        completionEvents,
-        habits,
-        todayIso
-      );
-      const visionText = getUserVisionStatement();
-      if (completionRate <= 0.30 && visionText.trim().length > 0) {
-        try {
-          localStorage.setItem(VISION_REMINDER_LAST_DATE_KEY, todayIso);
-        } catch {}
-        setVisionReminderText(visionText);
-        setIsVisionReminderOpen(true);
-        suppressChronicle = true;
+    const timer = window.setTimeout(() => {
+      let suppressChronicle = false;
+      const lastVisionDate = localStorage.getItem(VISION_REMINDER_LAST_DATE_KEY);
+      if (lastVisionDate !== todayIso) {
+        const { completionRate } = calculateThreeDayCompletionRate(
+          completionEvents,
+          habits,
+          todayIso
+        );
+        const visionText = getUserVisionStatement();
+        if (completionRate <= 0.30 && visionText.trim().length > 0) {
+          try {
+            localStorage.setItem(VISION_REMINDER_LAST_DATE_KEY, todayIso);
+          } catch {}
+          setVisionReminderText(visionText);
+          setIsVisionReminderOpen(true);
+          suppressChronicle = true;
+        }
       }
-    }
 
-    if (!suppressChronicle) {
-      const lastLaunch = localStorage.getItem(CHRONICLE_LAST_AUTO_LAUNCH_KEY);
-      if (lastLaunch !== todayIso) {
-        try {
-          localStorage.setItem(CHRONICLE_LAST_AUTO_LAUNCH_KEY, todayIso);
-        } catch {}
-        setIsChronicleOpen(true);
+      if (!suppressChronicle) {
+        const lastLaunch = localStorage.getItem(CHRONICLE_LAST_AUTO_LAUNCH_KEY);
+        if (lastLaunch !== todayIso) {
+          try {
+            localStorage.setItem(CHRONICLE_LAST_AUTO_LAUNCH_KEY, todayIso);
+          } catch {}
+          setIsChronicleOpen(true);
+        }
       }
-    }
+    }, 150);
+
+    return () => window.clearTimeout(timer);
   }, [isOnboarded, isTabActive, currentDateString, completionEvents, habits]);
 
   useEffect(() => {
@@ -2578,7 +2582,11 @@ setMomentumEvents((prev) =>
     });
 
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void drain();
+      if (document.visibilityState === 'visible') {
+        window.setTimeout(() => {
+          void drain();
+        }, 150);
+      }
     };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);

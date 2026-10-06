@@ -19,7 +19,7 @@ const ROWS: { key: NotificationWindowKey; title: string; subtitle: string }[] = 
   },
   {
     key: 'night',
-    title: 'Night Streak Guard',
+    title: 'Night Momentum Guard',
     subtitle: '8:30 PM loss-aversion if habits are still open',
   },
 ];

@@ -191,6 +191,27 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
     return { activeHabits: active, sessionCompletedHabits: completed };
   }, [habits, visualCompletedIds]);
 
+  const [isBowlInView, setIsBowlInView] = useState(true);
+  const bowlContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const target = bowlContainerRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsBowlInView(entry.isIntersecting);
+      },
+      { threshold: 0.05 }
+    );
+
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   return (
     <div className="mt-0 flex w-full flex-col items-center pt-1">
       <div className="relative z-10 mb-1 flex flex-col items-center justify-center">
@@ -209,9 +230,9 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
         )}
       </div>
 
-      <div className="mx-auto mt-0 flex w-full flex-col items-center justify-center">
+      <div ref={bowlContainerRef} className="mx-auto mt-0 flex w-full flex-col items-center justify-center">
         <Bowl
-          isActive={isActive}
+          isActive={isActive && isBowlInView}
           completedCount={safePieces.length}
           pieces={safePieces}
           fillPercent={fillPercent}

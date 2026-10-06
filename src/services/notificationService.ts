@@ -88,7 +88,7 @@ export function afternoonFocusCopy(
   const name = featuredName.trim() || 'Habit';
   return {
     title: `Daily Focus • ${name}`,
-    body: 'Scheduled execution reminder. Keep your streak alive!',
+    body: 'Scheduled execution reminder. Protect your momentum!',
   };
 }
 

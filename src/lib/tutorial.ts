@@ -58,7 +58,7 @@ const HOME_STEPS: DriveStep[] = [
     popover: {
       title: 'Dynamic Momentum Island',
       description:
-        'Velocity, not an all-or-nothing streak. Momentum (0–100) interpolates smoothly via physics springs and expands into a Dynamic Island badge whenever you log full or fallback habits.',
+        'Velocity, not an all-or-nothing reset. Momentum (0–100) interpolates smoothly via physics springs and expands into a Dynamic Island badge whenever you log full or fallback habits.',
       side: 'bottom',
       align: 'center',
     },
@@ -144,7 +144,7 @@ const SCREEN_STEPS: Record<Exclude<TutorialScreen, 'home'>, DriveStep[]> = {
       popover: {
         title: 'Identity Ledger is permanent',
         description:
-          'Every full or fallback log casts a vote that never expires or resets. The ledger is your identity evidence, not a streak. Swiping a card back does not take a vote away.',
+          'Every full or fallback log casts a vote that never expires or resets. The ledger is your identity evidence of momentum. Swiping a card back does not take a vote away.',
         side: 'bottom',
         align: 'start',
       },

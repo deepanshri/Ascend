@@ -33,7 +33,7 @@ export const FEATURE_TIPS: Quote[] = [
     kind: 'tip',
   },
   {
-    text: 'Unlike rigid streaks that reset to zero on a miss, decay gently scales down your progress.',
+    text: 'Unlike rigid all-or-nothing systems that reset to zero on a miss, decay gently scales down your progress.',
     author: 'Ascend',
     source: 'Feature Tip',
     category: 'Tip',

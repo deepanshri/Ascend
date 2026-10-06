@@ -40,7 +40,9 @@ export function useHabitAutoReset(
     if (freshDate !== currentDateStringRef.current) {
       currentDateStringRef.current = freshDate;
       setCurrentDateString(freshDate);
-      void refetchRef.current?.();
+      window.setTimeout(() => {
+        void refetchRef.current?.();
+      }, 150);
     }
   }, []);
 
@@ -55,7 +57,9 @@ export function useHabitAutoReset(
         if (freshDate !== currentDateStringRef.current) {
           currentDateStringRef.current = freshDate;
           setCurrentDateString(freshDate);
-          void refetchRef.current?.();
+          window.setTimeout(() => {
+            void refetchRef.current?.();
+          }, 150);
         }
       }
     }).then((h) => {

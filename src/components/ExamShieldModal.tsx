@@ -63,7 +63,7 @@ export const ExamShieldModal: React.FC<ExamShieldModalProps> = ({
 
       <div className="space-y-3 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
         <p className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/90 dark:border-slate-700/80 font-medium text-slate-700 dark:text-slate-200">
-          Exam Shield freezes your momentum decay during exams so you don&apos;t lose your streak while studying. Once activated, it consumes your shield balance.
+          Exam Shield freezes your momentum decay during exams so you don&apos;t lose your momentum while studying. Once activated, it consumes your shield balance.
         </p>
 
         <div className="p-3 rounded-2xl bg-[#E8F8EE]/60 dark:bg-blue-950/40 border border-emerald-200/80 dark:border-blue-900/60 text-[11.5px] space-y-1.5 text-slate-700 dark:text-slate-300">
