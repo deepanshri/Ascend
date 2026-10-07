@@ -3,7 +3,7 @@
     android:id="@+id/habit_row"
     android:layout_width="match_parent"
     android:layout_height="34dp"
-    android:background="@drawable/shape_rounded_pill_light"
+    android:background="@drawable/shape_rounded_pill"
     android:clipChildren="true"
     android:clipToPadding="true"
     android:gravity="center_vertical"
@@ -27,7 +27,7 @@
         android:ellipsize="end"
         android:includeFontPadding="false"
         android:maxLines="1"
-        android:textColor="#0F172A"
+        android:textColor="@color/widget_text"
         android:textSize="12sp"
         android:textStyle="bold" />
 
@@ -38,7 +38,7 @@
         android:layout_marginStart="6dp"
         android:includeFontPadding="false"
         android:maxLines="1"
-        android:textColor="#64748B"
+        android:textColor="@color/widget_muted"
         android:textSize="11sp"
         android:visibility="gone" />
 

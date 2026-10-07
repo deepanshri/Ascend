@@ -39,8 +39,8 @@ object WidgetViews {
 
     fun updateReport(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val snapshot = WidgetStore.readSnapshot(context)
-        val palette = WidgetTheme.palette(snapshot)
-        val dark = WidgetTheme.isAppDark(snapshot)
+        val palette = WidgetTheme.palette(context, snapshot)
+        val dark = WidgetTheme.isAppDark(context, snapshot)
         val work = snapshot.optDouble("workRate", 0.0).toFloat()
         val self = snapshot.optDouble("selfRate", 0.0).toFloat()
         val sleep = if (!snapshot.has("sleepRate") || snapshot.isNull("sleepRate")) {
@@ -73,7 +73,7 @@ object WidgetViews {
 
     fun updateReminders(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val snapshot = WidgetStore.readSnapshot(context)
-        val palette = WidgetTheme.palette(snapshot)
+        val palette = WidgetTheme.palette(context, snapshot)
         val raw = snapshot.optJSONArray("reminders") ?: JSONArray()
         val rows = sortTasksForWidget(raw)
         val doneCount = countCompletedTasks(rows)
@@ -120,7 +120,7 @@ object WidgetViews {
 
     fun updateHabits(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val snapshot = WidgetStore.readSnapshot(context)
-        val palette = WidgetTheme.palette(snapshot)
+        val palette = WidgetTheme.palette(context, snapshot)
         val rows = snapshot.optJSONArray("habits") ?: JSONArray()
         val count = rows.length()
         val doneCount = snapshot.optInt("habitsCompleted", countCompletedHabits(rows)).coerceIn(0, count)
@@ -166,7 +166,7 @@ object WidgetViews {
 
     fun updateIdentity(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val snapshot = WidgetStore.readSnapshot(context)
-        val palette = WidgetTheme.palette(snapshot)
+        val palette = WidgetTheme.palette(context, snapshot)
         val today = LocalDate.now().toString()
         val fresh = snapshot.optString("todayIso") == today
         val identity = snapshot.optJSONObject("identity") ?: JSONObject()
@@ -205,7 +205,7 @@ object WidgetViews {
 
     fun updateTodayLedger(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val snapshot = WidgetStore.readSnapshot(context)
-        val palette = WidgetTheme.palette(snapshot)
+        val palette = WidgetTheme.palette(context, snapshot)
         val done = snapshot.optInt("habitsCompleted", 0)
         val total = snapshot.optInt("totalHabits", 0)
         val ratio = "$done/$total"

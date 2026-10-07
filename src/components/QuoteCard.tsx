@@ -195,10 +195,6 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
     setQuoteIndex((prev) => (prev + 1) % poolLength);
   }, [poolLength]);
 
-  const goPrev = useCallback(() => {
-    if (poolLength < 2) return;
-    setQuoteIndex((prev) => (prev - 1 + poolLength) % poolLength);
-  }, [poolLength]);
 
   // Safe index calculation guaranteed to prevent any array index or out-of-bounds error
   const safeIndex =
@@ -229,12 +225,8 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
 
   const handleClick = useCallback(() => {
     if (isDraggingRef.current) return;
-    if (onOpenChronicle) {
-      onOpenChronicle();
-    } else {
-      goNext();
-    }
-  }, [onOpenChronicle, goNext]);
+    goNext();
+  }, [goNext]);
 
   const handleDragStart = useCallback(() => {
     isDraggingRef.current = true;
@@ -254,19 +246,14 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
       const VELOCITY_THRESHOLD = 200;
 
       if (Math.abs(deltaX) > SWIPE_PX || Math.abs(velocityX) > VELOCITY_THRESHOLD) {
-        if (resolvedYesterdayPlan) {
-          setCardFace((prev) => (prev === 'quote' ? 'plan' : 'quote'));
+        if (onOpenChronicle) {
+          onOpenChronicle();
         } else {
-          // Standard quote navigation fallback: Left -> next, Right -> prev
-          if (deltaX < 0 || velocityX < 0) {
-            goNext();
-          } else {
-            goPrev();
-          }
+          goNext();
         }
       }
     },
-    [resolvedYesterdayPlan, goNext, goPrev]
+    [onOpenChronicle, goNext]
   );
 
   const showPlanFace = !isModeEvening && cardFace === 'plan' && Boolean(resolvedYesterdayPlan);
@@ -295,18 +282,14 @@ const QuoteCardInner: React.FC<QuoteCardProps> = ({
           ? 'Evening Chronicle is ready'
           : showPlanFace
           ? 'See the plan of today by you'
-          : isTip
-          ? 'Tip · swipe or tap for next'
-          : 'Quote · swipe or tap for next'
+          : 'Quote · Tap for next, swipe for Chronicle'
       }
       aria-label={
         isModeEvening
           ? 'Evening Chronicle is ready, tap to begin'
           : showPlanFace
           ? `See the plan of today by you: ${resolvedYesterdayPlan}`
-          : isTip
-          ? 'App tip, swipe or tap for next'
-          : 'Quote, swipe or tap for next'
+          : 'Quote · Tap for next, swipe for Chronicle'
       }
       layout={false}
       className={`touch-pan-y gpu-layer relative my-1 w-full h-auto cursor-grab active:cursor-grabbing rounded-xl p-3.5 select-none text-left transition-colors duration-300 overflow-visible border ${

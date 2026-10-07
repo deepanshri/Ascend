@@ -66,11 +66,10 @@ export function formatActionHeadline(habitTitle: string): { title: string; body:
 }
 
 /** Morning psychology notification */
-export function morningMomentumCopy(featuredName: string): { title: string; body: string } {
-  const name = featuredName.trim() || 'Today’s Habits';
+export function morningMomentumCopy(_featuredName?: string): { title: string; body: string } {
   return {
-    title: `Morning Momentum • ${name}`,
-    body: 'Ready to build momentum? Time to check in.',
+    title: 'Morning Focus',
+    body: "Let's execute today's plan : Open chronicle",
   };
 }
 
@@ -88,7 +87,7 @@ export function afternoonFocusCopy(
   const name = featuredName.trim() || 'Habit';
   return {
     title: `Daily Focus • ${name}`,
-    body: 'Scheduled execution reminder. Protect your momentum!',
+    body: 'Scheduled execution reminder. Imperfect consistency compounds over time.',
   };
 }
 

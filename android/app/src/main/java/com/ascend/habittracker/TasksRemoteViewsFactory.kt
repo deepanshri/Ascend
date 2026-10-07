@@ -86,7 +86,7 @@ class TasksRemoteViewsFactory(
 
     private fun loadRows() {
         val snapshot = WidgetStore.readSnapshot(context)
-        appDark = WidgetTheme.isAppDark(snapshot)
+        appDark = WidgetTheme.isAppDark(context, snapshot)
         val raw = snapshot.optJSONArray("reminders") ?: JSONArray()
         rows = sortTasks(filterVisible(raw))
     }

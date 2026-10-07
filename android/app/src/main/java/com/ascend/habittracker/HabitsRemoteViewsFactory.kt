@@ -94,7 +94,7 @@ class HabitsRemoteViewsFactory(
 
     private fun loadRows() {
         val snapshot = WidgetStore.readSnapshot(context)
-        appDark = WidgetTheme.isAppDark(snapshot)
+        appDark = WidgetTheme.isAppDark(context, snapshot)
         val source = snapshot.optJSONArray("habits") ?: JSONArray()
         rows = sortHabits(source)
     }

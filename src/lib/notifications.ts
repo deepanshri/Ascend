@@ -253,7 +253,7 @@ export async function schedulePsychologyNotifications(input: PsychologyScheduleI
       body: morning.body,
       channelId: CHANNEL_ID,
       smallIcon: NOTIFICATION_SMALL_ICON,
-      schedule: dailyWindow(8, 0),
+      schedule: dailyWindow(6, 0),
     });
   }
 
@@ -501,6 +501,15 @@ export async function cancelHabitTargetTimeNotification(habitId: string): Promis
   }
 }
 
+export const HABIT_TARGET_COPY_TEMPLATES = [
+  'Imperfect consistency compounds: {habit_name} in 15 mins.',
+  'No need for perfection, just presence: {habit_name} coming up.',
+  'Showing up counts—no matter how small: {habit_name} starts soon.',
+  "Cast today's vote: {habit_name} in 15 minutes.",
+  '15-minute heads-up: Time to show up for {habit_name}.',
+  "Remember what you're building towards: ready for {habit_name}?",
+] as const;
+
 export async function scheduleHabitTargetTimeNotification(habit: Habit): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   if (!habit.targetTime || habit.archived) return;
@@ -512,6 +521,26 @@ export async function scheduleHabitTargetTimeNotification(habit: Habit): Promise
   // Cancel previous first to prevent stacking
   await cancelHabitTargetTimeNotification(habit.id);
 
+  const now = new Date();
+  const targetTime = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    parsed.hour,
+    parsed.minute,
+    0,
+    0
+  );
+
+  let triggerDate = new Date(targetTime.getTime() - 15 * 60 * 1000);
+  const nowMs = Date.now();
+
+  if (triggerDate.getTime() <= nowMs && targetTime.getTime() > nowMs) {
+    triggerDate = new Date(nowMs + 5000);
+  } else if (triggerDate.getTime() <= nowMs) {
+    return;
+  }
+
   try {
     const granted = await requestNotificationPermissions();
     if (!granted) return;
@@ -519,18 +548,22 @@ export async function scheduleHabitTargetTimeNotification(habit: Habit): Promise
     await ensureChannel();
 
     const targetPayload = habitTargetCopy(habit);
+    const habitName = habit.name?.trim() || 'your habit';
+    const template =
+      HABIT_TARGET_COPY_TEMPLATES[Math.floor(Math.random() * HABIT_TARGET_COPY_TEMPLATES.length)];
+    const body = template.replace('{habit_name}', habitName);
 
     await LocalNotifications.schedule({
       notifications: [
         {
           id: notificationId,
           title: targetPayload.title,
-          body: targetPayload.body,
+          body,
           channelId: CHANNEL_ID,
           smallIcon: NOTIFICATION_SMALL_ICON,
           extra: { habitId: habit.id, kind: 'habit_target' },
           schedule: {
-            on: { hour: parsed.hour, minute: parsed.minute },
+            at: triggerDate,
             allowWhileIdle: true,
           },
         },

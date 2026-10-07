@@ -146,8 +146,8 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
       {/* 3-Step Pill Progress Bar */}
       <div className="mt-3.5 flex items-center justify-between gap-1.5 px-0.5 shrink-0">
         {[
-          { page: 1, label: 'Page 1 · Focus' },
-          { page: 2, label: 'Page 2 · Reflection' },
+          { page: 1, label: 'Page 1 · Done' },
+          { page: 2, label: 'Page 2 · Unfinished' },
           { page: 3, label: 'Page 3 · Strategy' },
         ].map((item) => {
           const isActive = activePage === item.page;
@@ -197,7 +197,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 flex-1 min-h-0 flex flex-col space-y-3">
                 <div className="flex items-center justify-between shrink-0">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-blue-400">
-                    Phase 1 · Morning Focus
+                    Phase 1 · Accomplishments
                   </span>
                   <span className="text-[10px] font-medium text-slate-400">Page 1 of 3</span>
                 </div>
@@ -206,7 +206,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
                   htmlFor="chronicle-phase1"
                   className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug shrink-0"
                 >
-                  What&apos;s your primary focus today?
+                  What all you did today
                 </label>
 
                 {yesterdayPlan && !phase1.trim() && (
@@ -238,7 +238,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 flex-1 min-h-0 flex flex-col space-y-3">
                 <div className="flex items-center justify-between shrink-0">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                    Phase 2 · Daily Reflection
+                    Phase 2 · Reflection
                   </span>
                   <span className="text-[10px] font-medium text-slate-400">Page 2 of 3</span>
                 </div>
@@ -247,7 +247,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
                   htmlFor="chronicle-phase2"
                   className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug shrink-0"
                 >
-                  Enter what all you did today
+                  No problem, there will be some you couldn&apos;t complete and what are they
                 </label>
 
                 <textarea
@@ -264,7 +264,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-900/60 flex-1 min-h-0 flex flex-col space-y-3">
                 <div className="flex items-center justify-between shrink-0">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-400">
-                    Phase 3 · Tomorrow&apos;s Strategy
+                    Phase 3 · Tomorrow&apos;s Plan
                   </span>
                   <span className="text-[10px] font-medium text-slate-400">Page 3 of 3</span>
                 </div>
@@ -273,7 +273,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
                   htmlFor="chronicle-phase3"
                   className="block text-[14px] font-bold text-slate-900 dark:text-white leading-snug shrink-0"
                 >
-                  Plan your strategy for tomorrow
+                  To save time, Prepare the strategy now
                 </label>
 
                 <textarea
@@ -281,12 +281,8 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
                   value={phase3}
                   onChange={(e) => setPhase3(e.target.value)}
                   placeholder=""
-                  className="w-full flex-1 min-h-[200px] p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full flex-1 min-h-[120px] p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
-
-                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 italic shrink-0">
-                  This strategy will display on your Home quote panel tomorrow morning.
-                </p>
               </div>
             )}
           </motion.div>

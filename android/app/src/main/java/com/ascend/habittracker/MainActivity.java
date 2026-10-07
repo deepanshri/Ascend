@@ -115,4 +115,10 @@ public class MainActivity extends BridgeActivity {
             // Older / stripped WebView stubs may omit this API.
         }
     }
+
+    @Override
+    public void onConfigurationChanged(android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        WidgetViews.INSTANCE.updateAll(this);
+    }
 }
