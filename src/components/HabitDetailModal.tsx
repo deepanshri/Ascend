@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { MotionModal } from './MotionModal';
 import { tapPress } from '../lib/motionPresets';
@@ -8,6 +8,8 @@ import { normalizeScheduledDays, scheduleTypeFromDays } from '../utils/schedule'
 import { WeekdayScheduleChips } from './WeekdayScheduleChips';
 import { resolveHabitTimeOfDay } from '../utils/timeOfDay';
 import { formatTargetTimeDisplay } from '../utils/timeFormat';
+
+const TodaysRepSheet = lazy(() => import('./TodaysRepSheet'));
 
 interface HabitDetailModalProps {
   habit: Habit | null;
@@ -36,6 +38,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   const [category, setCategory] = useState<HabitCategory>('self_improvement');
   const [isKeystone, setIsKeystone] = useState(false);
   const [scheduledWeekdays, setScheduledWeekdays] = useState<number[]>([]);
+  const [repOpen, setRepOpen] = useState(false);
 
   useEffect(() => {
     if (!habit || !isOpen) return;
@@ -123,6 +126,13 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
               placeholder="Habit name..."
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/25 dark:focus:ring-[#3B82F6]/25 focus:border-[#22C55E] dark:focus:border-[#3B82F6] font-semibold text-[13px]"
             />
+            <button
+              type="button"
+              onClick={() => setRepOpen(true)}
+              className="mt-2 w-full py-2.5 rounded-2xl bg-[#22C55E] hover:bg-emerald-600 dark:bg-[#3B82F6] dark:hover:bg-blue-500 text-white font-semibold text-[13px] shadow-xs cursor-pointer"
+            >
+              Today's Rep
+            </button>
           </div>
 
           {/* Priority */}
@@ -340,6 +350,15 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
             </motion.button>
           </div>
         </div>
+        {repOpen && habit && (
+          <Suspense fallback={null}>
+            <TodaysRepSheet
+              habitId={habit.id}
+              habitName={name.trim() || habit.name}
+              onClose={() => setRepOpen(false)}
+            />
+          </Suspense>
+        )}
     </MotionModal>
   );
 };
