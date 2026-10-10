@@ -6,6 +6,8 @@
     <color name="accent">#23C15D</color>
     <color name="statusBarColor">#F8FAF9</color>
     <color name="navigationBarColor">#F8FAF9</color>
+    <color name="splash_bg">#FFFFFF</color>
+    <color name="ic_launcher_background">#FFFFFF</color>
     <color name="widget_bg">#FFFFFF</color>
     <color name="widget_accent">#22C55E</color>
     <color name="widget_surface">#FFFFFF</color>
@@ -14,5 +16,6 @@
     <color name="widget_text">#0F172A</color>
     <color name="widget_muted">#64748B</color>
     <color name="widget_line">#E2E8F0</color>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="widget_text_primary">#0F172A</color>
+    <color name="widget_text_secondary">#64748B</color>
 </resources>
