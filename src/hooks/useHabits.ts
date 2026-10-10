@@ -40,35 +40,39 @@ export function useHabitAutoReset(
     if (freshDate !== currentDateStringRef.current) {
       currentDateStringRef.current = freshDate;
       setCurrentDateString(freshDate);
-      window.setTimeout(() => {
-        void refetchRef.current?.();
-      }, 150);
+      void refetchRef.current?.();
     }
   }, []);
 
   useEffect(() => {
-    let handle: PluginListenerHandle | null = null;
+    let handleState: PluginListenerHandle | null = null;
+    let handleResume: PluginListenerHandle | null = null;
     let cancelled = false;
 
-    // Capacitor app foreground listener
-    CapApp.addListener('appStateChange', ({ isActive }) => {
-      if (isActive) {
-        const freshDate = getLocalDateString();
-        if (freshDate !== currentDateStringRef.current) {
-          currentDateStringRef.current = freshDate;
-          setCurrentDateString(freshDate);
-          window.setTimeout(() => {
-            void refetchRef.current?.();
-          }, 150);
+    // Capacitor app foreground and resume listeners
+    const subResume = CapApp.addListener('resume', checkDateChange);
+    subResume
+      .then((h) => {
+        if (cancelled) {
+          void h.remove();
+        } else {
+          handleResume = h;
         }
-      }
-    }).then((h) => {
-      if (cancelled) {
-        void h.remove();
-      } else {
-        handle = h;
-      }
-    }).catch(() => {});
+      })
+      .catch(() => {});
+
+    const subState = CapApp.addListener('appStateChange', (state) => {
+      if (state.isActive) checkDateChange();
+    });
+    subState
+      .then((h) => {
+        if (cancelled) {
+          void h.remove();
+        } else {
+          handleState = h;
+        }
+      })
+      .catch(() => {});
 
     // Midnight rollover timer: checks every 60s
     const intervalId = window.setInterval(checkDateChange, 60_000);
@@ -87,7 +91,8 @@ export function useHabitAutoReset(
 
     return () => {
       cancelled = true;
-      if (handle) void handle.remove();
+      if (handleResume) void handleResume.remove();
+      if (handleState) void handleState.remove();
       window.clearInterval(intervalId);
       window.removeEventListener('focus', onResume);
       document.removeEventListener('visibilitychange', onVisibility);

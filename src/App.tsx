@@ -670,6 +670,11 @@ export default function App() {
     setActiveFallbackIds([]);
 
     const lastActive = localStorage.getItem(CALENDAR_LAST_ACTIVE_KEY);
+    if (!lastActive) {
+      try {
+        localStorage.setItem(CALENDAR_LAST_ACTIVE_KEY, freshDate);
+      } catch {}
+    }
     const originIso = lastActive && isIsoDate(lastActive) ? lastActive : toISODate(nextOrigin);
 
     if (originIso !== freshDate) {

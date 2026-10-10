@@ -23,6 +23,31 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    // Protect against IDE tooling plugins (e.g. Eclipse Buildship / JDT LS) failing on Gradle 9+
+    // when attempting to change the allowed usage of configurations locked to 'Dependency Scope'
+    configurations.all { config ->
+        try {
+            def origResolved = config.class.getMethod('setCanBeResolved', boolean.class)
+            config.metaClass.setCanBeResolved = { boolean resolvable ->
+                try {
+                    origResolved.invoke(delegate, resolvable)
+                } catch (Throwable ignored) {
+                    // Suppress "locked upon creation to the role: Dependency Scope"
+                }
+            }
+        } catch (Throwable ignored) {}
+        try {
+            def origConsumed = config.class.getMethod('setCanBeConsumed', boolean.class)
+            config.metaClass.setCanBeConsumed = { boolean consumable ->
+                try {
+                    origConsumed.invoke(delegate, consumable)
+                } catch (Throwable ignored) {
+                    // Suppress "locked upon creation to the role: Dependency Scope"
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
 }
 
 task clean(type: Delete) {
