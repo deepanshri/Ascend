@@ -1,17 +1,20 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Plus } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
 import { useAnyModalOpen, useKeyboardVisible } from './hooks/useKeyboardVisible';
 import { tapPress } from './lib/motionPresets';
-import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { useTheme, useThemeActions } from './providers/ThemeProvider';
 import { usePreferences, usePreferencesActions } from './providers/PreferencesProvider';
 import { toggleInterest } from './providers/preferencesReducer';
 import { useReminders, useRemindersActions } from './providers/RemindersProvider';
+import { useUI, useUIActions } from './providers/UIProvider';
+import { findModal } from './providers/uiReducer';
+import { ModalHost } from './components/ModalHost';
 import {
   Habit,
+  HabitCategory,
   IdentityEvidence,
   ActiveTab,
   UserSession,
@@ -125,7 +128,6 @@ import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaun
 import { WidgetBridge } from './lib/widgetBridge';
 import type { WidgetPendingAction, WidgetRoute } from './lib/widgetSync';
 import {
-  countActiveHabits,
   getExamShieldStatus,
   getVacationStatus,
   isAtActiveHabitCap,
@@ -158,24 +160,15 @@ import {
 import { FriendsFeed } from './components/FriendsFeed';
 import { ScreenHeader, SCREEN_INSET_CLASS, HEADER_ICON_BTN_CLASS } from './components/ScreenHeader';
 import { TabLoadingFallback } from './components/TabLoadingFallback';
-import { ExamShieldModal } from './components/ExamShieldModal';
 
-import { AddHabitModal } from './components/AddHabitModal';
-const HabitDetailModal = React.lazy(() => import('./components/HabitDetailModal').then((m) => ({ default: m.HabitDetailModal })));
-const DeleteHabitConfirmModal = React.lazy(() => import('./components/DeleteHabitConfirmModal').then((m) => ({ default: m.DeleteHabitConfirmModal })));
-const IdentityLedgerModal = React.lazy(() => import('./components/IdentityLedgerModal').then((m) => ({ default: m.IdentityLedgerModal })));
-const FrictionAuditModal = React.lazy(() => import('./components/FrictionAuditModal').then((m) => ({ default: m.FrictionAuditModal })));
-const ChronicleModal = React.lazy(() => import('./components/ChronicleModal').then((m) => ({ default: m.ChronicleModal })));
 const AuthView = React.lazy(() => import('./components/AuthView').then((m) => ({ default: m.AuthView })));
 const OnboardingView = React.lazy(() => import('./components/OnboardingView').then((m) => ({ default: m.OnboardingView })));
 const RemindersView = React.lazy(() => import('./components/RemindersView').then((m) => ({ default: m.RemindersView })));
 const ReportView = React.lazy(() => import('./components/ReportView').then((m) => ({ default: m.ReportView })));
 const PersonalView = React.lazy(() => import('./components/PersonalView').then((m) => ({ default: m.PersonalView })));
 const SettingsView = React.lazy(() => import('./components/SettingsView').then((m) => ({ default: m.SettingsView })));
-import { VisionReminderModal } from './components/VisionReminderModal';
 import { getUserVisionStatement } from './lib/vision';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { HabitLongPressOverlay } from './components/HabitLongPressOverlay';
 import FlyingPieceOverlay, {
   measureCompletionFlight,
   type FlightHandoffVelocity,
@@ -187,12 +180,6 @@ import { pulseCompletionHaptic } from './lib/completionFeedback';
 /** Debounce for ledger writes so swipe-complete doesn't block the main thread. */
 const STORAGE_DEBOUNCE_MS = 320;
 
-const APP_TABS: readonly ActiveTab[] = ['home', 'reminders', 'report', 'personal', 'settings'];
-
-function resolveActiveTab(tab: ActiveTab | string | null | undefined): ActiveTab {
-  return APP_TABS.includes(tab as ActiveTab) ? (tab as ActiveTab) : 'home';
-}
-
 /** Tab pane visibility classes — maintains active tab DOM instances in memory for 0ms switching. */
 function tabPaneClassName(isActive: boolean, extra = ''): string {
   return `absolute inset-0 tab-pane gpu-smooth ${isActive ? 'tab-pane-active' : 'tab-pane-cached'}${extra ? ` ${extra}` : ''}`;
@@ -202,6 +189,20 @@ export default function App() {
   useKeyboardInset(true);
   const isKeyboardOpen = useKeyboardVisible();
   const isAnyModalOpen = useAnyModalOpen();
+  const { activeTab, visitedTabs, viewResetKey, modalStack, widgetFocusReminderId, widgetOpenCreateTask } = useUI();
+  const {
+    setTab: setActiveTab,
+    openModal,
+    updateModal,
+    closeModal,
+    resetView,
+    focusReminder,
+    setOpenCreateTask,
+    resetAll: resetUI,
+  } = useUIActions();
+  const isAddModalOpen = modalStack.some((modal) => modal.kind === 'addHabit');
+  const longPressModal = findModal(modalStack, 'habitLongPress');
+  const longPressedHabitId = longPressModal?.habitId ?? null;
   // Authentication & Session State
   const [session, setSession] = useState<UserSession | null>(() => {
     const stored = getStoredSession();
@@ -250,7 +251,6 @@ export default function App() {
   const vacationModeActive = protection.vacation.active;
   const examShieldStatus = getExamShieldStatus(protection);
   const vacationStatus = getVacationStatus(protection);
-  const [isExamShieldModalOpen, setIsExamShieldModalOpen] = useState(false);
 
   const examShieldRef = useRef(examShieldActive);
   const vacationModeRef = useRef(vacationModeActive);
@@ -284,17 +284,12 @@ export default function App() {
     setCycleDays: handleCycleDaysChange,
     resetAll: resetAllPreferences,
   } = usePreferencesActions();
-  const [isChronicleOpen, setIsChronicleOpen] = useState(false);
   const [chronicleVersion, setChronicleVersion] = useState(0);
   const CHRONICLE_LAST_AUTO_LAUNCH_KEY = 'ascend_chronicle_last_auto_launch_date';
 
-  const [isVisionReminderOpen, setIsVisionReminderOpen] = useState(false);
-  const [visionReminderText, setVisionReminderText] = useState(() => getUserVisionStatement());
-  const handleDismissVisionReminder = useCallback(() => setIsVisionReminderOpen(false), []);
   const VISION_REMINDER_LAST_DATE_KEY = 'ascend_vision_reminder_last_date';
 
-  const handleOpenChronicle = useCallback(() => setIsChronicleOpen(true), []);
-  const handleCloseChronicle = useCallback(() => setIsChronicleOpen(false), []);
+  const handleOpenChronicle = useCallback(() => openModal({ kind: 'chronicle' }), [openModal]);
   const handleChronicleSave = useCallback(() => setChronicleVersion((v) => v + 1), []);
 
   const handleToggleInterest = useCallback((interest: string) => {
@@ -423,31 +418,7 @@ export default function App() {
     bindRemindersSession(session);
   }, [session, bindRemindersSession]);
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('home');
-  const [viewResetKey, setViewResetKey] = useState(0);
-  const safeActiveTab = resolveActiveTab(activeTab);
-
-  useEffect(() => {
-    if (activeTab !== safeActiveTab) setActiveTab(safeActiveTab);
-  }, [activeTab, safeActiveTab]);
-
-  const isTabActive = useCallback((tab: ActiveTab) => safeActiveTab === tab, [safeActiveTab]);
-  const [hasRenderedTasks, setHasRenderedTasks] = useState(false);
-  const [hasRenderedReports, setHasRenderedReports] = useState(false);
-  const [hasRenderedPersonal, setHasRenderedPersonal] = useState(false);
-  const [hasRenderedSettings, setHasRenderedSettings] = useState(false);
-
-  useEffect(() => {
-    if (activeTab === 'reminders') setHasRenderedTasks(true);
-    else if (activeTab === 'report') setHasRenderedReports(true);
-    else if (activeTab === 'personal') setHasRenderedPersonal(true);
-    else if (activeTab === 'settings') setHasRenderedSettings(true);
-  }, [activeTab]);
-
-  if (activeTab === 'reminders' && !hasRenderedTasks) setHasRenderedTasks(true);
-  if (activeTab === 'report' && !hasRenderedReports) setHasRenderedReports(true);
-  if (activeTab === 'personal' && !hasRenderedPersonal) setHasRenderedPersonal(true);
-  if (activeTab === 'settings' && !hasRenderedSettings) setHasRenderedSettings(true);
+  const isTabActive = useCallback((tab: ActiveTab) => activeTab === tab, [activeTab]);
 
   const CALENDAR_LAST_ACTIVE_KEY = 'ascend_last_active_date';
 
@@ -549,7 +520,6 @@ export default function App() {
 
   const { currentDateString } = useHabitAutoReset(handleDayRollOver);
   const [currentSelectedDate, setCurrentSelectedDate] = useState<string>(() => getLocalDateString());
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
  
   // Startup trigger: Strategy/Vision overlay auto-launch on new day (deferred 150ms post-paint)
   useEffect(() => {
@@ -561,9 +531,7 @@ export default function App() {
       const lastVisionDate = localStorage.getItem(VISION_REMINDER_LAST_DATE_KEY);
       if (lastVisionDate !== todayIso) {
         localStorage.setItem(VISION_REMINDER_LAST_DATE_KEY, todayIso);
-        const visionText = getUserVisionStatement();
-        setVisionReminderText(visionText);
-        setIsVisionReminderOpen(true);
+        openModal({ kind: 'visionReminder', text: getUserVisionStatement() });
       }
     }, 150);
 
@@ -595,13 +563,6 @@ export default function App() {
     setProtection((prev) => tickProtectionState(prev, toISODate(calendarOrigin)));
   }, [calendarOrigin]);
 
-  const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
-  const [widgetFocusReminderId, setWidgetFocusReminderId] = useState<string | null>(null);
-  const [widgetOpenCreateTask, setWidgetOpenCreateTask] = useState(false);
-  const [detailHabit, setDetailHabit] = useState<Habit | null>(null);
-  const [longPressedHabitId, setLongPressedHabitId] = useState<string | null>(null);
-  const [longPressedRect, setLongPressedRect] = useState<DOMRect | null>(null);
-  const [deleteConfirmHabit, setDeleteConfirmHabit] = useState<Habit | null>(null);
   const [momentumPulse, setMomentumPulse] = useState(0);
 
   useEffect(() => {
@@ -625,7 +586,7 @@ export default function App() {
 
   const handleToggleExamShield = useCallback(() => {
     if (!examShieldRef.current) {
-      setIsExamShieldModalOpen(true);
+      openModal({ kind: 'examShield' });
       return;
     }
 
@@ -712,74 +673,6 @@ export default function App() {
     });
   }, [calendarOrigin]);
 
-  // Change password modal
-  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-  const handleClosePasswordModal = useCallback(() => setIsPasswordModalOpen(false), []);
-
-  // Android Native Edge-Swipe & Back Button Gesture Handling
-  useEffect(() => {
-    let removeListener: (() => void) | null = null;
-    void CapacitorApp.addListener('backButton', () => {
-      // Priority Modal Stack Checklist
-      if (isChronicleOpen) {
-        setIsChronicleOpen(false);
-        return;
-      }
-      if (isAddModalOpen) {
-        setIsAddModalOpen(false);
-        return;
-      }
-      if (detailHabit) {
-        setDetailHabit(null);
-        return;
-      }
-      if (deleteConfirmHabit) {
-        setDeleteConfirmHabit(null);
-        return;
-      }
-      if (isLedgerModalOpen) {
-        setIsLedgerModalOpen(false);
-        return;
-      }
-      if (isPasswordModalOpen) {
-        setIsPasswordModalOpen(false);
-        return;
-      }
-      if (isExamShieldModalOpen) {
-        setIsExamShieldModalOpen(false);
-        return;
-      }
-      if (longPressedHabitId) {
-        setLongPressedHabitId(null);
-        setLongPressedRect(null);
-        return;
-      }
-      if (activeTab !== 'home') {
-        setActiveTab('home');
-        return;
-      }
-      // Minimize app if on home tab with no open modals
-      void CapacitorApp.minimizeApp();
-    }).then((handle) => {
-      removeListener = () => {
-        void handle.remove();
-      };
-    }).catch(() => {});
-
-    return () => {
-      if (removeListener) removeListener();
-    };
-  }, [
-    isChronicleOpen,
-    isAddModalOpen,
-    detailHabit,
-    deleteConfirmHabit,
-    isLedgerModalOpen,
-    isPasswordModalOpen,
-    isExamShieldModalOpen,
-    longPressedHabitId,
-    activeTab,
-  ]);
 
 
   // Listen to Supabase auth state and restore session
@@ -1384,6 +1277,25 @@ setMomentumEvents((prev) =>
 
   const activeFrictionPrompt = pendingFriction[0] ?? null;
 
+  const handleAddManualVote = (habitName: string, identityStatement: string, category: HabitCategory) => {
+    const newEv: IdentityEvidence = {
+      id: 'ev-manual-' + Date.now(),
+      habitId: 'manual',
+      habitName,
+      identityStatement,
+      category,
+      date: new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }),
+      dayNumber: selectedDay,
+      loggedDate: toISODate(),
+    };
+    setEvidenceList((prev) => [newEv, ...prev]);
+    appendMomentumLog(createMomentumEvent({ id: newMomentumEventId(), category }, 'full', toISODate(), Date.now()));
+  };
+
   const handleFrictionSubmit = (reason: string) => {
     const prompt = pendingFriction[0];
     if (!prompt) return;
@@ -1657,9 +1569,7 @@ setMomentumEvents((prev) =>
       prev.map((h) => (h.id === habitId ? touchHabit({ ...h, archived: true }) : h))
     );
     void cancelHabitTargetTimeNotification(habitId);
-    if (detailHabit && detailHabit.id === habitId) {
-      setDetailHabit(null);
-    }
+    closeModal('habitDetail', habitId);
   };
 
   // Restore archived habit
@@ -1687,9 +1597,9 @@ setMomentumEvents((prev) =>
     void cancelHabitTargetTimeNotification(habitId);
     setHabits((prev) => prev.filter((habit) => habit.id !== habitId));
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
-    setDetailHabit((prev) => (prev && prev.id === habitId ? null : prev));
+    closeModal('habitDetail', habitId);
     void deleteHabit(habitId).catch(() => {});
-  }, []);
+  }, [closeModal]);
 
   // Update habit
   const handleUpdateHabit = (updatedHabit: Habit) => {
@@ -1705,7 +1615,7 @@ setMomentumEvents((prev) =>
         return h;
       })
     );
-    setDetailHabit(touchHabit(next));
+    updateModal({ kind: 'habitDetail', habit: touchHabit(next) });
     if (next.targetTime && !next.archived) {
       const isCompletedToday = hasLogOn(completionEvents, next.id, currentDateString);
       if (!isCompletedToday) {
@@ -1826,16 +1736,16 @@ setMomentumEvents((prev) =>
     resetAllReminders();
     setFrictionAudits([]);
     resetAllPreferences();
-    setActiveTab('home');
-  }, [resetAllPreferences, resetAllReminders]);
+    resetUI();
+  }, [resetAllPreferences, resetAllReminders, resetUI]);
 
   // Sign out / Log out handler
   const handleLogout = useCallback(async () => {
     await authService.signOut();
     setSession(null);
     setStoredSession(null);
-    setActiveTab('home');
-  }, []);
+    resetUI();
+  }, [resetUI]);
 
   // Auth Success handler
   const handleAuthSuccess = (newSession: UserSession, isNewUser?: boolean, interests?: string[]) => {
@@ -1977,26 +1887,27 @@ setMomentumEvents((prev) =>
   const stableToggleKeystone = useCallback((habitId: string, next: boolean) => {
     handleToggleKeystoneRef.current(habitId, next);
   }, []);
-  const stableLongPress = useCallback((h: Habit, rect?: DOMRect) => {
-    setLongPressedHabitId(h.id);
-    setLongPressedRect(rect || null);
-  }, []);
-  const stableDismissLongPress = useCallback(() => {
-    setLongPressedHabitId(null);
-    setLongPressedRect(null);
-  }, []);
-  const stableOpenEdit = useCallback((h: Habit) => {
-    setLongPressedHabitId(null);
-    setLongPressedRect(null);
-    setDetailHabit(h);
-  }, []);
-  const stableOpenDeleteConfirm = useCallback((h: Habit) => {
-    setLongPressedHabitId(null);
-    setLongPressedRect(null);
-    setDeleteConfirmHabit(h);
-  }, []);
+  const stableLongPress = useCallback(
+    (h: Habit, rect?: DOMRect) => openModal({ kind: 'habitLongPress', habitId: h.id, rect: rect || null }),
+    [openModal]
+  );
+  const stableDismissLongPress = useCallback(() => closeModal('habitLongPress'), [closeModal]);
+  const stableOpenEdit = useCallback(
+    (h: Habit) => {
+      closeModal('habitLongPress');
+      openModal({ kind: 'habitDetail', habit: h });
+    },
+    [openModal, closeModal]
+  );
+  const stableOpenDeleteConfirm = useCallback(
+    (h: Habit) => {
+      closeModal('habitLongPress');
+      openModal({ kind: 'deleteHabit', habit: h });
+    },
+    [openModal, closeModal]
+  );
 
-  const handleOpenSettingsTab = useCallback(() => setActiveTab('settings'), []);
+  const handleOpenSettingsTab = useCallback(() => setActiveTab('settings'), [setActiveTab]);
 
   const renderHabit = useCallback(
     (habit: Habit, habitIndex: number) => {
@@ -2073,10 +1984,9 @@ setMomentumEvents((prev) =>
       handleOpenChronicle,
     ]
   );
-  const handleOpenHomeTab = useCallback(() => setActiveTab('home'), []);
-  const handleOpenLedgerModal = useCallback(() => setIsLedgerModalOpen(true), []);
-  const handleCloseLedgerModal = useCallback(() => setIsLedgerModalOpen(false), []);
-  const handleOpenPasswordModal = useCallback(() => setIsPasswordModalOpen(true), []);
+  const handleOpenHomeTab = useCallback(() => setActiveTab('home'), [setActiveTab]);
+  const handleOpenLedgerModal = useCallback(() => openModal({ kind: 'identityLedger' }), [openModal]);
+  const handleOpenPasswordModal = useCallback(() => openModal({ kind: 'changePassword' }), [openModal]);
 
 
   useEffect(() => {
@@ -2100,20 +2010,20 @@ setMomentumEvents((prev) =>
       if (route.tab === 'report') setActiveTab('report');
       if (route.tab === 'reminders') {
         setActiveTab('reminders');
-        if (route.reminderId) setWidgetFocusReminderId(route.reminderId);
-        if (route.openCreate) setWidgetOpenCreateTask(true);
+        if (route.reminderId) focusReminder(route.reminderId);
+        if (route.openCreate) setOpenCreateTask(true);
       }
       if (route.tab === 'home') {
         setActiveTab('home');
-        if (route.openCreate && !isAtActiveHabitCap(habitsRef.current)) setIsAddModalOpen(true);
+        if (route.openCreate && !isAtActiveHabitCap(habitsRef.current)) openModal({ kind: 'addHabit' });
         if (route.habitId) {
           const habit = derivedHabitsRef.current.find((item) => item.id === route.habitId);
-          if (habit) setDetailHabit(habit);
+          if (habit) openModal({ kind: 'habitDetail', habit });
         }
       }
       if (route.tab === 'ledger') {
         setActiveTab('personal');
-        setIsLedgerModalOpen(true);
+        openModal({ kind: 'identityLedger' });
       }
     };
 
@@ -2158,9 +2068,7 @@ setMomentumEvents((prev) =>
     };
   }, []);
 
-  const handleOpenCreateConsumed = useCallback(() => {
-    setWidgetOpenCreateTask(false);
-  }, []);
+  const handleOpenCreateConsumed = useCallback(() => setOpenCreateTask(false), [setOpenCreateTask]);
 
   const handlePersonalSyncNow = useCallback(async () => {
     const target = sessionRef.current;
@@ -2396,7 +2304,7 @@ setMomentumEvents((prev) =>
       >
         <ErrorBoundary
           resetKey={String(viewResetKey)}
-          onReset={() => setViewResetKey((value) => value + 1)}
+          onReset={resetView}
         >
         <div className="absolute inset-0 z-10 tab-pane-host gpu-smooth bg-canvas">
         {/* Active tabs maintain persistent DOM memory once visited for 0ms instant tab switching. */}
@@ -2432,7 +2340,7 @@ setMomentumEvents((prev) =>
                         return;
                       }
                       destroyAscendSpotlightTutorial();
-                      setIsAddModalOpen(true);
+                      openModal({ kind: 'addHabit' });
                     }}
                     aria-label="Add Habit"
                     title={isAtActiveHabitCap(habits) ? `Maximum limit of ${MAX_ACTIVE_HABITS} active habits reached` : 'Add Habit'}
@@ -2467,7 +2375,7 @@ setMomentumEvents((prev) =>
             </HomeView>
           </main>
 
-        {hasRenderedTasks && (
+        {visitedTabs.includes('reminders') && (
           <div
             aria-hidden={!isTabActive('reminders')}
             className={activeTab === 'reminders' ? 'block h-full' : 'hidden'}
@@ -2494,7 +2402,7 @@ setMomentumEvents((prev) =>
           </div>
         )}
 
-        {hasRenderedReports && (
+        {visitedTabs.includes('report') && (
           <div
             aria-hidden={!isTabActive('report')}
             className={activeTab === 'report' ? 'block h-full' : 'hidden'}
@@ -2528,7 +2436,7 @@ setMomentumEvents((prev) =>
           </div>
         )}
 
-        {hasRenderedPersonal && (
+        {visitedTabs.includes('personal') && (
           <div
             aria-hidden={!isTabActive('personal')}
             className={activeTab === 'personal' ? 'block h-full' : 'hidden'}
@@ -2560,7 +2468,7 @@ setMomentumEvents((prev) =>
           </div>
         )}
 
-        {hasRenderedSettings && (
+        {visitedTabs.includes('settings') && (
           <div
             aria-hidden={!isTabActive('settings')}
             className={activeTab === 'settings' ? 'block h-full' : 'hidden'}
@@ -2610,172 +2518,41 @@ setMomentumEvents((prev) =>
 
         {/* Floating Bottom Navigation: hide on scroll, keyboard, or modal */}
         <BottomNav
-          activeTab={safeActiveTab}
-          onTabChange={(tab) => setActiveTab(resolveActiveTab(tab))}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
           pendingRemindersCount={pendingRemindersCount}
           isBlurred={Boolean(longPressedHabitId)}
         />
 
-        {/* Spotlighted Habit Overlay with Whole Screen Blur & Dustbin/Pen options */}
-        <AnimatePresence>
-          {longPressedHabit && (
-            <HabitLongPressOverlay
-              key="habit-long-press"
-              habit={longPressedHabit}
-              rect={longPressedRect}
-              todayIndex={todayDayIndex}
-              isCompletedToday={hasLogOn(completionEvents, longPressedHabit.id, currentDateString)}
-              isFallbackActive={isViewingToday && activeFallbackIds.includes(longPressedHabit.id)}
-              onClose={() => {
-                setLongPressedHabitId(null);
-                setLongPressedRect(null);
-              }}
-              onOpenEdit={(h) => {
-                setLongPressedHabitId(null);
-                setLongPressedRect(null);
-                setDetailHabit(h);
-              }}
-              onDelete={(h) => {
-                setLongPressedHabitId(null);
-                setLongPressedRect(null);
-                setDeleteConfirmHabit(h);
-              }}
-            />
-          )}
-        </AnimatePresence>
-
-        {/* Home Indicator */}
         <HomeIndicator />
 
-        {/* MODALS */}
-        {isAddModalOpen && (
-          <Suspense fallback={null}>
-            <AddHabitModal
-              isOpen={isAddModalOpen}
-              onClose={() => setIsAddModalOpen(false)}
-              onAddHabit={handleAddHabit}
-              userId={session?.id}
-              isGuest={session?.isGuest}
-              activeHabitCount={countActiveHabits(habits)}
-              activeKeystoneCount={countActiveKeystones(habits)}
-            />
-          </Suspense>
-        )}
-
-        {Boolean(detailHabit) && (
-          <Suspense fallback={null}>
-            <HabitDetailModal
-              habit={detailHabit}
-              isOpen={Boolean(detailHabit)}
-              onClose={() => setDetailHabit(null)}
-              onDeleteHabit={(habitId) => {
-                const target = habits.find((item) => item.id === habitId) || detailHabit;
-                setDetailHabit(null);
-                if (target) setDeleteConfirmHabit(target);
-              }}
-              onUpdateHabit={handleUpdateHabit}
-              onArchiveHabit={handleArchiveHabit}
-              todayIndex={todayDayIndex}
-              activeKeystoneCount={countActiveKeystones(habits)}
-            />
-          </Suspense>
-        )}
-
-        {Boolean(deleteConfirmHabit) && (
-          <Suspense fallback={null}>
-            <DeleteHabitConfirmModal
-              habit={deleteConfirmHabit}
-              isOpen={Boolean(deleteConfirmHabit)}
-              onClose={() => setDeleteConfirmHabit(null)}
-              onConfirm={() => {
-                if (deleteConfirmHabit) {
-                  handleDeleteHabit(deleteConfirmHabit.id);
-                  setDeleteConfirmHabit(null);
-                }
-              }}
-            />
-          </Suspense>
-        )}
-
-        {Boolean(activeFrictionPrompt) && !isChronicleOpen && (
-          <Suspense fallback={null}>
-            <FrictionAuditModal
-              isOpen={Boolean(activeFrictionPrompt)}
-              habitName={activeFrictionPrompt?.habitName || ''}
-              loggedDate={activeFrictionPrompt?.loggedDate}
-              onSubmit={handleFrictionSubmit}
-              onSkip={handleFrictionSkip}
-              onRolloverMicro={handleFrictionRolloverMicro}
-            />
-          </Suspense>
-        )}
-
-        <AnimatePresence>
-          {isVisionReminderOpen && (
-            <VisionReminderModal
-              isOpen={isVisionReminderOpen}
-              visionText={visionReminderText}
-              onDismiss={handleDismissVisionReminder}
-            />
-          )}
-        </AnimatePresence>
-
-        {isChronicleOpen && (
-          <Suspense fallback={null}>
-            <ChronicleModal
-              isOpen={isChronicleOpen}
-              todayIso={todayIso}
-              onClose={handleCloseChronicle}
-              onSave={handleChronicleSave}
-            />
-          </Suspense>
-        )}
-
-        {isLedgerModalOpen && (
-          <Suspense fallback={null}>
-            <IdentityLedgerModal
-              isOpen={isLedgerModalOpen}
-              onClose={handleCloseLedgerModal}
-              evidenceList={ledgerEvidence}
-              identityVoteCount={displayedIdentityVotes}
-              onAddVote={(name, statement, cat) => {
-                const newEv: IdentityEvidence = {
-                  id: 'ev-manual-' + Date.now(),
-                  habitId: 'manual',
-                  habitName: name,
-                  identityStatement: statement,
-                  category: cat,
-                  date: new Date().toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  }),
-                  dayNumber: selectedDay,
-                  loggedDate: toISODate(),
-                };
-                setEvidenceList((prev) => [newEv, ...prev]);
-                appendMomentumLog(
-                  createMomentumEvent(
-                    { id: newMomentumEventId(), category: cat },
-                    'full',
-                    toISODate(),
-                    Date.now()
-                  )
-                );
-              }}
-            />
-          </Suspense>
-        )}
-
-        {/* Exam Shield Confirmation Modal */}
-        <ExamShieldModal
-          isOpen={isExamShieldModalOpen}
-          onClose={() => setIsExamShieldModalOpen(false)}
-          onConfirmActivate={handleConfirmActivateExamShield}
-          status={examShieldStatus}
+        <ModalHost
+          session={session}
+          habits={habits}
+          todayDayIndex={todayDayIndex}
+          todayIso={todayIso}
+          longPressedHabit={longPressedHabit}
+          longPressedCompletedToday={
+            longPressedHabit ? hasLogOn(completionEvents, longPressedHabit.id, currentDateString) : false
+          }
+          longPressedFallbackActive={
+            Boolean(longPressedHabit) && isViewingToday && activeFallbackIds.includes(longPressedHabit.id)
+          }
+          onAddHabit={handleAddHabit}
+          onUpdateHabit={handleUpdateHabit}
+          onArchiveHabit={handleArchiveHabit}
+          onDeleteHabit={handleDeleteHabit}
+          frictionPrompt={activeFrictionPrompt}
+          onFrictionSubmit={handleFrictionSubmit}
+          onFrictionSkip={handleFrictionSkip}
+          onFrictionRolloverMicro={handleFrictionRolloverMicro}
+          onChronicleSave={handleChronicleSave}
+          ledgerEvidence={ledgerEvidence}
+          identityVoteCount={displayedIdentityVotes}
+          onAddManualVote={handleAddManualVote}
+          examShieldStatus={examShieldStatus}
+          onConfirmActivateExamShield={handleConfirmActivateExamShield}
         />
-
-        <ChangePasswordModal isOpen={isPasswordModalOpen} onClose={handleClosePasswordModal} />
 
       </div>
     </div>

@@ -2,6 +2,7 @@ import React from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import { overlayFade, sheetMotion } from '../lib/motionPresets';
+import { useBackDismiss } from '../providers/UIProvider';
 
 
 interface MotionModalProps {
@@ -25,6 +26,8 @@ export const MotionModal: React.FC<MotionModalProps> = ({
   cardClassName = 'p-5',
   closeOnBackdrop = true,
 }) => {
+  // Hardware back behaves like a backdrop tap: closes when that closes, otherwise is swallowed.
+  useBackDismiss(isOpen, closeOnBackdrop ? onClose : null);
   const keyboardInset = useKeyboardInset(isOpen);
 
   return (

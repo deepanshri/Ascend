@@ -4,6 +4,7 @@ import { Habit } from '../types';
 import { overlayFade, sheetMotion } from '../lib/motionPresets';
 import { getTodayDayIndex, getWeekDateNumber } from '../utils/dates';
 import { habitCategoryBadge, habitCategoryLabel, habitCategoryTagClass } from '../utils/categories';
+import { useBackDismiss } from '../providers/UIProvider';
 
 interface HabitLongPressOverlayProps {
   habit: Habit;
@@ -26,6 +27,7 @@ export const HabitLongPressOverlay: React.FC<HabitLongPressOverlayProps> = ({
   onOpenEdit,
   onDelete,
 }) => {
+  useBackDismiss(true, onClose);
   // Dismiss on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

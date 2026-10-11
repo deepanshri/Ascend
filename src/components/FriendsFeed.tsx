@@ -21,6 +21,7 @@ import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import { overlayFade, sheetMotion, tapPress } from '../lib/motionPresets';
 import { HEADER_ICON_BTN_CLASS } from './ScreenHeader';
 import { ProfileAvatar } from './ProfileAvatar';
+import { useBackDismiss } from '../providers/UIProvider';
 
 export interface FriendsFeedProps {
   userId?: string | null;
@@ -71,6 +72,11 @@ export const FriendsFeed: React.FC<FriendsFeedProps> = ({
   }, []);
 
   const modalVisible = variant === 'modal' ? Boolean(isOpen ?? true) : variant === 'icon' && drawerOpen;
+  useBackDismiss(modalVisible, () => {
+    setDrawerOpen(false);
+    onClose?.();
+  });
+  useBackDismiss(Boolean(ledger), () => setLedger(null));
   const keyboardInset = useKeyboardInset(modalVisible || Boolean(ledger));
   const signedIn = Boolean(userId && !isGuest && !String(userId).startsWith('guest_'));
   const accepted = useMemo(

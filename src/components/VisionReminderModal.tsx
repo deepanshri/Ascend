@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
+import { useBackDismiss } from '../providers/UIProvider';
 
 export interface VisionReminderModalProps {
   isOpen?: boolean;
@@ -12,6 +13,7 @@ export const VisionReminderModal: React.FC<VisionReminderModalProps> = ({
   visionText,
   onDismiss,
 }) => {
+  useBackDismiss(isOpen, onDismiss);
   if (!isOpen) return null;
 
   return (
