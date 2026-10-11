@@ -1,10 +1,12 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { flushWrite, scheduleWrite } from '../lib/pendingWrites';
 import { hideNativeSplash } from '../lib/nativeChrome';
 import { schedulePsychologyNotifications, syncAllHabitTargetNotifications } from '../lib/notifications';
 import { publishWidgetSnapshot } from '../lib/widgetSync';
 import { useCalendar } from './CalendarProvider';
-import { useLedger } from './HabitLedgerProvider';
+import { useLedger, useLedgerActions } from './HabitLedgerProvider';
+import { selectWidgetLedgerView } from './ledgerSelectors';
+import { useProtection } from './ProtectionProvider';
 import { useOnboarding } from './OnboardingProvider';
 import { usePreferences } from './PreferencesProvider';
 import { useReminders } from './RemindersProvider';
@@ -30,7 +32,7 @@ export function NativeSyncController({ children }: { children: React.ReactNode }
   const { isDark } = useTheme();
   const { todayDayIndex, calendarOrigin } = useCalendar();
   const { reminders } = useReminders();
-  const { habits, activeHabits, completionEvents, momentumEvents, rolledOverHabits, todayMomentumScore } = useLedger();
+  const { habits, activeHabits, completionEvents, todayMomentumScore } = useLedger();
 
   useEffect(() => {
     const timer = window.setTimeout(() => void hideNativeSplash().catch(() => {}), SPLASH_HIDE_MS);
@@ -39,26 +41,51 @@ export function NativeSyncController({ children }: { children: React.ReactNode }
 
   // Widget snapshot. Scheduled through the pending-writes registry rather than
   // a bare timer: when the OS backgrounds the app inside the debounce window,
-  // installBackgroundFlush publishes it immediately, so the widget never keeps
-  // stale data. A sign-out purge discards it with every other pending write.
-  useEffect(() => {
-    const input = {
-      todayDayIndex,
-      origin: calendarOrigin,
-      dark: isDark,
-      momentumScore: todayMomentumScore,
-      habits: activeHabits,
-      reminders,
-      momentumEvents,
-      completionEvents,
-      graceHabitIds: rolledOverHabits,
-    };
+  // installBackgroundFlush publishes it immediately. The snapshot is built when
+  // it is published, from the ledger's latest state (getSnapshot), and every
+  // ledger change schedules it synchronously, before React renders, so even a
+  // tap followed at once by the home button reaches the widget. A sign-out purge
+  // discards it with every other pending write.
+  const { protectionWindows } = useProtection();
+  const { getSnapshot, subscribe } = useLedgerActions();
+  const latestRef = useRef({ todayDayIndex, calendarOrigin, isDark, reminders, protectionWindows });
+  latestRef.current = { todayDayIndex, calendarOrigin, isDark, reminders, protectionWindows };
+
+  const scheduleWidgetRefresh = useCallback(() => {
     scheduleWrite(
       WIDGET_REFRESH_KEY,
-      () => void publishWidgetSnapshot(input).catch(() => {}),
+      () => {
+        const { todayDayIndex: dayIndex, calendarOrigin: origin, isDark: dark, reminders: tasks, protectionWindows: windows } =
+          latestRef.current;
+        const ledger = selectWidgetLedgerView(getSnapshot(), origin, windows);
+        void publishWidgetSnapshot({
+          todayDayIndex: dayIndex,
+          origin,
+          dark,
+          momentumScore: ledger.todayMomentumScore,
+          habits: ledger.activeHabits,
+          reminders: tasks,
+          momentumEvents: ledger.momentumEvents,
+          completionEvents: ledger.completionEvents,
+          graceHabitIds: ledger.graceHabitIds,
+        }).catch(() => {});
+      },
       WIDGET_REFRESH_DEBOUNCE_MS
     );
-  }, [todayMomentumScore, activeHabits, reminders, todayDayIndex, calendarOrigin, completionEvents, momentumEvents, isDark, rolledOverHabits]);
+  }, [getSnapshot]);
+
+  useEffect(() => subscribe(scheduleWidgetRefresh), [subscribe, scheduleWidgetRefresh]);
+  // Everything else the widget shows (and the ledger as rendered, which also covers the first publish).
+  useEffect(scheduleWidgetRefresh, [
+    scheduleWidgetRefresh,
+    todayMomentumScore,
+    activeHabits,
+    reminders,
+    todayDayIndex,
+    calendarOrigin,
+    isDark,
+    protectionWindows,
+  ]);
   useEffect(() => () => flushWrite(WIDGET_REFRESH_KEY), []);
 
   const hasSession = Boolean(session);

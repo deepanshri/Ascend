@@ -26,11 +26,7 @@ import {
   saveLocalMomentumEvents,
 } from '../lib/momentumEvents';
 import {
-  calculateMomentumScore,
   deleteHabitLog,
-  deriveHabitsFromEventLog,
-  mergeMomentumEvents,
-  momentumEventsFromCompletionLog,
   newMomentumEventId,
   upsertHabitLog,
   upsertHabitLogs,
@@ -68,6 +64,7 @@ import {
   type GraceRolloverPlan,
   type LedgerClock,
 } from './ledgerPlans';
+import { selectActiveHabits, selectDerivedHabits, selectTodayMomentumEvents, selectTodayMomentumScore } from './ledgerSelectors';
 import { useCalendar } from './CalendarProvider';
 import { useOnboarding } from './OnboardingProvider';
 import { useProtection } from './ProtectionProvider';
@@ -130,6 +127,8 @@ export interface LedgerActions {
   pulseMomentum: () => void;
   /** The latest ledger, including changes not rendered yet. */
   getSnapshot: () => LedgerState;
+  /** Called synchronously after every change is applied, before React renders it. */
+  subscribe: (listener: () => void) => () => void;
 }
 
 const LedgerStateContext = createContext<LedgerContextState | null>(null);
@@ -174,6 +173,8 @@ export function HabitLedgerProvider({ children }: { children: React.ReactNode })
   /** Missed days are processed once onboarding is done or at its last step, like every other sync gate. */
   const processMissedDays = isOnboarded || onboardingStep >= 3;
 
+  const listenersRef = useRef(new Set<() => void>());
+
   /** Apply an action now (the ref always holds the latest ledger) and schedule the render. */
   const commit = useCallback((action: LedgerAction, transition = false): LedgerState => {
     const next = ledgerReducer(stateRef.current, action);
@@ -181,6 +182,7 @@ export function HabitLedgerProvider({ children }: { children: React.ReactNode })
       stateRef.current = next;
       if (transition) startTransition(() => setState(next));
       else setState(next);
+      for (const listener of listenersRef.current) listener();
     }
     return next;
   }, []);
@@ -473,25 +475,31 @@ export function HabitLedgerProvider({ children }: { children: React.ReactNode })
       },
 
       getSnapshot: () => stateRef.current,
+
+      subscribe(listener) {
+        const listeners = listenersRef.current;
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
     };
   }, [commit, holdGraceUpload]);
 
   // Derived views of the ledger.
   const derivedHabits = useMemo(
-    () => deriveHabitsFromEventLog(state.habits, state.completionEvents, calendarOrigin),
+    () => selectDerivedHabits(state, calendarOrigin),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only these slices feed it
     [state.habits, state.completionEvents, calendarOrigin]
   );
-  const activeHabits = useMemo(() => derivedHabits.filter((habit) => !habit.archived), [derivedHabits]);
+  const activeHabits = useMemo(() => selectActiveHabits(derivedHabits), [derivedHabits]);
   const todayMomentumEvents = useMemo(
-    () =>
-      mergeMomentumEvents(
-        state.momentumEvents,
-        momentumEventsFromCompletionLog(state.completionEvents, state.habits, calendarOrigin)
-      ),
+    () => selectTodayMomentumEvents(state, calendarOrigin),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only these slices feed it
     [state.momentumEvents, state.completionEvents, state.habits, calendarOrigin]
   );
   const todayMomentumScore = useMemo(
-    () => calculateMomentumScore(todayMomentumEvents, { habits: state.habits, protectionWindows }),
+    () => selectTodayMomentumScore(todayMomentumEvents, state.habits, protectionWindows),
     [todayMomentumEvents, state.habits, protectionWindows]
   );
 
