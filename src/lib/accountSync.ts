@@ -33,7 +33,7 @@ export interface AccountSyncResult {
   error?: string;
 }
 
-export { persistHabitsToTable, mergeHabitsByUpdatedAt };
+export { persistHabitsToTable };
 
 function withoutSeedHabits(habits: Habit[]): Habit[] {
   return habits.filter((habit) => !isSeedHabitId(habit.id));

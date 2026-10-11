@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   User,
   Calendar,
@@ -128,11 +128,15 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
     return ['Movies', 'Books', 'Anime', 'Running'];
   });
 
-  const selectedInterests = Array.isArray(propSelectedInterests)
-    ? propSelectedInterests
-    : Array.isArray(localSelectedInterests)
-      ? localSelectedInterests
-      : [];
+  const selectedInterests = useMemo(
+    () =>
+      Array.isArray(propSelectedInterests)
+        ? propSelectedInterests
+        : Array.isArray(localSelectedInterests)
+          ? localSelectedInterests
+          : [],
+    [propSelectedInterests, localSelectedInterests]
+  );
   const evidenceItems = Array.isArray(evidenceList) ? evidenceList : [];
 
   // "What do you want to become?" aspiration state

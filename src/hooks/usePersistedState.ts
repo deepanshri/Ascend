@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { flushWrite, scheduleWrite } from '../lib/pendingWrites';
 
 /**
@@ -22,15 +22,4 @@ export function usePersistEffect<T>(value: T, persist: (value: T) => void, debou
   }, [value, debounceMs, writeKey]);
 
   useEffect(() => () => flushWrite(writeKey), [writeKey]);
-}
-
-/** `useState` that hydrates from `load` once and persists every change. */
-export function usePersistedState<T>(
-  load: () => T,
-  persist: (value: T) => void,
-  debounceMs = 0
-): [T, Dispatch<SetStateAction<T>>] {
-  const [value, setValue] = useState<T>(load);
-  usePersistEffect(value, persist, debounceMs);
-  return [value, setValue];
 }

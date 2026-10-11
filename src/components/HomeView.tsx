@@ -84,7 +84,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
     const set = new Set<string>();
     if (habits) {
       for (const habit of habits) {
-        if (Boolean(habit.days?.[checkDay])) {
+        if (habit.days?.[checkDay]) {
           set.add(habit.id);
         }
       }
@@ -104,7 +104,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
       pendingBatchChangesRef.current.clear();
       const freshSet = new Set<string>();
       for (const habit of habits || []) {
-        if (Boolean(habit.days?.[checkDay])) {
+        if (habit.days?.[checkDay]) {
           freshSet.add(habit.id);
         }
       }
@@ -116,7 +116,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
       initializedRef.current = true;
       const initialSet = new Set<string>();
       for (const habit of habits) {
-        if (Boolean(habit.days?.[checkDay])) {
+        if (habit.days?.[checkDay]) {
           initialSet.add(habit.id);
         }
       }
@@ -182,12 +182,12 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   }, [habits, checkDay, visualCompletedIds]);
 
   useEffect(() => {
+    const timers = pendingTimersRef.current;
+    const batch = pendingBatchChangesRef.current;
     return () => {
-      for (const timerId of pendingTimersRef.current.values()) {
-        window.clearTimeout(timerId);
-      }
-      pendingTimersRef.current.clear();
-      pendingBatchChangesRef.current.clear();
+      for (const timerId of timers.values()) window.clearTimeout(timerId);
+      timers.clear();
+      batch.clear();
     };
   }, []);
 

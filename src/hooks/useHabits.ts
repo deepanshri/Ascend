@@ -27,4 +27,3 @@ export function useHabits(habits: Habit[]): {
   return { habits: resolved, morningHabits, nightHabits };
 }
 
-export { withHabitTimeOfDay } from '../utils/timeOfDay';

@@ -314,7 +314,7 @@ function ReminderCardInner({
 
     if (!timeStr && dateStr === today) return '';
 
-    let prefix = '';
+    let prefix: string;
     if (dateStr === today) {
       prefix = 'Today';
     } else if (dateStr === tomorrow) {

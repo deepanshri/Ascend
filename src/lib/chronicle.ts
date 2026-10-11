@@ -63,6 +63,17 @@ export type ChronicleEntriesMap = Record<string, ChronicleEntry>;
  * Load all chronicle entries from local storage.
  * Reads both 'ascend_chronicle' and 'ascend_chronicle_entries' to guarantee consistency.
  */
+/** A chronicle row as stored by older and newer app versions (snake or camel case). */
+interface StoredChronicleRow {
+  iso_date?: string;
+  isoDate?: string;
+  phase1?: string;
+  phase2?: string;
+  phase3?: string;
+  updated_at?: string;
+  updatedAt?: string;
+}
+
 export function loadChronicleEntries(): ChronicleEntriesMap {
   try {
     const rawLegacy = localStorage.getItem(CHRONICLE_STORAGE_KEY);
@@ -80,7 +91,7 @@ export function loadChronicleEntries(): ChronicleEntriesMap {
     if (rawSync) {
       const parsed = JSON.parse(rawSync);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        for (const [k, v] of Object.entries(parsed as Record<string, any>)) {
+        for (const [k, v] of Object.entries(parsed as Record<string, StoredChronicleRow | null>)) {
           if (v && typeof v === 'object') {
             const iso = v.iso_date || v.isoDate || k;
             entries[iso] = {

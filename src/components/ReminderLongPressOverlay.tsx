@@ -53,7 +53,7 @@ export const ReminderLongPressOverlay: React.FC<ReminderLongPressOverlayProps> =
     const today = toISODate();
     const tomorrow = addDaysIso(today, 1);
 
-    let prefix = '';
+    let prefix: string;
     if (dateStr === today) {
       prefix = 'Today';
     } else if (dateStr === tomorrow) {

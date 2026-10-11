@@ -53,7 +53,7 @@ function getCachedBowlRect(): DOMRect | null {
   return null;
 }
 
-export function isBowlElementOffscreen(): boolean {
+function isBowlElementOffscreen(): boolean {
   if (typeof document === 'undefined') return false;
   const bowlFrame = document.getElementById('accumulation-bowl-frame');
   const bowl = bowlFrame || document.getElementById('accumulation-bowl');

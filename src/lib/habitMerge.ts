@@ -17,7 +17,7 @@ export function touchHabit<T extends Habit>(habit: T, at: number = Date.now()): 
   return { ...habit, updatedAt: at };
 }
 
-export function omitDeletedIds<T extends { id: string }>(items: T[], deleted: ReadonlySet<string>): T[] {
+function omitDeletedIds<T extends { id: string }>(items: T[], deleted: ReadonlySet<string>): T[] {
   return deleted.size === 0 ? items : items.filter((item) => !deleted.has(item.id));
 }
 

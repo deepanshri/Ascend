@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { animate, motion, useMotionValue, useSpring } from 'motion/react';
 
 const COLLAPSED_WIDTH = 120;
@@ -52,6 +52,28 @@ const MomentumPillInner: React.FC<MomentumPillProps> = ({
   }, [targetScore, count]);
 
   // Handle Dynamic Island expand/contract sequence on score change or momentumPulse
+  // Only refs, motion values and a state setter: stable for the component's life.
+  const closePill = useCallback(() => {
+    pillControlsRef.current.forEach((c) => c.stop());
+    pillControlsRef.current = [];
+
+    const c1 = animate(deltaOpacity, 0, {
+      duration: DELTA_OUT_MS,
+      ease: 'easeIn',
+      onComplete: () => {
+        setDelta(null);
+      },
+    });
+    const c2 = animate(pillWidth, COLLAPSED_WIDTH, {
+      duration: CONTRACT_MS,
+      ease: [0.22, 1, 0.36, 1],
+      onComplete: () => {
+        animRunningRef.current = false;
+      },
+    });
+    pillControlsRef.current.push(c1, c2);
+  }, [deltaOpacity, pillWidth]);
+
   useEffect(() => {
     const diff = targetScore - prevScoreRef.current;
     prevScoreRef.current = targetScore;
@@ -92,28 +114,8 @@ const MomentumPillInner: React.FC<MomentumPillProps> = ({
     animTimeoutRef.current = window.setTimeout(() => {
       closePill();
     }, HOLD_MS);
-  }, [targetScore, momentumPulse, pillWidth, deltaOpacity]);
+  }, [targetScore, momentumPulse, pillWidth, deltaOpacity, closePill]);
 
-  const closePill = () => {
-    pillControlsRef.current.forEach((c) => c.stop());
-    pillControlsRef.current = [];
-
-    const c1 = animate(deltaOpacity, 0, {
-      duration: DELTA_OUT_MS,
-      ease: 'easeIn',
-      onComplete: () => {
-        setDelta(null);
-      },
-    });
-    const c2 = animate(pillWidth, COLLAPSED_WIDTH, {
-      duration: CONTRACT_MS,
-      ease: [0.22, 1, 0.36, 1],
-      onComplete: () => {
-        animRunningRef.current = false;
-      },
-    });
-    pillControlsRef.current.push(c1, c2);
-  };
 
   useEffect(() => {
     return () => {

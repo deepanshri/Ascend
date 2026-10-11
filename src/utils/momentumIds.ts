@@ -12,7 +12,7 @@ export function isLegacyMomentumId(id: unknown): boolean {
   return typeof id === 'string' && id.startsWith('evt_');
 }
 
-export function stableIdFor(event: Pick<MomentumEvent, 'habitId' | 'eventType' | 'loggedDate' | 'timestamp'>): string {
+function stableIdFor(event: Pick<MomentumEvent, 'habitId' | 'eventType' | 'loggedDate' | 'timestamp'>): string {
   const day = (event.loggedDate && parseToIsoDate(event.loggedDate)) || resolveMomentumEventDate(event);
   return stableMomentumEventId(event.habitId, day, event.eventType);
 }

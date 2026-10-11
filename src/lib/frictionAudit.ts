@@ -1,13 +1,7 @@
 import { readJson, writeJson } from './storage';
-import { appendFrictionPrompts, frictionPromptKey, type PendingFrictionPrompt } from './frictionAuditCore';
+import { frictionPromptKey, type PendingFrictionPrompt } from './frictionAuditCore';
 
-export {
-  appendFrictionPrompts,
-  createMissedFrictionAudit,
-  frictionPromptKey,
-  mergeFrictionAuditsFromLogs,
-  type PendingFrictionPrompt,
-} from './frictionAuditCore';
+export { createMissedFrictionAudit, type PendingFrictionPrompt } from './frictionAuditCore';
 
 export const FRICTION_REASON_CHIPS = [
   'Time Constraint',
@@ -37,22 +31,10 @@ function savePromptedKeys(keys: Set<string>): void {
   writeJson(PROMPTED_KEY, Array.from(keys));
 }
 
-export function wasFrictionPrompted(habitId: string, loggedDate: string): boolean {
-  return loadPromptedKeys().has(frictionPromptKey(habitId, loggedDate));
-}
-
 export function markFrictionPrompted(habitId: string, loggedDate: string): void {
   const keys = loadPromptedKeys();
   keys.add(frictionPromptKey(habitId, loggedDate));
   savePromptedKeys(keys);
-}
-
-/** Queue prompts not already queued and not already answered on this device. */
-export function enqueueFrictionPrompts(
-  current: PendingFrictionPrompt[],
-  incoming: PendingFrictionPrompt[]
-): PendingFrictionPrompt[] {
-  return appendFrictionPrompts(current, unansweredFrictionPrompts(incoming));
 }
 
 /** Drop prompts already answered (or skipped) on this device. */

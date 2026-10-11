@@ -204,7 +204,7 @@ export interface HabitLogRow {
 export function habitWeight(habit: Habit | Partial<Habit>): number {
   const priority = (habit?.priority || 'high').toLowerCase().trim();
 
-  let weight = 1.5;
+  let weight: number;
   switch (priority) {
     case 'high':
       weight = 1.5;

@@ -12,7 +12,7 @@ import { useSession } from './SessionProvider';
 import { useTheme } from './ThemeProvider';
 
 /** Coalesces bursts of ledger changes (a swipe touches several slices) into one widget refresh. */
-export const WIDGET_REFRESH_DEBOUNCE_MS = 400;
+const WIDGET_REFRESH_DEBOUNCE_MS = 400;
 /** Key in the pending-writes registry: the background flush publishes a waiting refresh at once. */
 const WIDGET_REFRESH_KEY = 'native:widget-snapshot';
 const NOTIFICATION_DEBOUNCE_MS = 500;

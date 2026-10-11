@@ -215,8 +215,6 @@ export async function flushMomentumEventQueue(): Promise<void> {
   }
 }
 
-export { createMomentumEvent, habitWeight } from '../utils/momentum';
-
 const isStoredEvent = (value: unknown): value is MomentumEvent =>
   Boolean(value) && typeof value === 'object' && typeof (value as MomentumEvent).id === 'string' &&
   typeof (value as MomentumEvent).habitId === 'string';
