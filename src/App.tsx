@@ -1977,7 +1977,7 @@ setMomentumEvents((prev) =>
     setHabits((prev) => prev.filter((habit) => habit.id !== habitId));
     setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
     setDetailHabit((prev) => (prev && prev.id === habitId ? null : prev));
-    void deleteHabit(sessionRef.current?.id, habitId).catch(() => {});
+    void deleteHabit(habitId).catch(() => {});
   }, []);
 
   // Update habit

@@ -315,11 +315,7 @@ export async function insertHabitToSupabase(
  * Delete a single habit invoking the delete_habit_cascade RPC to bypass the
  * momentum_events append-only trigger lock, with a direct table fallback.
  */
-export async function deleteHabit(
-  habitIdOrUserId: string | null | undefined,
-  maybeHabitId?: string
-): Promise<boolean> {
-  const habitId = maybeHabitId || (typeof habitIdOrUserId === 'string' ? habitIdOrUserId : '');
+export async function deleteHabit(habitId: string): Promise<boolean> {
   if (!habitId) return false;
 
   rememberDeletedHabit(habitId);
@@ -347,6 +343,27 @@ export async function deleteHabit(
     return true;
   } catch (err) {
     if (import.meta.env.DEV) console.error('Error during habit deletion:', err);
+    return false;
+  }
+}
+
+/**
+ * Delete every habit owned by `userId`, running each through `deleteHabit` so
+ * logs and momentum_events are purged by the same cascade. The RPC only touches
+ * rows owned by the signed-in user. Returns true only if every delete succeeded.
+ */
+export async function deleteAllUserHabits(userId: string): Promise<boolean> {
+  if (!canSync(userId) || !supabase) return false;
+  try {
+    const { data, error } = await supabase.from('habits').select('id').eq('user_id', userId);
+    if (error) {
+      if (import.meta.env.DEV) console.error('Listing habits for bulk deletion failed:', error);
+      return false;
+    }
+    const results = await Promise.all((data ?? []).map((row) => deleteHabit(String(row.id))));
+    return results.every(Boolean);
+  } catch (err) {
+    if (import.meta.env.DEV) console.error('Error during bulk habit deletion:', err);
     return false;
   }
 }

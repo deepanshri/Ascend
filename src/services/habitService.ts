@@ -1,4 +1,4 @@
-import { deleteHabit as deleteHabitFromApi } from '../lib/habitsApi';
+export { deleteHabit } from '../lib/habitsApi';
 
 /**
  * Stable daily habit_log identity for Supabase UPSERT on (habit_id, logged_date).
@@ -21,9 +21,4 @@ export function stableHabitLogId(habitId: string, loggedDate: string): string {
   const h3 = chunk('c');
   const h4 = chunk('d');
   return `${h1.slice(0, 8)}-${h2.slice(0, 4)}-4${h2.slice(4, 7)}-a${h3.slice(0, 3)}-${h3.slice(3, 7)}${h4.slice(0, 8)}`;
-}
-
-/** Delete a habit via delete_habit_cascade RPC. */
-export async function deleteHabit(habitIdOrUserId: string | null | undefined, maybeHabitId?: string): Promise<boolean> {
-  return deleteHabitFromApi(habitIdOrUserId, maybeHabitId);
 }
