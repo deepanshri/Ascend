@@ -1,5 +1,5 @@
 -- Idempotent reaffirmation: remove auto-confirm bypass on auth.users.
--- Canonical teardown also lives in 017_remove_auto_confirm.sql.
+-- Canonical teardown also lives in 017a_remove_auto_confirm.sql.
 -- Safe to re-run if 003 was applied and 017 was skipped on any environment.
 --
 -- Trigger name:  auto_confirm_auth_user  (ON auth.users BEFORE INSERT)
