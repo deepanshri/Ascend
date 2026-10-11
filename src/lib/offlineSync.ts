@@ -270,13 +270,24 @@ export async function syncHabitLogUpserts(
     queueAll();
     return;
   }
+  if (!(await pushHabitLogsRemote(userId, unique))) queueAll();
+}
+
+/** One upsert request for many logs of one user; rows are de-duplicated per (habit, day). */
+async function pushHabitLogsRemote(userId: string, events: HabitCompletionEvent[]): Promise<boolean> {
+  if (!canSync(userId) || !supabase) return false;
+  const byKey = new Map<string, HabitCompletionEvent>();
+  for (const event of events) {
+    const { habitId, loggedDate } = resolveQueueItemKey({ kind: 'upsert', userId, event });
+    byKey.set(`${habitId}|${loggedDate}`, event);
+  }
   try {
     const { error } = await supabase
       .from('habit_logs')
-      .upsert(unique.map((event) => habitLogRow(userId, event)), { onConflict: 'habit_id,logged_date' });
-    if (error) queueAll();
+      .upsert([...byKey.values()].map((event) => habitLogRow(userId, event)), { onConflict: 'habit_id,logged_date' });
+    return !error;
   } catch {
-    queueAll();
+    return false;
   }
 }
 
@@ -319,22 +330,71 @@ export async function syncProfilePatch(userId: string, patch: ProfilePatch): Pro
   return ok;
 }
 
+/** Delete many (habit, day) logs of one user in a single request. */
+async function deleteHabitLogsRemote(
+  userId: string,
+  keys: Array<{ habitId: string; loggedDate: string }>
+): Promise<boolean> {
+  if (!canSync(userId) || !supabase || keys.length === 0) return keys.length === 0;
+  try {
+    const { error } = await supabase
+      .from('habit_logs')
+      .delete()
+      .eq('user_id', userId)
+      .or(keys.map(({ habitId, loggedDate }) => `and(habit_id.eq.${habitId},logged_date.eq.${loggedDate})`).join(','));
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Upload queued habit logs: per user, one upsert for every completion and one
+ * delete for every un-completion. If a batch fails (for example an older
+ * schema without the (habit_id, logged_date) constraint) that user's rows
+ * fall back to the per-row path with its schema fallbacks. Returns the items
+ * that still could not be sent.
+ */
+async function flushHabitLogs(items: HabitLogQueueItem[]): Promise<HabitLogQueueItem[]> {
+  const byUser = new Map<string, { upserts: HabitCompletionEvent[]; deletes: Array<{ habitId: string; loggedDate: string; dayIndex?: number }> }>();
+  for (const item of items) {
+    const group = byUser.get(item.userId) ?? { upserts: [], deletes: [] };
+    if (item.kind === 'upsert') group.upserts.push(item.event);
+    else {
+      const del = resolveQueuedDelete(item);
+      if (del) group.deletes.push(del);
+    }
+    byUser.set(item.userId, group);
+  }
+
+  const remaining: HabitLogQueueItem[] = [];
+  for (const [userId, { upserts, deletes }] of byUser) {
+    if (upserts.length > 0 && !(await pushHabitLogsRemote(userId, upserts))) {
+      for (const event of upserts) {
+        if (!(await pushHabitLogRemote(userId, event))) remaining.push({ kind: 'upsert', userId, event });
+      }
+    }
+    if (deletes.length > 0 && !(await deleteHabitLogsRemote(userId, deletes))) {
+      for (const del of deletes) {
+        if (!(await pushHabitLogDeleteRemote(userId, del.habitId, del.loggedDate, del.dayIndex))) {
+          remaining.push({ kind: 'delete', userId, ...del });
+        }
+      }
+    }
+  }
+  return remaining;
+}
+
 export async function flushOfflineQueue(): Promise<void> {
   if (!isOnline() || !isSupabaseConfigured || !supabase) return;
 
-  const remainingLogs: HabitLogQueueItem[] = [];
-  for (const item of readLogQueue()) {
-    if (item.kind === 'upsert') {
-      const ok = await pushHabitLogRemote(item.userId, item.event);
-      if (!ok) remainingLogs.push(item);
-      continue;
-    }
-    const del = resolveQueuedDelete(item);
-    if (!del) continue;
-    const ok = await pushHabitLogDeleteRemote(del.userId, del.habitId, del.loggedDate, del.dayIndex);
-    if (!ok) remainingLogs.push({ kind: 'delete', ...del });
+  const queuedLogs = readLogQueue();
+  if (queuedLogs.length > 0) {
+    writeLogQueue([]);
+    const remainingLogs = await flushHabitLogs(queuedLogs);
+    // Keep anything queued while this flush was running.
+    writeLogQueue([...remainingLogs, ...readLogQueue()]);
   }
-  writeLogQueue(remainingLogs);
 
   const remainingProfiles: ProfileQueueItem[] = [];
   for (const item of readJson<ProfileQueueItem[]>(PROFILE_QUEUE_KEY, [])) {
