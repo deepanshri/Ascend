@@ -46,6 +46,8 @@ export function AccountSyncController({ children }: { children: React.ReactNode 
   scoreRef.current = todayMomentumScore;
   /** The user whose remote ledger has been merged in; pushes wait for it. */
   const hydratedUserIdRef = useRef<string | null>(null);
+  /** Syncs running now; a day-change re-sync is redundant while one is in flight. */
+  const syncsInFlightRef = useRef(0);
   /** Sync waits for onboarding to finish or reach its last step. */
   const syncAllowed = isOnboarded || onboardingStep >= 3;
 
@@ -57,6 +59,7 @@ export function AccountSyncController({ children }: { children: React.ReactNode 
     async (target: UserSession) => {
       if (target.isGuest) return { ok: false, error: 'Guest sessions stay local' };
       const snapshot = ledger.getSnapshot();
+      syncsInFlightRef.current += 1;
       const result = await syncAuthenticatedAccount({
         session: target,
         habits: snapshot.habits,
@@ -66,6 +69,8 @@ export function AccountSyncController({ children }: { children: React.ReactNode 
         hasCompletedTutorial: getLocalTutorialCompleted() || tutorialRef.current === true,
         momentumScore: scoreRef.current,
         getLatestHabits: () => ledger.getSnapshot().habits,
+      }).finally(() => {
+        syncsInFlightRef.current -= 1;
       });
       // The user signed out or switched while this ran: never apply their data to the next state.
       if (sessionRef.current?.id !== target.id) return result;
@@ -132,6 +137,8 @@ export function AccountSyncController({ children }: { children: React.ReactNode 
     handledRefetchRef.current = refetchRequest;
     const target = sessionRef.current;
     if (target && !target.isGuest) {
+      // A sync already running (e.g. the sign-in hydrate at launch) merges into the latest ledger.
+      if (syncsInFlightRef.current > 0) return;
       setSyncStatus('syncing');
       runAuthenticatedSync(target).catch((err) => {
         console.warn('Day-change sync failed:', err);
