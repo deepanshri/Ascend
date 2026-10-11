@@ -131,7 +131,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
               onClick={() => setRepOpen(true)}
               className="mt-2 w-full py-2.5 rounded-2xl bg-[#22C55E] hover:bg-emerald-600 dark:bg-[#3B82F6] dark:hover:bg-blue-500 text-white font-semibold text-[13px] shadow-xs cursor-pointer"
             >
-              Today's Rep
+              Ask Ascend
             </button>
           </div>
 
