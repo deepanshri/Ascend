@@ -1,5 +1,7 @@
 import React from 'react';
+import { AccountSyncController } from './AccountSyncController';
 import { CalendarProvider } from './CalendarProvider';
+import { HabitLedgerProvider } from './HabitLedgerProvider';
 import { OnboardingProvider } from './OnboardingProvider';
 import { PreferencesProvider } from './PreferencesProvider';
 import { ProtectionProvider } from './ProtectionProvider';
@@ -17,9 +19,13 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           <PreferencesProvider>
             <CalendarProvider>
               <ProtectionProvider>
-                <RemindersProvider>
-                  <UIProvider>{children}</UIProvider>
-                </RemindersProvider>
+                <HabitLedgerProvider>
+                  <AccountSyncController>
+                    <RemindersProvider>
+                      <UIProvider>{children}</UIProvider>
+                    </RemindersProvider>
+                  </AccountSyncController>
+                </HabitLedgerProvider>
               </ProtectionProvider>
             </CalendarProvider>
           </PreferencesProvider>

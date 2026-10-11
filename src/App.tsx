@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Plus } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -14,78 +14,29 @@ import { useSession, useSessionActions, useUserDataReset } from './providers/Ses
 import { useOnboarding, useOnboardingActions } from './providers/OnboardingProvider';
 import { useCalendar, useCalendarActions } from './providers/CalendarProvider';
 import { useProtection, useProtectionActions } from './providers/ProtectionProvider';
-import { computeDayRollover } from './lib/dayRollover';
+import { useLedger, useLedgerActions } from './providers/HabitLedgerProvider';
+import { useAccountSync } from './providers/AccountSyncController';
 import { findModal } from './providers/uiReducer';
 import { ModalHost } from './components/ModalHost';
 import {
   Habit,
-  HabitCategory,
   IdentityEvidence,
   ActiveTab,
   UserSession,
-  FrictionAudit,
   HabitCompletionEvent,
   MomentumEvent,
 } from './types';
-import { isSeedHabitId } from './data/initialHabits';
+import { calculateMomentumScore } from './utils/momentum';
 import {
-  calculateMomentumScore,
-  createMomentumEvent,
-  habitWeight,
-  deriveHabitsFromEventLog,
-  mergeCompletionEvents,
-  mergeMomentumEvents,
-  momentumEventsFromCompletionLog,
-  newMomentumEventId,
-  upsertHabitLog,
-  upsertHabitLogs,
-  deleteHabitLog,
-} from './utils/momentum';
-import {
-  appendMomentumEventRemote,
-  appendMomentumEventsRemote,
-  MOMENTUM_EVENTS_STORAGE_KEY,
-  saveLocalMomentumEvents,
-} from './lib/momentumEvents';
-import {
-  addDaysIso,
-  dayIndexForIso,
   endOfIsoDate,
-  formatEvidenceDate,
-  formatIsoShort,
-  resolveEventIsoDate,
   toISODate,
   getLocalDateString,
 } from './utils/dates';
-import { isHabitScheduledOnDayIndex } from './utils/schedule';
 import { hideNativeSplash } from './lib/nativeChrome';
 import { getThemeIsDark } from './lib/themeStore';
-import { fetchUserProfile, persistUserProfile, getLocalTutorialCompleted, resolveTutorialCompleted } from './lib/profile';
-import { persistStoredAvatarId, resolveAvatarId } from './data/avatars';
-import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
-import { mergeHabitsByUpdatedAt, touchHabit } from './lib/syncMerge';
-import { fetchHabitLogsForDateRange, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable, omitDeletedHabitRefs } from './lib/habitsApi';
-import { readStorage, removeStorage, writeJson, writeStorage } from './lib/storage';
-import {
-  ACTIVE_FALLBACKS_STORAGE_KEY,
-  COMPLETION_EVENTS_STORAGE_KEY,
-  EVIDENCE_STORAGE_KEY,
-  FRICTION_AUDITS_STORAGE_KEY,
-  HABITS_STORAGE_KEY,
-} from './lib/ledgerStorage';
-import {
-  loadStoredActiveFallbackIds,
-  loadStoredCompletionEvents,
-  loadStoredCompletionEventsOrNull,
-  loadStoredEvidence,
-  loadStoredFrictionAudits,
-  loadStoredHabits,
-  loadStoredMomentumEvents,
-  loadStoredRolledOverHabits,
-  saveRolledOverHabits,
-} from './lib/ledgerStorageLoaders';
+import { persistUserProfile } from './lib/profile';
+import { fetchHabitLogsForDateRange, purgeSeedHabitsFromTable } from './lib/habitsApi';
 import { hasLogOn } from './lib/habitLogs';
-import { usePersistedState } from './hooks/usePersistedState';
 import {
   destroyAscendSpotlightTutorial,
   hasScreenTutorialCompleted,
@@ -96,12 +47,9 @@ import {
 } from './lib/tutorial';
 import {
   schedulePsychologyNotifications,
-  cancelHabitTargetTimeNotification,
-  scheduleHabitTargetTimeNotification,
   syncAllHabitTargetNotifications,
 } from './lib/notifications';
-import { displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, removeTodayEvidence, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
-import { deleteHabit, stableHabitLogId } from './services/habitService';
+import { displayedIdentityVoteCount,     } from './services/ledgerService';
 import {
   accumulationPiecesFromLogs,
   activeCycleWindow,
@@ -114,22 +62,12 @@ import {
 } from './services/reportService';
 import { getMarbleColor } from './utils/colors';
 import { HomeView } from './components/HomeView';
-import { useHabits, withHabitTimeOfDay } from './hooks/useHabits';
-import { resolveHabitTimeOfDay } from './utils/timeOfDay';
+import { useHabits, } from './hooks/useHabits';
 import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
 import { WidgetBridge } from './lib/widgetBridge';
 import type { WidgetPendingAction, WidgetRoute } from './lib/widgetSync';
 import { isAtActiveHabitCap, MAX_ACTIVE_HABITS } from './lib/protection';
 import { countActiveKeystones, MAX_KEYSTONE_HABITS } from './lib/keystone';
-import {
-  createMissedFrictionAudit,
-  enqueueFrictionPrompts,
-  loadPendingFrictionPrompts,
-  markFrictionPrompted,
-  mergeFrictionAuditsFromLogs,
-  savePendingFrictionPrompts,
-  type PendingFrictionPrompt,
-} from './lib/frictionAudit';
 import { HomeIndicator } from './components/HomeIndicator';
 import { BottomNav } from './components/BottomNav';
 import { HabitCard } from './components/HabitCard';
@@ -160,9 +98,6 @@ import { pulseCompletionHaptic } from './lib/completionFeedback';
 
 const NO_NOTIFICATION_WINDOWS = { morning: false, afternoon: false, night: false };
 
-/** Debounce for ledger writes so swipe-complete doesn't block the main thread. */
-const STORAGE_DEBOUNCE_MS = 320;
-
 /** Tab pane visibility classes — maintains active tab DOM instances in memory for 0ms switching. */
 function tabPaneClassName(isActive: boolean, extra = ''): string {
   return `absolute inset-0 tab-pane gpu-smooth ${isActive ? 'tab-pane-active' : 'tab-pane-cached'}${extra ? ` ${extra}` : ''}`;
@@ -190,7 +125,6 @@ export default function App() {
     signIn,
     signOut,
     deleteAccount,
-    setSyncStatus: applySyncStatus,
     updateAvatar: handleUpdateAvatar,
     updateName: handleUpdateName,
   } = useSessionActions();
@@ -199,16 +133,12 @@ export default function App() {
   const derivedHabitsRef = useRef<Habit[]>([]);
   const todayDayIndexRef = useRef(3);
   const handleCompleteTodayRef = useRef<(habitId: string, isFallback?: boolean, originCoord?: { x: number; y: number; marbleColor?: string }) => void>(() => {});
-  const handleResetTodayRef = useRef<(habitId: string) => void>(() => {});
-  const handleToggleFallbackModeRef = useRef<(habitId: string) => void>(() => {});
-  const handleToggleKeystoneRef = useRef<(habitId: string, next: boolean) => void>(() => {});
   const { isOnboarded, onboardingStep, hasCompletedTutorial } = useOnboarding();
   const {
     completeOnboarding: handleOnboardingComplete,
     setOnboardingStep: handleOnboardingStepChange,
     startAsNewUser,
     startAsReturningUser,
-    setTutorialCompleted,
     completeTutorial,
     tutorialLock,
     setTutorialLocked,
@@ -217,13 +147,9 @@ export default function App() {
   const { theme, isDark } = useTheme();
   const { setTheme: handleThemeChange } = useThemeActions();
 
-  const { protectionWindows, examShieldActive, vacationModeActive, examShieldStatus, vacationStatus, paused } =
+  const { protectionWindows, examShieldActive, vacationModeActive, examShieldStatus, vacationStatus } =
     useProtection();
   const { activateExamShield, deactivateExamShield, toggleVacation: handleToggleVacationMode } = useProtectionActions();
-  const protectionPausedRef = useRef(paused);
-  protectionPausedRef.current = paused;
-  const habitsRef = useRef<Habit[]>([]);
-  const momentumEventsRef = useRef<MomentumEvent[]>([]);
 
   const { selectedInterests, notificationWindows, eveningChronicle, completionSound, hapticVibration, cycleDays } =
     usePreferences();
@@ -254,74 +180,23 @@ export default function App() {
     });
   }, [setSelectedInterests]);
 
-  // Friction Audit Log state
-  const [frictionAudits, setFrictionAudits] = usePersistedState(loadStoredFrictionAudits, (value) =>
-    writeJson(FRICTION_AUDITS_STORAGE_KEY, value)
-  );
-
-  const [pendingFriction, setPendingFriction] = usePersistedState<PendingFrictionPrompt[]>(
-    loadPendingFrictionPrompts,
-    savePendingFrictionPrompts
-  );
-
-  // Persistence via localStorage for habits
-  const [habits, setHabits] = usePersistedState(
-    loadStoredHabits,
-    (value) => writeJson(HABITS_STORAGE_KEY, value),
-    STORAGE_DEBOUNCE_MS
-  );
-  habitsRef.current = habits;
-
-  // Append-only immutable completion event log (ground truth for habit history)
-  const [completionEvents, setCompletionEvents] = usePersistedState(
-    loadStoredCompletionEvents,
-    (value) => writeJson(COMPLETION_EVENTS_STORAGE_KEY, value),
-    STORAGE_DEBOUNCE_MS
-  );
-
-  const [momentumEvents, setMomentumEvents] = usePersistedState(
-    loadStoredMomentumEvents,
-    saveLocalMomentumEvents,
-    STORAGE_DEBOUNCE_MS
-  );
-  momentumEventsRef.current = momentumEvents;
-
-  // Hydrate profile interests + tutorial flag from Supabase `profiles`
-  useEffect(() => {
-    if (!session) {
-      destroyAscendSpotlightTutorial();
-      setTutorialCompleted(getLocalTutorialCompleted() ? true : null);
-      setTutorialLocked(false);
-      return;
-    }
-
-    let cancelled = false;
-    void (async () => {
-      const profile = await fetchUserProfile(session, selectedInterests);
-      if (cancelled) return;
-      if (profile.interests.length > 0) {
-        setSelectedInterests(profile.interests);
-      }
-      if (profile.avatar_url) {
-        const avatarUrl = resolveAvatarId(profile.avatar_url);
-        persistStoredAvatarId(avatarUrl);
-        handleUpdateAvatar(avatarUrl);
-      }
-      setTutorialCompleted(resolveTutorialCompleted(profile.has_completed_tutorial));
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, session?.isGuest]);
-
-  // Active fallback mode for habits today (habits switched to fallback micro-task, pending completion)
-  const [activeFallbackIds, setActiveFallbackIds] = usePersistedState(
-    loadStoredActiveFallbackIds,
-    (value) => writeJson(ACTIVE_FALLBACKS_STORAGE_KEY, value),
-    STORAGE_DEBOUNCE_MS
-  );
+  const {
+    habits,
+    completionEvents,
+    momentumEvents,
+    evidenceList,
+    frictionAudits,
+    pendingFriction,
+    activeFallbackIds,
+    rolledOverHabits,
+    momentumPulse,
+    derivedHabits,
+    activeHabits,
+    todayMomentumEvents,
+    todayMomentumScore,
+  } = useLedger();
+  const ledgerActions = useLedgerActions();
+  const { syncNow: handlePersonalSyncNow } = useAccountSync();
 
   const [bowlEpoch, setBowlEpoch] = useState(() => readBowlCycleEpoch(toISODate()));
   const [bowlCelebrating, setBowlCelebrating] = useState(false);
@@ -333,19 +208,10 @@ export default function App() {
   const [isBowlOffscreen, setIsBowlOffscreen] = useState(false);
   const [bowlArrivalPulse, setBowlArrivalPulse] = useState(false);
   const bowlArrivalPulseTimerRef = useRef<number | null>(null);
-  const [rolledOverHabits, setRolledOverHabits] = useState<string[]>(() =>
-    loadStoredRolledOverHabits(getLocalDateString())
-  );
   const settleTimersRef = useRef<Map<string, number>>(new Map());
   const [celebrationPieces, setCelebrationPieces] = useState<AccumulationPiece[] | null>(null);
   const bowlCelebrateLockRef = useRef(false);
   const pendingCycleResetRef = useRef<{ endIso: string; resetAt: number } | null>(null);
-
-  const [evidenceList, setEvidenceList] = usePersistedState(
-    loadStoredEvidence,
-    (value) => writeJson(EVIDENCE_STORAGE_KEY, value),
-    STORAGE_DEBOUNCE_MS
-  );
 
   const { reminders, pendingCount: pendingRemindersCount } = useReminders();
   const {
@@ -361,8 +227,6 @@ export default function App() {
 
   const isTabActive = useCallback((tab: ActiveTab) => activeTab === tab, [activeTab]);
 
-  const CALENDAR_LAST_ACTIVE_KEY = 'ascend_last_active_date';
-
   const {
     todayIso: currentDateString,
     calendarOrigin,
@@ -373,43 +237,6 @@ export default function App() {
     isViewingToday,
   } = useCalendar();
   const { selectDate: setCurrentSelectedDate } = useCalendarActions();
-  const refetchHabitsAndLogsRef = useRef<() => Promise<void> | void>(() => {});
-  /** Missed days are processed once onboarding is done or at its last step, like every other sync gate. */
-  const processMissedDays = isOnboarded || onboardingStep >= 3;
-
-  // Day rollover: decided by the pure computeDayRollover, applied here.
-  useEffect(() => {
-    const result = computeDayRollover({
-      todayIso: currentDateString,
-      lastActiveIso: readStorage(CALENDAR_LAST_ACTIVE_KEY),
-      habits: habitsRef.current,
-      momentumEvents: momentumEventsRef.current,
-      protectionPaused: protectionPausedRef.current,
-      processMissedDays,
-    });
-    writeStorage(CALENDAR_LAST_ACTIVE_KEY, result.lastActiveIso);
-    if (result.clearActiveFallbacks) setActiveFallbackIds([]);
-    if (result.graceHabitIds) {
-      setRolledOverHabits(result.graceHabitIds);
-      saveRolledOverHabits(currentDateString, result.graceHabitIds);
-    }
-    if (result.missed.length > 0) {
-      const habitsById = new Map(habitsRef.current.map((habit) => [habit.id, habit]));
-      const missedEvents = result.missed.flatMap(({ habitId, isoDate }) => {
-        const habit = habitsById.get(habitId);
-        return habit ? [createMomentumEvent(habit, 'missed', isoDate, endOfIsoDate(isoDate))] : [];
-      });
-      setMomentumEvents((prev) => mergeMomentumEvents(prev, missedEvents));
-      // One request for every missed day, not one per event.
-      void appendMomentumEventsRemote(sessionRef.current?.id, missedEvents).catch(() => {});
-    }
-    if (result.frictionPrompts.length > 0) {
-      setPendingFriction((prev) => enqueueFrictionPrompts(prev, result.frictionPrompts));
-    }
-    if (result.dayChanged) void refetchHabitsAndLogsRef.current?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDateString, processMissedDays]);
- 
   // Startup trigger: Strategy/Vision overlay auto-launch on new day (deferred 150ms post-paint)
   useEffect(() => {
     if (!isOnboarded) return;
@@ -427,28 +254,12 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [isOnboarded, isTabActive, currentDateString]);
 
-  const [momentumPulse, setMomentumPulse] = useState(0);
-
-  useEffect(() => {
-    const handleSyncComplete = () => {
-      setMomentumPulse((n) => n + 1);
-    };
-    window.addEventListener('ascend_offline_sync_completed', handleSyncComplete);
-    return () => {
-      window.removeEventListener('ascend_offline_sync_completed', handleSyncComplete);
-    };
-  }, []);
-
-
   const handleToggleExamShield = useCallback(() => {
     // Turning it on asks for confirmation first; turning it off is immediate.
     if (examShieldActive) deactivateExamShield();
     else openModal({ kind: 'examShield' });
   }, [examShieldActive, deactivateExamShield, openModal]);
   const handleConfirmActivateExamShield = activateExamShield;
-
-
-
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -457,19 +268,6 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, []);
 
-
-  const selectedDay = currentDayIndex + 1;
-
-
-  // Derive habit states (days, microDays) by replaying the append-only event log
-  const derivedHabits = useMemo(() => {
-    return deriveHabitsFromEventLog(habits, completionEvents, calendarOrigin);
-  }, [habits, completionEvents, calendarOrigin]);
-
-  // Non-archived habits for core active calculations
-  const activeHabits = useMemo(() => {
-    return derivedHabits.filter((h) => !h.archived);
-  }, [derivedHabits]);
   const activeKeystoneCount = useMemo(() => countActiveKeystones(habits), [habits]);
   const activeFallbackIdSet = useMemo(() => new Set(activeFallbackIds), [activeFallbackIds]);
   const todayIso = originIso;
@@ -609,19 +407,6 @@ export default function App() {
     return derivedHabits.find((h) => h.id === longPressedHabitId) || null;
   }, [derivedHabits, longPressedHabitId]);
 
-  // Rolling momentum from the append-only events log merged with live completion events.
-  const todayMomentumEvents = useMemo(() => {
-    const logEvents = momentumEventsFromCompletionLog(completionEvents, habits, calendarOrigin);
-    return mergeMomentumEvents(momentumEvents, logEvents);
-  }, [momentumEvents, completionEvents, habits, calendarOrigin]);
-
-  const todayMomentumScore = useMemo(() => {
-    return calculateMomentumScore(todayMomentumEvents, {
-      habits,
-      protectionWindows,
-    });
-  }, [todayMomentumEvents, habits, protectionWindows]);
-
   const momentumScore = useMemo(() => {
     if (isViewingToday) return todayMomentumScore;
     return calculateMomentumScore(todayMomentumEvents, {
@@ -650,107 +435,6 @@ export default function App() {
     () => evidenceList,
     [evidenceList]
   );
-
-  const completionEventsRef = useRef(completionEvents);
-  const selectedInterestsRef = useRef(selectedInterests);
-  const hasCompletedTutorialRef = useRef(hasCompletedTutorial);
-  const momentumScoreRef = useRef(momentumScore);
-  const hydratedUserIdRef = useRef<string | null>(null);
-  completionEventsRef.current = completionEvents;
-  selectedInterestsRef.current = selectedInterests;
-  hasCompletedTutorialRef.current = hasCompletedTutorial;
-  momentumScoreRef.current = todayMomentumScore;
-
-  const runAuthenticatedSync = async (targetSession: UserSession) => {
-    if (targetSession?.isGuest) {
-      return { ok: false, error: 'Guest sessions stay local' };
-    }
-    const result = await syncAuthenticatedAccount({
-      session: targetSession,
-      habits: habitsRef.current,
-      completionEvents: completionEventsRef.current,
-      momentumEvents: momentumEventsRef.current,
-      interests: selectedInterestsRef.current,
-      hasCompletedTutorial:
-        getLocalTutorialCompleted() || hasCompletedTutorialRef.current === true,
-      momentumScore: momentumScoreRef.current,
-      getLatestHabits: () => habitsRef.current,
-    });
-    // The user signed out or switched while this ran: never apply their data to the next state.
-    if (sessionRef.current?.id !== targetSession.id) return result;
-    setHabits((prev) => mergeHabitsByUpdatedAt(prev, result.habits));
-    setCompletionEvents(result.completionEvents);
-
-setMomentumEvents((prev) =>
-  mergeMomentumEvents(prev, result.momentumEvents)
-);
-    if (result.ok) {
-      hydratedUserIdRef.current = targetSession.id;
-    }
-    applySyncStatus(result.ok ? 'synced' : 'error');
-    return result;
-  };
-
-  const refetchHabitsAndLogs = useCallback(async () => {
-    const targetSession = sessionRef.current;
-    if (targetSession && !targetSession.isGuest) {
-      applySyncStatus('syncing');
-      try {
-        await runAuthenticatedSync(targetSession);
-      } catch (err) {
-        console.warn('Auto-reset sync failed:', err);
-        applySyncStatus('error');
-      }
-    } else {
-      const stored = loadStoredCompletionEventsOrNull();
-      if (stored) setCompletionEvents(stored);
-    }
-  }, []);
-
-  useEffect(() => {
-    refetchHabitsAndLogsRef.current = refetchHabitsAndLogs;
-  }, [refetchHabitsAndLogs]);
-
-  // Guest → auth: hydrate profiles, habits, habit_logs, and momentum_history
-  useEffect(() => {
-    if (!session || session?.isGuest) {
-      hydratedUserIdRef.current = null;
-      return;
-    }
-    // Defer initial sync during onboarding until step 3
-    if (!isOnboarded && onboardingStep < 3) return;
-    let cancelled = false;
-    void (async () => {
-      applySyncStatus('syncing');
-      try {
-        const result = await runAuthenticatedSync(session);
-        if (cancelled) return;
-        applySyncStatus(result.ok ? 'synced' : 'error');
-      } catch {
-        if (!cancelled) applySyncStatus('error');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, session?.isGuest, isOnboarded, onboardingStep]);
-
-  useEffect(() => {
-    if (!session || session?.isGuest) return;
-    if (hydratedUserIdRef.current !== session.id) return;
-    void persistHabitsToTable(session.id, habits).then((ok) => {
-      if (!ok) applySyncStatus('error');
-    }).catch(() => {
-      applySyncStatus('error');
-    });
-  }, [habits, session?.id, session?.isGuest]);
-
-  useEffect(() => {
-    if (!session || session?.isGuest) return;
-    if (hydratedUserIdRef.current !== session.id) return;
-    void persistMomentumHistory(session.id, todayMomentumScore, todayDayIndex).catch(() => {});
-  }, [todayMomentumScore, todayDayIndex, session?.id, session?.isGuest]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -812,20 +496,7 @@ setMomentumEvents((prev) =>
     void (async () => {
       const cycleLogs = await fetchHabitLogsForDateRange(session.id, startIso, endIso);
       if (cancelled) return;
-      const userCycleLogs = omitDeletedHabitRefs(
-        cycleLogs.filter((event) => !isSeedHabitId(event.habitId))
-      );
-      if (userCycleLogs.length > 0) {
-        setCompletionEvents((prev) =>
-          omitDeletedHabitRefs(
-            mergeCompletionEvents(
-              prev.filter((event) => !isSeedHabitId(event.habitId)),
-              userCycleLogs,
-              calendarOrigin
-            )
-          )
-        );
-      }
+      ledgerActions.mergeCycleLogs(cycleLogs);
     })().catch(() => {});
     return () => {
       cancelled = true;
@@ -840,558 +511,97 @@ setMomentumEvents((prev) =>
     onboardingStep,
   ]);
 
-  useEffect(() => {
-    if (!session || session?.isGuest) return;
-    // Defer friction audit parsing during initial onboarding
-    if (!isOnboarded && onboardingStep < 3) return;
-    let cancelled = false;
-    void fetchFrictionReasonsFromTable(session.id).then((rows) => {
-      if (cancelled || rows.length === 0) return;
-      setFrictionAudits((prev) =>
-        omitDeletedHabitRefs(mergeFrictionAuditsFromLogs(prev, rows, habitsRef.current)),
-      );
-    }).catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.id, session?.isGuest, isOnboarded, onboardingStep]);
-
-
-  const appendMomentumLog = (event: MomentumEvent) => {
-    setMomentumEvents((prev) => mergeMomentumEvents(prev, [event]));
-    void appendMomentumEventRemote(sessionRef.current?.id, event).catch(() => {});
-  };
-
-  /** Local momentum rows awaiting remote flush — cleared on grace undo. */
-  const pendingGraceMomentumRef = useRef(
-    new Map<string, { event: MomentumEvent; timer: number }>()
-  );
-
-  const flushGraceMomentum = (habitId: string) => {
-    const pending = pendingGraceMomentumRef.current.get(habitId);
-    if (!pending) return;
-    window.clearTimeout(pending.timer);
-    pendingGraceMomentumRef.current.delete(habitId);
-    void appendMomentumEventRemote(sessionRef.current?.id, pending.event).catch(() => {});
-  };
-
-  const cancelGraceMomentum = (habitId: string): boolean => {
-    const pending = pendingGraceMomentumRef.current.get(habitId);
-    if (!pending) return false;
-    window.clearTimeout(pending.timer);
-    pendingGraceMomentumRef.current.delete(habitId);
-    setMomentumEvents((prev) => prev.filter((row) => row.id !== pending.event.id));
-    return true;
-  };
-
-  /**
-   * Grace rollover: log each habit as a 50% micro-habit on `dateIso`, in one
-   * state update and one remote write per table.
-   */
-  const applyGraceRollover = useCallback(
-    (targets: Habit[], dateIso: string) => {
-      if (targets.length === 0) return;
-      const dayIndex = dayIndexForIso(dateIso, calendarOrigin);
-      const safeDayIndex = dayIndex >= 0 ? dayIndex : 2;
-      const items = targets.map((targetHabit) => {
-        const completionEvent: HabitCompletionEvent = withHabitTimeOfDay(
-          {
-            id: stableHabitLogId(targetHabit.id, dateIso),
-            habitId: targetHabit.id,
-            dayIndex: safeDayIndex,
-            date: dateIso,
-            type: 'fallback_micro',
-            note: targetHabit.fallbackMicroHabit || 'Grace rollover (50% micro-habit)',
-            timestamp: endOfIsoDate(dateIso) - 60_000,
-          },
-          targetHabit
-        );
-        const momentumEvent = createMomentumEvent(
-          targetHabit,
-          'fallback',
-          dateIso,
-          completionEvent.timestamp,
-          habitWeight(targetHabit) * 0.5
-        );
-        const evidence: IdentityEvidence = {
-          id: `ev-micro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          habitId: targetHabit.id,
-          habitName: targetHabit.name,
-          identityStatement: `Micro-Habit rollover: ${targetHabit.name || 'Consistency preserved'}`,
-          category: targetHabit.category || 'work',
-          date: `${formatIsoShort(dateIso)} • Grace rollover (50%)`,
-          dayNumber: safeDayIndex + 1,
-          loggedDate: dateIso,
-        };
-        return { completionEvent, momentumEvent, evidence };
-      });
-
-      startTransition(() => {
-        setCompletionEvents((prev) =>
-          items.reduce((acc, item) => replaceTodayCompletion(acc, item.completionEvent, calendarOrigin), prev)
-        );
-        setMomentumEvents((prev) => mergeMomentumEvents(prev, items.map((item) => item.momentumEvent)));
-        setEvidenceList((prev) =>
-          items.reduce((acc, item) => upsertTodayEvidence(acc, item.evidence, dateIso, calendarOrigin), prev)
-        );
-        setMomentumPulse((n) => n + 1);
-      });
-
-      const userId = sessionRef.current?.id;
-      void upsertHabitLogs(userId, items.map((item) => item.completionEvent)).catch(() => {});
-      void appendMomentumEventsRemote(userId, items.map((item) => item.momentumEvent)).catch(() => {});
-      try {
-        void pulseCompletionHaptic('fallback');
-      } catch {}
-    },
-    [calendarOrigin]
-  );
-
   const handleRolloverAll = useCallback(() => {
-    if (rolledOverHabits.length === 0) return;
-    const yesterdayIso = addDaysIso(getLocalDateString(), -1);
-
-    const habitsById = new Map(habits.map((habit) => [habit.id, habit]));
-    applyGraceRollover(
-      rolledOverHabits.flatMap((habitId) => habitsById.get(habitId) ?? []),
-      yesterdayIso
-    );
-
-    setRolledOverHabits([]);
-    saveRolledOverHabits(getLocalDateString(), []);
-    setPendingFriction((prev) =>
-      prev.filter((p) => !(rolledOverHabits.includes(p.habitId) && p.loggedDate === yesterdayIso))
-    );
-  }, [rolledOverHabits, habits, applyGraceRollover]);
+    if (ledgerActions.rolloverAll() > 0) void pulseCompletionHaptic('fallback');
+  }, [ledgerActions]);
 
   const handleFrictionRolloverMicro = useCallback(() => {
-    const prompt = pendingFriction[0];
-    if (!prompt) return;
-    const targetHabit = habits.find((h) => h.id === prompt.habitId);
-    applyGraceRollover(targetHabit ? [targetHabit] : [], prompt.loggedDate);
-    markFrictionPrompted(prompt.habitId, prompt.loggedDate);
-    setPendingFriction((prev) => prev.slice(1));
-    setRolledOverHabits((prev) => {
-      const next = prev.filter((id) => id !== prompt.habitId);
-      saveRolledOverHabits(getLocalDateString(), next);
-      return next;
-    });
-  }, [pendingFriction, habits, applyGraceRollover]);
+    if (ledgerActions.frictionRolloverMicro() > 0) void pulseCompletionHaptic('fallback');
+  }, [ledgerActions]);
 
   const activeFrictionPrompt = pendingFriction[0] ?? null;
 
-  const handleAddManualVote = (habitName: string, identityStatement: string, category: HabitCategory) => {
-    const newEv: IdentityEvidence = {
-      id: 'ev-manual-' + Date.now(),
-      habitId: 'manual',
-      habitName,
-      identityStatement,
-      category,
-      date: new Date().toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      }),
-      dayNumber: selectedDay,
-      loggedDate: toISODate(),
-    };
-    setEvidenceList((prev) => [newEv, ...prev]);
-    appendMomentumLog(createMomentumEvent({ id: newMomentumEventId(), category }, 'full', toISODate(), Date.now()));
-  };
-
-  const handleFrictionSubmit = (reason: string) => {
-    const prompt = pendingFriction[0];
-    if (!prompt) return;
-    markFrictionPrompted(prompt.habitId, prompt.loggedDate);
-    setFrictionAudits((prev) => [createMissedFrictionAudit(prompt, reason), ...prev]);
-    void persistHabitLogFrictionReason(sessionRef.current?.id, prompt.habitId, prompt.loggedDate, reason).catch(() => {});
-    setPendingFriction((prev) => prev.slice(1));
-  };
-
-  const handleFrictionSkip = () => {
-    const prompt = pendingFriction[0];
-    if (!prompt) return;
-    markFrictionPrompted(prompt.habitId, prompt.loggedDate);
-    setPendingFriction((prev) => prev.slice(1));
-  };
-
-  // GESTURE / TAP ACTION: Complete Today (Full 100% or Fallback Micro 50%)
+  // GESTURE / TAP ACTION: Complete Today (Full 100% or Fallback Micro 50%).
+  // The ledger records it; a first completion today earns the reward below.
   const handleCompleteToday = (
     habitId: string,
     isFallback: boolean = false,
     originCoord?: { x: number; y: number; marbleColor?: string }
   ) => {
-    if (!isViewingToday) return;
-    const targetHabit = habits.find((h) => h.id === habitId);
-    if (!targetHabit) return;
-    // Off-day: schedule feature blocks completion (no ledger / momentum / pulse).
-    if (!isHabitScheduledOnDayIndex(targetHabit, todayDayIndex, calendarOrigin)) return;
-
-    // Explicit callback flag wins; activeFallbackIds covers mode-then-complete flow.
-    const isMicro = Boolean(isFallback) || activeFallbackIds.includes(habitId);
-    const loggedDate = toISODate(calendarOrigin);
-    const alreadyCompletedToday = hasTodayLedgerEntry(completionEvents, habitId, loggedDate, calendarOrigin);
-    const alreadyVotedMomentum = hasMomentumVoteOnIso(momentumEvents, habitId, loggedDate);
-
-    setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
-
-    // Dynamic Cancellation: cancel today's scheduled notification immediately on completion.
-    void cancelHabitTargetTimeNotification(habitId);
-
-    const newEvent: HabitCompletionEvent = withHabitTimeOfDay(
-      {
-        id: stableHabitLogId(habitId, loggedDate),
-        habitId,
-        dayIndex: todayDayIndex,
-        date: loggedDate,
-        type: isMicro ? 'fallback_micro' : 'full',
-        note: isMicro ? (targetHabit.fallbackMicroHabit || 'Fallback micro-habit completed') : undefined,
-        timestamp: Date.now(),
-      },
-      targetHabit
-    );
-
-    const newEvidence: IdentityEvidence = {
-      id: alreadyCompletedToday
-        ? `ev-${habitId}-${loggedDate}`
-        : `ev-${isMicro ? 'micro-' : ''}${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      habitId,
-      habitName: isMicro ? `${targetHabit.name} (Micro-Habit)` : targetHabit.name,
-      identityStatement: isMicro
-        ? `Micro-Habit vote: ${targetHabit.name || 'Non-zero progress'}`
-        : (targetHabit.name || 'Consistent and disciplined'),
-      category: targetHabit.category || 'work',
-      date: `${formatEvidenceDate()} • ${isMicro ? 'Fallback micro (50%)' : 'Completed (100%)'}`,
-      dayNumber: todayDayIndex + 1,
-      loggedDate,
-    };
-
-    let momentumEvent: MomentumEvent | null = null;
-    if (!alreadyVotedMomentum) {
-      const baseWeight = habitWeight(targetHabit);
-      const eventWeight = isMicro ? baseWeight * 0.5 : baseWeight;
-      momentumEvent = createMomentumEvent(
-        targetHabit,
-        isMicro ? 'fallback' : 'full',
-        loggedDate,
-        newEvent.timestamp,
-        eventWeight
-      );
-      const existing = pendingGraceMomentumRef.current.get(habitId);
-      if (existing) window.clearTimeout(existing.timer);
-      const timer = window.setTimeout(() => flushGraceMomentum(habitId), 3000);
-      pendingGraceMomentumRef.current.set(habitId, { event: momentumEvent, timer });
-    }
-
-    const newAudit: FrictionAudit | null = (isMicro && !alreadyCompletedToday)
-      ? {
-          id: `fa-${Date.now()}`,
-          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          dayNumber: todayDayIndex + 1,
-          habitName: targetHabit.name,
-          type: 'fallback_used',
-          note: `Protected momentum with fallback: "${targetHabit.fallbackMicroHabit || '2-min minimum'}"`,
-          timestamp: Date.now(),
-        }
-      : null;
-
-    // Batch all commit state setters in a single transition to eliminate multi-pass rendering
-    startTransition(() => {
-      setActiveFallbackIds((prev) =>
-        prev.includes(habitId) ? prev.filter((id) => id !== habitId) : prev
-      );
-      setCompletionEvents((prev) => replaceTodayCompletion(prev, newEvent, calendarOrigin));
-      if (momentumEvent) {
-        setMomentumEvents((prev) => mergeMomentumEvents(prev, [momentumEvent!]));
-        setMomentumPulse((n) => n + 1);
-      }
-      setEvidenceList((evPrev) => upsertTodayEvidence(evPrev, newEvidence, loggedDate, calendarOrigin));
-      if (newAudit) {
-        setFrictionAudits((prevAudits) => [newAudit, ...prevAudits]);
-      }
-    });
-
-    // Dynamic Cancellation & remote upsert (background)
-    void cancelHabitTargetTimeNotification(habitId);
-    void upsertHabitLog(session?.id, newEvent).catch(() => {});
+    const result = ledgerActions.completeToday(habitId, isFallback);
+    if (!result?.newlyCompleted) return;
+    const { isMicro, loggedDate } = result;
 
     // Reward moment: haptic + optional chime immediately; piece flies card → bowl.
-    // Does not touch momentum_events beyond the append above.
-    if (!alreadyCompletedToday) {
-      const rewardKind = isMicro ? 'fallback' : 'full';
-      try {
-        void pulseCompletionHaptic(rewardKind);
-      } catch {
-        /* never block completion on feedback failure */
-      }
-      const pieceId = `${habitId}::${loggedDate}`;
-      try {
-        const swipeDir = isMicro ? 'left' : 'right';
-        const points = measureCompletionFlight(habitId, originCoord, isBowlOffscreen);
-        const themeDark = getThemeIsDark();
-        // Same isMicro boolean as habit_logs.type — light vs solid marble shade.
-        const flightColor =
-          originCoord?.marbleColor || getMarbleColor(themeDark, isMicro);
-        const flight: PieceFlight = {
-          id: `fly-${pieceId}-${Date.now()}`,
-          pieceId,
-          isFallback: isMicro,
-          kind: rewardKind,
-          from: points.from,
-          to: points.to,
-          isDark: themeDark,
-          direction: swipeDir,
-          color: flightColor,
-          touchRatio: points.touchRatio,
-        };
-        setPieceFlights((prev) => [...prev.slice(-4), flight]);
-      } catch {
-        /* ignore measurement failures */
-      }
+    // Feedback only: the ledger has already recorded the completion.
+    const rewardKind = isMicro ? 'fallback' : 'full';
+    try {
+      void pulseCompletionHaptic(rewardKind);
+    } catch {
+      /* never block completion on feedback failure */
+    }
+    const pieceId = `${habitId}::${loggedDate}`;
+    try {
+      const swipeDir = isMicro ? 'left' : 'right';
+      const points = measureCompletionFlight(habitId, originCoord, isBowlOffscreen);
+      const themeDark = getThemeIsDark();
+      // Same isMicro boolean as habit_logs.type — light vs solid marble shade.
+      const flightColor =
+        originCoord?.marbleColor || getMarbleColor(themeDark, isMicro);
+      const flight: PieceFlight = {
+        id: `fly-${pieceId}-${Date.now()}`,
+        pieceId,
+        isFallback: isMicro,
+        kind: rewardKind,
+        from: points.from,
+        to: points.to,
+        isDark: themeDark,
+        direction: swipeDir,
+        color: flightColor,
+        touchRatio: points.touchRatio,
+      };
+      setPieceFlights((prev) => [...prev.slice(-4), flight]);
+    } catch {
+      /* ignore measurement failures */
     }
   };
 
-  // GESTURE / TAP ACTION: Toggle Fallback Mode for Today (Does NOT mark complete; allows cancel / revert)
-  const handleToggleFallbackMode = (habitId: string) => {
-    if (!isViewingToday) return;
-    const targetHabit = habits.find((h) => h.id === habitId);
-    if (!targetHabit) return;
-    if (!isHabitScheduledOnDayIndex(targetHabit, todayDayIndex, calendarOrigin) && !activeFallbackIds.includes(habitId)) {
-      // Off day: no fallback.
-      return;
-    }
+  const handleArchiveHabit = useCallback(
+    (habitId: string) => {
+      ledgerActions.archiveHabit(habitId);
+      closeModal('habitDetail', habitId);
+    },
+    [ledgerActions, closeModal]
+  );
 
-    if (activeFallbackIds.includes(habitId)) {
-      startTransition(() => {
-        setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
-      });
-      return;
-    }
+  const handleDeleteHabit = useCallback(
+    (habitId: string) => {
+      ledgerActions.deleteHabit(habitId);
+      closeModal('habitDetail', habitId);
+    },
+    [ledgerActions, closeModal]
+  );
 
-    const loggedDate = toISODate(calendarOrigin);
-    const alreadyLogged = completionEvents.some(
-      (e) => e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate
-    );
+  const handleUpdateHabit = useCallback(
+    (habit: Habit) => updateModal({ kind: 'habitDetail', habit: ledgerActions.updateHabit(habit) }),
+    [ledgerActions, updateModal]
+  );
 
-    startTransition(() => {
-      if (alreadyLogged) {
-        setCompletionEvents((prev) =>
-          prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
-        );
-      }
-      setActiveFallbackIds((prev) => (prev.includes(habitId) ? prev : [...prev, habitId]));
-    });
-
-    if (alreadyLogged) {
-      void deleteHabitLog(session?.id, habitId, loggedDate, todayDayIndex).catch(() => {});
-    }
-  };
-
-  // GESTURE / TAP ACTION: Uncheck today. Daily habit_logs drop; momentum_events logs an append-only
-  // reversal record if completion was already committed, rolling back momentum and identity votes.
-  const handleResetToday = (habitId: string) => {
-    if (!isViewingToday) return;
-    const loggedDate = toISODate(calendarOrigin);
-    const existingCompletion = completionEvents.find(
-      (e) => e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate
-    );
-    const wasFallback = existingCompletion?.type === 'fallback_micro';
-    const rolledBackMomentum = cancelGraceMomentum(habitId);
-
-    const targetHabit = habits.find((h) => h.id === habitId);
-    let reversalEvent: MomentumEvent | null = null;
-    if (!rolledBackMomentum && targetHabit) {
-      const baseWeight = habitWeight(targetHabit);
-      const reversalWeight = wasFallback ? baseWeight * 0.5 : baseWeight;
-      reversalEvent = createMomentumEvent(
-        targetHabit,
-        'reversal',
-        loggedDate,
-        Date.now(),
-        reversalWeight
-      );
-    }
-
-    startTransition(() => {
-      setCompletionEvents((prev) =>
-        prev.filter((e) => !(e.habitId === habitId && resolveEventIsoDate(e, calendarOrigin) === loggedDate))
-      );
-      setActiveFallbackIds((prev) =>
-        prev.includes(habitId) ? prev.filter((id) => id !== habitId) : prev
-      );
-      setEvidenceList((prev) => removeTodayEvidence(prev, habitId, loggedDate, calendarOrigin));
-
-      if (rolledBackMomentum) {
-        setMomentumPulse((n) => n + 1);
-      } else if (reversalEvent) {
-        appendMomentumLog(reversalEvent);
-        setMomentumPulse((n) => n + 1);
-      }
-    });
-
-
-    void deleteHabitLog(session?.id, habitId, loggedDate, todayDayIndex).catch(() => {});
-
-    // Reschedule daily notification when uncompleted
-    if (targetHabit?.targetTime && !targetHabit.archived) {
-      void scheduleHabitTargetTimeNotification(targetHabit);
-    }
-  };
-
-  // Add new habit (optimistic). Remote insert is performed by AddHabitModal.
-  const handleAddHabit = (newHabitData: Omit<Habit, 'id' | 'days' | 'microDays'>): Habit | null => {
-    if (isAtActiveHabitCap(habits)) {
-      return null;
-    }
-    const payload = newHabitData;
-    const newHabit: Habit = {
-      ...payload,
-      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'habit-' + Date.now(),
-      days: [false, false, false, false, false, false, false],
-      microDays: [false, false, false, false, false, false, false],
-      scheduledDays: payload.scheduledDays && payload.scheduledDays.length > 0 ? payload.scheduledDays : [0, 1, 2, 3, 4, 5, 6],
-      scheduleType: payload.scheduleType || 'daily',
-      timeOfDay: resolveHabitTimeOfDay(payload),
-      updatedAt: Date.now(),
-    };
-    setHabits((prev) => {
-      const updatedPrev = payload.isKeystone
-        ? prev.map((h) => (h.isKeystone ? touchHabit({ ...h, isKeystone: false }) : h))
-        : prev;
-      return [newHabit, ...updatedPrev];
-    });
-    if (newHabit.targetTime) {
-      void scheduleHabitTargetTimeNotification(newHabit);
-    }
-    return newHabit;
-  };
-
-  // Archive habit
-  const handleArchiveHabit = (habitId: string) => {
-    setHabits((prev) =>
-      prev.map((h) => (h.id === habitId ? touchHabit({ ...h, archived: true }) : h))
-    );
-    void cancelHabitTargetTimeNotification(habitId);
-    closeModal('habitDetail', habitId);
-  };
-
-  // Restore archived habit
-  const handleRestoreHabit = useCallback((habitId: string) => {
-    setHabits((prev) => {
-      const target = prev.find((habit) => habit.id === habitId);
-      if (target?.archived && isAtActiveHabitCap(prev)) {
-        return prev;
-      }
-      return prev.map((h) => {
-        if (h.id === habitId) {
-          const restored = touchHabit({ ...h, archived: false });
-          if (restored.targetTime) {
-            void scheduleHabitTargetTimeNotification(restored);
-          }
-          return restored;
-        }
-        return h;
-      });
-    });
-  }, []);
-
-  // Cascade delete habit via RPC and purge from local state
-  const handleDeleteHabit = useCallback((habitId: string) => {
-    void cancelHabitTargetTimeNotification(habitId);
-    setHabits((prev) => prev.filter((habit) => habit.id !== habitId));
-    setActiveFallbackIds((prev) => prev.filter((id) => id !== habitId));
-    closeModal('habitDetail', habitId);
-    void deleteHabit(habitId).catch(() => {});
-  }, [closeModal]);
-
-  // Update habit
-  const handleUpdateHabit = (updatedHabit: Habit) => {
-    const next = updatedHabit;
-    setHabits((prev) =>
-      prev.map((h) => {
-        if (h.id === next.id) {
-          return touchHabit(next);
-        }
-        if (next.isKeystone && h.isKeystone) {
-          return touchHabit({ ...h, isKeystone: false });
-        }
-        return h;
-      })
-    );
-    updateModal({ kind: 'habitDetail', habit: touchHabit(next) });
-    if (next.targetTime && !next.archived) {
-      const isCompletedToday = hasLogOn(completionEvents, next.id, currentDateString);
-      if (!isCompletedToday) {
-        void scheduleHabitTargetTimeNotification(next);
-      } else {
-        void cancelHabitTargetTimeNotification(next.id);
-      }
-    } else {
-      void cancelHabitTargetTimeNotification(next.id);
-    }
-  };
-
-  const handleToggleKeystone = (habitId: string, nextValue: boolean) => {
-    setHabits((prev) =>
-      prev.map((habit) => {
-        if (habit.id === habitId) {
-          return touchHabit({ ...habit, isKeystone: nextValue });
-        }
-        if (nextValue && habit.isKeystone) {
-          return touchHabit({ ...habit, isKeystone: false });
-        }
-        return habit;
-      })
-    );
-  };
-
-  // Reset to an empty local workspace (no demo habits)
-  const handleResetData = useCallback(() => {
-    setHabits([]);
-    setEvidenceList([]);
-    setCompletionEvents([]);
-    setMomentumEvents([]);
-    setActiveFallbackIds([]);
-    removeStorage(HABITS_STORAGE_KEY);
-    removeStorage(EVIDENCE_STORAGE_KEY);
-    removeStorage(COMPLETION_EVENTS_STORAGE_KEY);
-    removeStorage(ACTIVE_FALLBACKS_STORAGE_KEY);
-    localStorage.removeItem(MOMENTUM_EVENTS_STORAGE_KEY);
-    localStorage.removeItem('ascend_identity_vote_floor');
-  }, []);
-
-  // Import JSON backup
-  const handleImportJSON = useCallback((
-    importedHabits: Habit[],
-    importedEvidence?: IdentityEvidence[],
-    importedEvents?: HabitCompletionEvent[],
-    importedMomentum?: MomentumEvent[]
-  ) => {
-    const userHabits = importedHabits.filter((habit) => !isSeedHabitId(habit.id));
-    setHabits(userHabits);
-    if (importedEvidence && Array.isArray(importedEvidence)) {
-      setEvidenceList(importedEvidence.filter((item) => !isSeedHabitId(item.habitId)));
-    }
-    if (importedEvents && Array.isArray(importedEvents)) {
-      setCompletionEvents(importedEvents.filter((event) => !isSeedHabitId(event.habitId)));
-    }
-    if (importedMomentum && Array.isArray(importedMomentum)) {
-      setMomentumEvents((prev) =>
-        mergeMomentumEvents(
-          prev.filter((event) => !isSeedHabitId(event.habitId)),
-          importedMomentum.filter((event) => !isSeedHabitId(event.habitId))
-        )
-      );
-    } else if (importedEvents && Array.isArray(importedEvents)) {
-      const userEvents = importedEvents.filter((event) => !isSeedHabitId(event.habitId));
-      setMomentumEvents((prev) =>
-        mergeMomentumEvents(
-          prev.filter((event) => !isSeedHabitId(event.habitId)),
-          momentumEventsFromCompletionLog(userEvents, userHabits)
-        )
-      );
-    }
-  }, []);
+  const handleImportJSON = useCallback(
+    (
+      importedHabits: Habit[],
+      importedEvidence?: IdentityEvidence[],
+      importedEvents?: HabitCompletionEvent[],
+      importedMomentum?: MomentumEvent[]
+    ) =>
+      ledgerActions.importBackup({
+        habits: importedHabits,
+        evidence: Array.isArray(importedEvidence) ? importedEvidence : undefined,
+        completionEvents: Array.isArray(importedEvents) ? importedEvents : undefined,
+        momentumEvents: Array.isArray(importedMomentum) ? importedMomentum : undefined,
+      }),
+    [ledgerActions]
+  );
 
   // Clear Cache
   const handleClearCache = useCallback(() => {
@@ -1429,43 +639,14 @@ setMomentumEvents((prev) =>
     if (newSession && !newSession?.isGuest) {
       void purgeSeedHabitsFromTable(newSession.id).catch(() => {});
     }
-    if (isNewUser) {
-      if (newSession?.isGuest) {
-        setHabits((prev) => prev.filter((habit) => !isSeedHabitId(habit.id)));
-        setCompletionEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
-        setMomentumEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
-        setEvidenceList((prev) => prev.filter((item) => !isSeedHabitId(item.habitId)));
-      } else {
-        setHabits([]);
-        setCompletionEvents([]);
-        setMomentumEvents([]);
-        setEvidenceList([]);
-      }
-      startAsNewUser();
-    } else {
-      setHabits((prev) => prev.filter((habit) => !isSeedHabitId(habit.id)));
-      setCompletionEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
-      setMomentumEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
-      setEvidenceList((prev) => prev.filter((item) => !isSeedHabitId(item.habitId)));
-      startAsReturningUser();
-    }
+    // A new account starts empty (a new guest keeps local work); demo habits never carry over.
+    ledgerActions.startAuth(Boolean(isNewUser) && !newSession?.isGuest);
+    if (isNewUser) startAsNewUser();
+    else startAsReturningUser();
   };
 
-  // RESET_ALL for the ledger state App still owns (moves into HabitLedgerProvider in step 7).
+  // RESET_ALL for the bowl and chronicle state App still owns (the ledger resets itself).
   useUserDataReset(() => {
-    hydratedUserIdRef.current = null;
-    for (const pending of pendingGraceMomentumRef.current.values()) window.clearTimeout(pending.timer);
-    pendingGraceMomentumRef.current.clear();
-    // The previous user's habit alarms must not keep firing on this device.
-    for (const habit of habitsRef.current) void cancelHabitTargetTimeNotification(habit.id);
-    setHabits([]);
-    setCompletionEvents([]);
-    setMomentumEvents([]);
-    setEvidenceList([]);
-    setFrictionAudits([]);
-    setPendingFriction([]);
-    setActiveFallbackIds([]);
-    setRolledOverHabits([]);
     setBowlEpoch(readBowlCycleEpoch(toISODate()));
     setCelebrationPieces(null);
     setBowlCelebrating(false);
@@ -1476,9 +657,6 @@ setMomentumEvents((prev) =>
   derivedHabitsRef.current = derivedHabits;
   todayDayIndexRef.current = todayDayIndex;
   handleCompleteTodayRef.current = handleCompleteToday;
-  handleResetTodayRef.current = handleResetToday;
-  handleToggleFallbackModeRef.current = handleToggleFallbackMode;
-  handleToggleKeystoneRef.current = handleToggleKeystone;
 
   const deferredPieceIds = useMemo(
     () => new Set(pieceFlights.map((flight) => flight.pieceId)),
@@ -1536,15 +714,9 @@ setMomentumEvents((prev) =>
     },
     []
   );
-  const stableResetToday = useCallback((habitId: string) => {
-    handleResetTodayRef.current(habitId);
-  }, []);
-  const stableToggleFallbackMode = useCallback((habitId: string) => {
-    handleToggleFallbackModeRef.current(habitId);
-  }, []);
-  const stableToggleKeystone = useCallback((habitId: string, next: boolean) => {
-    handleToggleKeystoneRef.current(habitId, next);
-  }, []);
+  const stableResetToday = ledgerActions.resetToday;
+  const stableToggleFallbackMode = ledgerActions.toggleFallbackMode;
+  const stableToggleKeystone = ledgerActions.setKeystone;
   const stableLongPress = useCallback(
     (h: Habit, rect?: DOMRect) => openModal({ kind: 'habitLongPress', habitId: h.id, rect: rect || null }),
     [openModal]
@@ -1646,7 +818,6 @@ setMomentumEvents((prev) =>
   const handleOpenLedgerModal = useCallback(() => openModal({ kind: 'identityLedger' }), [openModal]);
   const handleOpenPasswordModal = useCallback(() => openModal({ kind: 'changePassword' }), [openModal]);
 
-
   useEffect(() => {
     let cancelled = false;
 
@@ -1658,9 +829,9 @@ setMomentumEvents((prev) =>
         return;
       }
       if (action.type !== 'habit') return;
-      const already = hasLogOn(completionEventsRef.current, action.id, currentDateString);
+      const already = hasLogOn(ledgerActions.getSnapshot().completionEvents, action.id, getLocalDateString());
       if (completed && !already) handleCompleteTodayRef.current(action.id, false);
-      if (!completed && already) handleResetTodayRef.current(action.id);
+      if (!completed && already) ledgerActions.resetToday(action.id);
     };
 
     const applyRoute = (route: WidgetRoute | null) => {
@@ -1673,7 +844,7 @@ setMomentumEvents((prev) =>
       }
       if (route.tab === 'home') {
         setActiveTab('home');
-        if (route.openCreate && !isAtActiveHabitCap(habitsRef.current)) openModal({ kind: 'addHabit' });
+        if (route.openCreate && !isAtActiveHabitCap(ledgerActions.getSnapshot().habits)) openModal({ kind: 'addHabit' });
         if (route.habitId) {
           const habit = derivedHabitsRef.current.find((item) => item.id === route.habitId);
           if (habit) openModal({ kind: 'habitDetail', habit });
@@ -1727,17 +898,6 @@ setMomentumEvents((prev) =>
   }, []);
 
   const handleOpenCreateConsumed = useCallback(() => setOpenCreateTask(false), [setOpenCreateTask]);
-
-  const handlePersonalSyncNow = useCallback(async () => {
-    const target = sessionRef.current;
-    if (!target || target.isGuest) {
-      throw new Error('Please sign in to sync');
-    }
-    const result = await runAuthenticatedSync(target);
-    if (!result.ok) {
-      throw new Error(result.error || 'Sync failed');
-    }
-  }, []);
 
   // Nav chrome: toggle via DOM class — never setState on scroll (that re-rendered every habit card).
   const navScrollVisibleRef = useRef(true);
@@ -2133,8 +1293,8 @@ setMomentumEvents((prev) =>
                 onCompletionSoundChange={handleCompletionSoundChange}
                 hapticVibration={hapticVibration}
                 onHapticVibrationChange={handleHapticVibrationChange}
-                onResetData={handleResetData}
-                onRestoreHabit={handleRestoreHabit}
+                onResetData={ledgerActions.clearWorkspace}
+                onRestoreHabit={ledgerActions.restoreHabit}
                 onDeleteHabit={handleDeleteHabit}
                 onImportJSON={handleImportJSON}
                 onDeleteAccount={handleDeleteAccount}
@@ -2146,7 +1306,6 @@ setMomentumEvents((prev) =>
           </div>
         )}
         </div>
-
 
         <FlyingPieceOverlay flights={pieceFlights} onFlightComplete={handlePieceFlightComplete} />
         <ScrolledBowlOverlay
@@ -2182,18 +1341,18 @@ setMomentumEvents((prev) =>
           longPressedFallbackActive={
             Boolean(longPressedHabit) && isViewingToday && activeFallbackIds.includes(longPressedHabit.id)
           }
-          onAddHabit={handleAddHabit}
+          onAddHabit={ledgerActions.addHabit}
           onUpdateHabit={handleUpdateHabit}
           onArchiveHabit={handleArchiveHabit}
           onDeleteHabit={handleDeleteHabit}
           frictionPrompt={activeFrictionPrompt}
-          onFrictionSubmit={handleFrictionSubmit}
-          onFrictionSkip={handleFrictionSkip}
+          onFrictionSubmit={ledgerActions.submitFriction}
+          onFrictionSkip={ledgerActions.skipFriction}
           onFrictionRolloverMicro={handleFrictionRolloverMicro}
           onChronicleSave={handleChronicleSave}
           ledgerEvidence={ledgerEvidence}
           identityVoteCount={displayedIdentityVotes}
-          onAddManualVote={handleAddManualVote}
+          onAddManualVote={ledgerActions.addManualVote}
           examShieldStatus={examShieldStatus}
           onConfirmActivateExamShield={handleConfirmActivateExamShield}
         />
