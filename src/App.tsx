@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, } from 'react';
-import { App as CapacitorApp } from '@capacitor/app';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
 import { Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
@@ -16,6 +15,9 @@ import { useCalendar, useCalendarActions } from './providers/CalendarProvider';
 import { useProtection, useProtectionActions } from './providers/ProtectionProvider';
 import { useLedger, useLedgerActions } from './providers/HabitLedgerProvider';
 import { useAccountSync } from './providers/AccountSyncController';
+import { useBowl, useBowlActions } from './providers/BowlProvider';
+import { useCompleteHabit } from './hooks/useCompleteHabit';
+import { useWidgetBridge } from './hooks/useWidgetBridge';
 import { findModal } from './providers/uiReducer';
 import { ModalHost } from './components/ModalHost';
 import {
@@ -32,10 +34,8 @@ import {
   toISODate,
   getLocalDateString,
 } from './utils/dates';
-import { hideNativeSplash } from './lib/nativeChrome';
-import { getThemeIsDark } from './lib/themeStore';
 import { persistUserProfile } from './lib/profile';
-import { fetchHabitLogsForDateRange, purgeSeedHabitsFromTable } from './lib/habitsApi';
+import { purgeSeedHabitsFromTable } from './lib/habitsApi';
 import { hasLogOn } from './lib/habitLogs';
 import {
   destroyAscendSpotlightTutorial,
@@ -45,27 +45,8 @@ import {
   startScreenTutorial,
   type TutorialScreen,
 } from './lib/tutorial';
-import {
-  schedulePsychologyNotifications,
-  syncAllHabitTargetNotifications,
-} from './lib/notifications';
-import { displayedIdentityVoteCount,     } from './services/ledgerService';
-import {
-  accumulationPiecesFromLogs,
-  activeCycleWindow,
-  archiveCompletedCycle,
-  readBowlCycleEpoch,
-  resetBowlCycleEpoch,
-  summarizeDualBowlFill,
-  summarizeBowlFill,
-  type AccumulationPiece,
-} from './services/reportService';
-import { getMarbleColor } from './utils/colors';
+import { displayedIdentityVoteCount } from './services/ledgerService';
 import { HomeView } from './components/HomeView';
-import { useHabits, } from './hooks/useHabits';
-import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
-import { WidgetBridge } from './lib/widgetBridge';
-import type { WidgetPendingAction, WidgetRoute } from './lib/widgetSync';
 import { isAtActiveHabitCap, MAX_ACTIVE_HABITS } from './lib/protection';
 import { countActiveKeystones, MAX_KEYSTONE_HABITS } from './lib/keystone';
 import { HomeIndicator } from './components/HomeIndicator';
@@ -88,15 +69,10 @@ const PersonalView = React.lazy(() => import('./components/PersonalView').then((
 const SettingsView = React.lazy(() => import('./components/SettingsView').then((m) => ({ default: m.SettingsView })));
 import { getUserVisionStatement } from './lib/vision';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import FlyingPieceOverlay, {
-  measureCompletionFlight,
-  type FlightHandoffVelocity,
-  type PieceFlight,
-} from './components/FlyingPieceOverlay';
+// three.js loads only once a marble is thrown (and with the bowl itself, inside HomeView).
+const FlyingPieceOverlay = React.lazy(() => import('./components/FlyingPieceOverlay'));
 import { ScrolledBowlOverlay } from './components/ScrolledBowlOverlay';
 import { pulseCompletionHaptic } from './lib/completionFeedback';
-
-const NO_NOTIFICATION_WINDOWS = { morning: false, afternoon: false, night: false };
 
 /** Tab pane visibility classes — maintains active tab DOM instances in memory for 0ms switching. */
 function tabPaneClassName(isActive: boolean, extra = ''): string {
@@ -114,7 +90,6 @@ export default function App() {
     updateModal,
     closeModal,
     resetView,
-    focusReminder,
     setOpenCreateTask,
   } = useUIActions();
   const isAddModalOpen = modalStack.some((modal) => modal.kind === 'addHabit');
@@ -132,8 +107,7 @@ export default function App() {
   sessionRef.current = session;
   const derivedHabitsRef = useRef<Habit[]>([]);
   const todayDayIndexRef = useRef(3);
-  const handleCompleteTodayRef = useRef<(habitId: string, isFallback?: boolean, originCoord?: { x: number; y: number; marbleColor?: string }) => void>(() => {});
-  const { isOnboarded, onboardingStep, hasCompletedTutorial } = useOnboarding();
+  const { isOnboarded, hasCompletedTutorial } = useOnboarding();
   const {
     completeOnboarding: handleOnboardingComplete,
     setOnboardingStep: handleOnboardingStepChange,
@@ -198,20 +172,11 @@ export default function App() {
   const ledgerActions = useLedgerActions();
   const { syncNow: handlePersonalSyncNow } = useAccountSync();
 
-  const [bowlEpoch, setBowlEpoch] = useState(() => readBowlCycleEpoch(toISODate()));
-  const [bowlCelebrating, setBowlCelebrating] = useState(false);
-  const [pieceFlights, setPieceFlights] = useState<PieceFlight[]>([]);
-  const [settlePieceIds, setSettlePieceIds] = useState<string[]>([]);
-  const [settleHandoffs, setSettleHandoffs] = useState<Map<string, FlightHandoffVelocity>>(
-    () => new Map()
-  );
-  const [isBowlOffscreen, setIsBowlOffscreen] = useState(false);
-  const [bowlArrivalPulse, setBowlArrivalPulse] = useState(false);
-  const bowlArrivalPulseTimerRef = useRef<number | null>(null);
-  const settleTimersRef = useRef<Map<string, number>>(new Map());
-  const [celebrationPieces, setCelebrationPieces] = useState<AccumulationPiece[] | null>(null);
-  const bowlCelebrateLockRef = useRef(false);
-  const pendingCycleResetRef = useRef<{ endIso: string; resetAt: number } | null>(null);
+  const bowl = useBowl();
+  const { onFlightComplete, onCelebrationDone, setBowlOffscreen } = useBowlActions();
+  const isBowlOffscreen = bowl.isBowlOffscreen;
+  const handleCompleteToday = useCompleteHabit();
+  useWidgetBridge(handleCompleteToday);
 
   const { reminders, pendingCount: pendingRemindersCount } = useReminders();
   const {
@@ -261,12 +226,6 @@ export default function App() {
   }, [examShieldActive, deactivateExamShield, openModal]);
   const handleConfirmActivateExamShield = activateExamShield;
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void hideNativeSplash().catch(() => {});
-    }, 1500);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   const activeKeystoneCount = useMemo(() => countActiveKeystones(habits), [habits]);
   const activeFallbackIdSet = useMemo(() => new Set(activeFallbackIds), [activeFallbackIds]);
@@ -279,117 +238,6 @@ export default function App() {
     () => getYesterdayPlanForToday(calendarOrigin),
     [calendarOrigin, chronicleVersion]
   );
-  const { morningHabits, nightHabits } = useHabits(activeHabits);
-
-  const bowlWindow = useMemo(
-    () => activeCycleWindow(cycleDays, bowlEpoch.startIso, toISODate(calendarOrigin)),
-    [cycleDays, bowlEpoch.startIso, calendarOrigin]
-  );
-
-  /**
-   * Theme only skins the bowl (morning glass + green vs night glass + blue).
-   * Pieces are derived ONLY from habit_logs / local completionEvents in the active
-   * cycle window. Un-swipe deletes the log row → this list recalculates and the
-   * marble exits. momentum_events is never read or mutated here (append-only ledger).
-   */
-  const bowlPieces = useMemo(
-    () =>
-      accumulationPiecesFromLogs(
-        completionEvents,
-        activeHabits.map((habit) => habit.id),
-        bowlWindow.startIso,
-        bowlWindow.endIso,
-        calendarOrigin,
-        bowlEpoch.resetAt,
-        activeHabits
-      ),
-    [
-      completionEvents,
-      activeHabits,
-      bowlWindow.startIso,
-      bowlWindow.endIso,
-      calendarOrigin,
-      bowlEpoch.resetAt,
-    ]
-  );
-
-  const morningPieces = useMemo(() => {
-    const morningIds = new Set(morningHabits.map((habit) => habit.id));
-    return bowlPieces.filter((piece) => morningIds.has(piece.habitId));
-  }, [bowlPieces, morningHabits]);
-  const nightPieces = useMemo(() => {
-    const nightIds = new Set(nightHabits.map((habit) => habit.id));
-    return bowlPieces.filter((piece) => nightIds.has(piece.habitId));
-  }, [bowlPieces, nightHabits]);
-  const dualBowlFill = useMemo(
-    () =>
-      summarizeDualBowlFill(
-        morningHabits.length,
-        morningPieces.length,
-        nightHabits.length,
-        nightPieces.length,
-        cycleDays
-      ),
-    [morningHabits.length, morningPieces.length, nightHabits.length, nightPieces.length, cycleDays]
-  );
-
-  const bowlFill = useMemo(
-    () => summarizeBowlFill(activeHabits.length, bowlPieces.length, cycleDays),
-    [activeHabits.length, bowlPieces.length, cycleDays]
-  );
-
-  // Bowl full → celebrate, archive cycle history, then reset epoch after pour-out.
-  // Never touches Identity Ledger / momentum_events / habit_logs.
-  useEffect(() => {
-    if (bowlCelebrating || bowlCelebrateLockRef.current) return;
-    if (bowlFill.capacity <= 0) return;
-    if (bowlFill.votes < bowlFill.capacity) return;
-
-    bowlCelebrateLockRef.current = true;
-    setCelebrationPieces(bowlPieces);
-    setBowlCelebrating(true);
-
-    const entry = archiveCompletedCycle({
-      cycleDays: bowlFill.cycleDays,
-      startIso: bowlWindow.startIso,
-      endIso: bowlWindow.endIso,
-      votes: bowlFill.votes,
-      capacity: bowlFill.capacity,
-      fillPercent: bowlFill.fillPercent,
-      isOverflowing: bowlFill.isOverflowing,
-      morningVotes: dualBowlFill.morning.votes,
-      nightVotes: dualBowlFill.night.votes,
-    });
-    pendingCycleResetRef.current = { endIso: bowlWindow.endIso, resetAt: entry.completedAt };
-  }, [
-    bowlFill.votes,
-    bowlFill.capacity,
-    bowlFill.cycleDays,
-    bowlFill.fillPercent,
-    bowlFill.isOverflowing,
-    bowlCelebrating,
-    bowlPieces,
-    bowlWindow.startIso,
-    bowlWindow.endIso,
-    dualBowlFill.morning.votes,
-    dualBowlFill.night.votes,
-  ]);
-
-  const handleBowlCelebrationDone = useCallback(() => {
-    const pending = pendingCycleResetRef.current;
-    if (pending) {
-      setBowlEpoch(resetBowlCycleEpoch(pending.endIso, pending.resetAt));
-      pendingCycleResetRef.current = null;
-    } else {
-      setBowlEpoch(readBowlCycleEpoch(toISODate(calendarOrigin)));
-    }
-    setCelebrationPieces(null);
-    setBowlCelebrating(false);
-    window.setTimeout(() => {
-      bowlCelebrateLockRef.current = false;
-    }, 400);
-  }, [calendarOrigin]);
-
   const prevKeystoneCompletedRef = useRef<string[]>([]);
   const keystoneCompletedOnViewedDay = useMemo(() => {
     const next = activeHabits
@@ -436,81 +284,6 @@ export default function App() {
     [evidenceList]
   );
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void publishWidgetSnapshot({
-        todayDayIndex,
-        origin: calendarOrigin,
-        dark: isDark,
-        momentumScore: todayMomentumScore,
-        habits: activeHabits,
-        reminders,
-        momentumEvents,
-        completionEvents,
-        graceHabitIds: rolledOverHabits,
-      });
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [
-    todayMomentumScore,
-    activeHabits,
-    reminders,
-    todayDayIndex,
-    calendarOrigin,
-    completionEvents,
-    momentumEvents,
-    isDark,
-    rolledOverHabits,
-  ]);
-
-  const hasSession = Boolean(session);
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void schedulePsychologyNotifications({
-        // Nobody signed in: all windows off, which cancels the nudges.
-        windows: hasSession ? notificationWindows : NO_NOTIFICATION_WINDOWS,
-        habits: activeHabits,
-        todayIndex: todayDayIndex,
-        momentumScore: todayMomentumScore,
-      });
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [hasSession, notificationWindows, activeHabits, todayDayIndex, todayMomentumScore, completionEvents]);
-
-  useEffect(() => {
-    if (!isOnboarded && onboardingStep < 3) return;
-    void syncAllHabitTargetNotifications(habits, todayDayIndex, calendarOrigin);
-  }, [habits, todayDayIndex, calendarOrigin, completionEvents, isOnboarded, onboardingStep]);
-
-  // Cycle-window habit_logs hydrate (Home + any tab once signed in).
-  // Range query is read-only — never resets bowlEpoch (celebration/rollover only).
-  useEffect(() => {
-    if (!session || session?.isGuest) return;
-    // Defer heavy history parsing passes until after onboarding completes or reaches step 3
-    if (!isOnboarded && onboardingStep < 3) return;
-    const startIso = bowlWindow.startIso;
-    const endIso = bowlWindow.endIso;
-    if (!startIso || !endIso || startIso > endIso) return;
-
-    let cancelled = false;
-    void (async () => {
-      const cycleLogs = await fetchHabitLogsForDateRange(session.id, startIso, endIso);
-      if (cancelled) return;
-      ledgerActions.mergeCycleLogs(cycleLogs);
-    })().catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    session?.id,
-    session?.isGuest,
-    bowlWindow.startIso,
-    bowlWindow.endIso,
-    calendarOrigin,
-    isOnboarded,
-    onboardingStep,
-  ]);
-
   const handleRolloverAll = useCallback(() => {
     if (ledgerActions.rolloverAll() > 0) void pulseCompletionHaptic('fallback');
   }, [ledgerActions]);
@@ -520,51 +293,6 @@ export default function App() {
   }, [ledgerActions]);
 
   const activeFrictionPrompt = pendingFriction[0] ?? null;
-
-  // GESTURE / TAP ACTION: Complete Today (Full 100% or Fallback Micro 50%).
-  // The ledger records it; a first completion today earns the reward below.
-  const handleCompleteToday = (
-    habitId: string,
-    isFallback: boolean = false,
-    originCoord?: { x: number; y: number; marbleColor?: string }
-  ) => {
-    const result = ledgerActions.completeToday(habitId, isFallback);
-    if (!result?.newlyCompleted) return;
-    const { isMicro, loggedDate } = result;
-
-    // Reward moment: haptic + optional chime immediately; piece flies card → bowl.
-    // Feedback only: the ledger has already recorded the completion.
-    const rewardKind = isMicro ? 'fallback' : 'full';
-    try {
-      void pulseCompletionHaptic(rewardKind);
-    } catch {
-      /* never block completion on feedback failure */
-    }
-    const pieceId = `${habitId}::${loggedDate}`;
-    try {
-      const swipeDir = isMicro ? 'left' : 'right';
-      const points = measureCompletionFlight(habitId, originCoord, isBowlOffscreen);
-      const themeDark = getThemeIsDark();
-      // Same isMicro boolean as habit_logs.type — light vs solid marble shade.
-      const flightColor =
-        originCoord?.marbleColor || getMarbleColor(themeDark, isMicro);
-      const flight: PieceFlight = {
-        id: `fly-${pieceId}-${Date.now()}`,
-        pieceId,
-        isFallback: isMicro,
-        kind: rewardKind,
-        from: points.from,
-        to: points.to,
-        isDark: themeDark,
-        direction: swipeDir,
-        color: flightColor,
-        touchRatio: points.touchRatio,
-      };
-      setPieceFlights((prev) => [...prev.slice(-4), flight]);
-    } catch {
-      /* ignore measurement failures */
-    }
-  };
 
   const handleArchiveHabit = useCallback(
     (habitId: string) => {
@@ -645,75 +373,13 @@ export default function App() {
     else startAsReturningUser();
   };
 
-  // RESET_ALL for the bowl and chronicle state App still owns (the ledger resets itself).
-  useUserDataReset(() => {
-    setBowlEpoch(readBowlCycleEpoch(toISODate()));
-    setCelebrationPieces(null);
-    setBowlCelebrating(false);
-    setPieceFlights([]);
-    setChronicleVersion((v) => v + 1);
-  });
+  // RESET_ALL for the chronicle view App still owns (the providers reset themselves).
+  useUserDataReset(() => setChronicleVersion((v) => v + 1));
 
   derivedHabitsRef.current = derivedHabits;
   todayDayIndexRef.current = todayDayIndex;
-  handleCompleteTodayRef.current = handleCompleteToday;
 
-  const deferredPieceIds = useMemo(
-    () => new Set(pieceFlights.map((flight) => flight.pieceId)),
-    [pieceFlights]
-  );
-  const settlePieceIdSet = useMemo(() => new Set(settlePieceIds), [settlePieceIds]);
-
-  const handlePieceFlightComplete = useCallback(
-    (flightId: string, pieceId: string, handoff: FlightHandoffVelocity) => {
-      void pulseCompletionHaptic('fallback');
-      // Pulse floating overlay on marble arrival
-      setBowlArrivalPulse(true);
-      if (bowlArrivalPulseTimerRef.current) window.clearTimeout(bowlArrivalPulseTimerRef.current);
-      bowlArrivalPulseTimerRef.current = window.setTimeout(() => setBowlArrivalPulse(false), 600);
-      // Same React batch: mount bowl marble at rim with V_terminal, then unmount overlay
-      setSettleHandoffs((prev) => {
-        const next = new Map(prev);
-        next.set(pieceId, handoff);
-        return next;
-      });
-      setSettlePieceIds((prev) => (prev.includes(pieceId) ? prev : [...prev, pieceId]));
-      setPieceFlights((prev) => prev.filter((flight) => flight.id !== flightId));
-      const existing = settleTimersRef.current.get(pieceId);
-      if (existing) window.clearTimeout(existing);
-      const timer = window.setTimeout(() => {
-        settleTimersRef.current.delete(pieceId);
-        setSettlePieceIds((prev) => prev.filter((id) => id !== pieceId));
-        setSettleHandoffs((prev) => {
-          if (!prev.has(pieceId)) return prev;
-          const next = new Map(prev);
-          next.delete(pieceId);
-          return next;
-        });
-      }, 800);
-      settleTimersRef.current.set(pieceId, timer);
-    },
-    []
-  );
-
-  useEffect(
-    () => () => {
-      for (const timer of settleTimersRef.current.values()) window.clearTimeout(timer);
-      settleTimersRef.current.clear();
-    },
-    []
-  );
-
-  const stableCompleteToday = useCallback(
-    (
-      habitId: string,
-      isFallback?: boolean,
-      originCoord?: { x: number; y: number; marbleColor?: string }
-    ) => {
-      handleCompleteTodayRef.current(habitId, isFallback, originCoord);
-    },
-    []
-  );
+  const stableCompleteToday = handleCompleteToday;
   const stableResetToday = ledgerActions.resetToday;
   const stableToggleFallbackMode = ledgerActions.toggleFallbackMode;
   const stableToggleKeystone = ledgerActions.setKeystone;
@@ -818,85 +484,6 @@ export default function App() {
   const handleOpenLedgerModal = useCallback(() => openModal({ kind: 'identityLedger' }), [openModal]);
   const handleOpenPasswordModal = useCallback(() => openModal({ kind: 'changePassword' }), [openModal]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const applyAction = (action: WidgetPendingAction) => {
-      if (!action?.id) return;
-      const completed = Boolean(action.completed);
-      if (action.type === 'reminder') {
-        handleSetReminderCompleted(action.id, completed);
-        return;
-      }
-      if (action.type !== 'habit') return;
-      const already = hasLogOn(ledgerActions.getSnapshot().completionEvents, action.id, getLocalDateString());
-      if (completed && !already) handleCompleteTodayRef.current(action.id, false);
-      if (!completed && already) ledgerActions.resetToday(action.id);
-    };
-
-    const applyRoute = (route: WidgetRoute | null) => {
-      if (!route) return;
-      if (route.tab === 'report') setActiveTab('report');
-      if (route.tab === 'reminders') {
-        setActiveTab('reminders');
-        if (route.reminderId) focusReminder(route.reminderId);
-        if (route.openCreate) setOpenCreateTask(true);
-      }
-      if (route.tab === 'home') {
-        setActiveTab('home');
-        if (route.openCreate && !isAtActiveHabitCap(ledgerActions.getSnapshot().habits)) openModal({ kind: 'addHabit' });
-        if (route.habitId) {
-          const habit = derivedHabitsRef.current.find((item) => item.id === route.habitId);
-          if (habit) openModal({ kind: 'habitDetail', habit });
-        }
-      }
-      if (route.tab === 'ledger') {
-        setActiveTab('personal');
-        openModal({ kind: 'identityLedger' });
-      }
-    };
-
-    const drain = async () => {
-      const [actions, launch] = await Promise.all([consumeWidgetActions(), readLaunchWidgetRoute()]);
-      if (cancelled) return;
-      actions.forEach(applyAction);
-      applyRoute(launch);
-    };
-
-    void drain();
-    void CapacitorApp.getLaunchUrl().then((launch) => {
-      if (!cancelled && launch?.url) {
-        applyRoute(parseWidgetRoute(launch.url));
-      }
-    });
-
-    const actionSub = WidgetBridge.addListener('widgetAction', applyAction);
-    const linkSub = WidgetBridge.addListener('deepLink', (data) => applyRoute(parseWidgetRoute(data.url)));
-    const appUrlSub = CapacitorApp.addListener('appUrlOpen', (data) => {
-      if (data?.url) {
-        applyRoute(parseWidgetRoute(data.url));
-      }
-    });
-
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        window.setTimeout(() => {
-          void drain();
-        }, 150);
-      }
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', onVisible);
-    return () => {
-      cancelled = true;
-      document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', onVisible);
-      void Promise.resolve(actionSub).then((sub) => sub.remove());
-      void Promise.resolve(linkSub).then((sub) => sub.remove());
-      void Promise.resolve(appUrlSub).then((sub) => sub.remove());
-    };
-  }, []);
-
   const handleOpenCreateConsumed = useCallback(() => setOpenCreateTask(false), [setOpenCreateTask]);
 
   // Nav chrome: toggle via DOM class — never setState on scroll (that re-rendered every habit card).
@@ -951,7 +538,7 @@ export default function App() {
         if (frame) {
           const r = frame.getBoundingClientRect();
           const isOff = r.bottom <= 60;
-          setIsBowlOffscreen((prev) => (prev !== isOff ? isOff : prev));
+          setBowlOffscreen(isOff);
         }
 
         if (nextVisible === navScrollVisibleRef.current) return;
@@ -972,7 +559,7 @@ export default function App() {
   // Track viewport visibility of primary 3D bowl frame
   useEffect(() => {
     if (!isTabActive('home')) {
-      setIsBowlOffscreen(false);
+      setBowlOffscreen(false);
       return;
     }
 
@@ -983,7 +570,7 @@ export default function App() {
       const r = frame.getBoundingClientRect();
       const rootRect = root.getBoundingClientRect();
       const isOff = r.bottom <= rootRect.top + 20;
-      setIsBowlOffscreen((prev) => (prev !== isOff ? isOff : prev));
+      setBowlOffscreen(isOff);
     };
 
     const frame = document.getElementById('accumulation-bowl-frame');
@@ -998,7 +585,7 @@ export default function App() {
         if (!entry) return;
         const rootBounds = entry.rootBounds;
         const isOff = !entry.isIntersecting && entry.boundingClientRect.bottom <= (rootBounds ? rootBounds.top + 20 : 60);
-        setIsBowlOffscreen((prev) => (prev !== isOff ? isOff : prev));
+        setBowlOffscreen(isOff);
       },
       {
         root,
@@ -1158,16 +745,16 @@ export default function App() {
 
             <HomeView
               isActive={isTabActive('home')}
-              pieces={celebrationPieces ?? bowlPieces}
-              bowlFill={bowlFill}
+              pieces={bowl.pieces}
+              bowlFill={bowl.bowlFill}
               momentumScore={todayMomentumScore}
               momentumPulse={momentumPulse}
               onCycleDaysChange={handleCycleDaysChange}
-              celebrating={bowlCelebrating}
-              onCelebrationDone={handleBowlCelebrationDone}
-              deferredPieceIds={deferredPieceIds}
-              settlePieceIds={settlePieceIdSet}
-              settleHandoffs={settleHandoffs}
+              celebrating={bowl.celebrating}
+              onCelebrationDone={onCelebrationDone}
+              deferredPieceIds={bowl.deferredPieceIds}
+              settlePieceIds={bowl.settlePieceIds}
+              settleHandoffs={bowl.settleHandoffs}
               habits={activeHabits}
               todayIndex={todayDayIndex}
               renderHabit={renderHabit}
@@ -1234,7 +821,7 @@ export default function App() {
                 selectedDayIso={currentSelectedDate}
                 onSelectDayIso={setCurrentSelectedDate}
                 cycleDays={cycleDays}
-                cycleStartIso={bowlEpoch.startIso}
+                cycleStartIso={bowl.cycleStartIso}
               />
             </Suspense>
           </div>
@@ -1307,14 +894,18 @@ export default function App() {
         )}
         </div>
 
-        <FlyingPieceOverlay flights={pieceFlights} onFlightComplete={handlePieceFlightComplete} />
+        {bowl.pieceFlights.length > 0 && (
+          <Suspense fallback={null}>
+            <FlyingPieceOverlay flights={bowl.pieceFlights} onFlightComplete={onFlightComplete} />
+          </Suspense>
+        )}
         <ScrolledBowlOverlay
           isVisible={isTabActive('home') && isBowlOffscreen && !longPressedHabitId && !isAnyModalOpen}
-          votes={bowlFill.votes}
-          capacity={bowlFill.capacity}
-          fillPercent={bowlFill.fillPercent}
-          hasActiveFlight={pieceFlights.length > 0}
-          isPulsing={bowlArrivalPulse}
+          votes={bowl.bowlFill.votes}
+          capacity={bowl.bowlFill.capacity}
+          fillPercent={bowl.bowlFill.fillPercent}
+          hasActiveFlight={bowl.pieceFlights.length > 0}
+          isPulsing={bowl.arrivalPulse}
           onScrollToTop={handleScrollToTop}
         />
         </ErrorBoundary>

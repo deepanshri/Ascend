@@ -270,17 +270,13 @@ export async function syncWidgetData(payload: WidgetPayload | WidgetSnapshot): P
     // Web storage can be unavailable in private mode.
   }
 
-  try {
-    await Preferences.set({ key: WIDGET_DATA_KEY, value: serialized });
-  } catch {
-    // Preferences plugin is a no-op when native storage is unavailable.
-  }
-
-  try {
-    await WidgetBridge.sync({ payload: serialized });
-  } catch {
-    // Native widget bridge is absent on web.
-  }
+  // Both native calls are dispatched now, not one after the other: when this
+  // runs from the background flush the OS may suspend JS right after.
+  await Promise.allSettled([
+    Preferences.set({ key: WIDGET_DATA_KEY, value: serialized }),
+    // Absent on web: the call rejects and is ignored.
+    WidgetBridge.sync({ payload: serialized }),
+  ]);
 }
 
 export async function publishWidgetSnapshot(input: WidgetSnapshotInput): Promise<WidgetSnapshot> {
