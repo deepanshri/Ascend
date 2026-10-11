@@ -1,5 +1,5 @@
 import { Habit, MomentumEvent } from '../types';
-import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
+import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentumCore';
 import { toISODate } from '../utils/dates';
 import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from '../utils/schedule';
 

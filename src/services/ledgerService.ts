@@ -1,6 +1,6 @@
 import { HabitCompletionEvent, IdentityEvidence, MomentumEvent } from '../types';
 import { formatEvidenceDate, resolveEventIsoDate } from '../utils/dates';
-import { countIdentityVotes, filterReversedMomentumEvents, resolveMomentumEventDate } from '../utils/momentum';
+import { countIdentityVotes, filterReversedMomentumEvents, resolveMomentumEventDate } from '../utils/momentumCore';
 
 export function isSameLedgerDay(
   event: Pick<HabitCompletionEvent, 'habitId' | 'date' | 'dayIndex' | 'timestamp'>,

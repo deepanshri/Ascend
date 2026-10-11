@@ -40,3 +40,11 @@ export function resolveHabitTimeOfDay(
 export function hydrateHabitTimeOfDay<T extends Pick<Habit, 'timeOfDay' | 'timestamp'>>(habit: T): T {
   return { ...habit, timeOfDay: resolveHabitTimeOfDay(habit) };
 }
+
+/** Stamp the habit's bowl on a completion or momentum payload. */
+export function withHabitTimeOfDay<T>(
+  payload: T,
+  habit: Pick<Habit, 'timeOfDay' | 'timestamp'>
+): T & { timeOfDay: TimeOfDay } {
+  return { ...payload, timeOfDay: resolveHabitTimeOfDay(habit) };
+}

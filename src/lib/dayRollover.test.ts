@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Habit, MomentumEvent } from '../types';
-import { computeDayRollover, missedHabitsOn, type DayRolloverInput } from './dayRollover';
+import { computeDayRollover, missedHabitsOn, missedMomentumEvents, type DayRolloverInput } from './dayRollover';
 
 const habit = (id: string, fields: Partial<Habit> = {}): Habit =>
   ({ id, name: `Habit ${id}`, category: 'work', timestamp: '', days: [], targetDaysPerWeek: 7, ...fields }) as Habit;
@@ -135,5 +135,21 @@ describe('computeDayRollover across DST changes', () => {
 describe('missedHabitsOn', () => {
   it('ignores malformed dates', () => {
     expect(missedHabitsOn([habit('a')], [], 'nope')).toEqual([]);
+  });
+});
+
+describe('missedMomentumEvents', () => {
+  it('builds one stable missed event per known habit-day, at the end of that day', () => {
+    const events = missedMomentumEvents(
+      [habit('a')],
+      [
+        { habitId: 'a', habitName: 'Habit a', isoDate: '2026-10-10' },
+        { habitId: 'gone', habitName: 'Gone', isoDate: '2026-10-10' },
+      ]
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ habitId: 'a', eventType: 'missed', loggedDate: '2026-10-10' });
+    expect(new Date(events[0].timestamp + 1).getDate()).toBe(11);
+    expect(missedMomentumEvents([habit('a')], [{ habitId: 'a', habitName: 'Habit a', isoDate: '2026-10-10' }])).toEqual(events);
   });
 });

@@ -3,7 +3,6 @@ import { Habit } from '../types';
 import {
   hydrateHabitTimeOfDay,
   resolveHabitTimeOfDay,
-  type TimeOfDay,
 } from '../utils/timeOfDay';
 
 /** Ensure fetched/local habits always carry a resolved `timeOfDay` for bowl routing. */
@@ -28,10 +27,4 @@ export function useHabits(habits: Habit[]): {
   return { habits: resolved, morningHabits, nightHabits };
 }
 
-/** Stamp the habit's bowl on a completion or momentum payload. */
-export function withHabitTimeOfDay<T>(
-  payload: T,
-  habit: Pick<Habit, 'timeOfDay' | 'timestamp'>
-): T & { timeOfDay: TimeOfDay } {
-  return { ...payload, timeOfDay: resolveHabitTimeOfDay(habit) };
-}
+export { withHabitTimeOfDay } from '../utils/timeOfDay';

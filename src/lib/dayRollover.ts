@@ -8,7 +8,8 @@
  * and timezone changes only ever move "today" to another valid calendar day.
  */
 import type { Habit, MomentumEvent } from '../types';
-import { addDaysIso, dayIndexForIso, diffDaysIso, isIsoDate, parseIsoDateParts } from '../utils/dates';
+import { addDaysIso, dayIndexForIso, diffDaysIso, endOfIsoDate, isIsoDate, parseIsoDateParts } from '../utils/dates';
+import { createMomentumEvent } from '../utils/momentumCore';
 import { resolveMomentumEventDate } from '../utils/momentumDates';
 import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from '../utils/schedule';
 
@@ -102,4 +103,13 @@ export function computeDayRollover(input: DayRolloverInput): DayRolloverResult {
   }
   result.graceHabitIds = dayDiff === 1 ? graceHabitIds : [];
   return result;
+}
+
+/** One `missed` momentum event per missed habit-day, stamped at the end of that day. */
+export function missedMomentumEvents(habits: Habit[], missed: MissedHabitDay[]): MomentumEvent[] {
+  const byId = new Map(habits.map((habit) => [habit.id, habit]));
+  return missed.flatMap(({ habitId, isoDate }) => {
+    const habit = byId.get(habitId);
+    return habit ? [createMomentumEvent(habit, 'missed', isoDate, endOfIsoDate(isoDate))] : [];
+  });
 }

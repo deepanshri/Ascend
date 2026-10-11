@@ -1,33 +1,12 @@
 import { Habit } from '../types';
-import { isSeedHabitId } from '../data/initialHabits';
-import { omitDeletedHabits } from './habitsApi';
+import { deletedHabitIdSet } from './habitsApi';
+import { mergeHabitRevisions } from './habitMerge';
 
-function habitRevision(habit: Habit): number {
-  if (typeof habit.updatedAt === 'number' && Number.isFinite(habit.updatedAt)) {
-    return habit.updatedAt;
-  }
-  return 0;
-}
+export { touchHabit } from './habitMerge';
 
-export function touchHabit<T extends Habit>(habit: T, at: number = Date.now()): T {
-  return { ...habit, updatedAt: at };
-}
-
-/** Last-write-wins by updatedAt. Equal timestamps keep the local (in-flight) row. */
+/** Last-write-wins by updatedAt, skipping habits deleted on this device. */
 export function mergeHabitsByUpdatedAt(local: Habit[], remote: Habit[]): Habit[] {
-  const localUser = omitDeletedHabits(local.filter((habit) => !isSeedHabitId(habit.id)));
-  const remoteUser = omitDeletedHabits(remote.filter((habit) => !isSeedHabitId(habit.id)));
-  if (remoteUser.length === 0) return localUser;
-
-  const merged = new Map<string, Habit>();
-  remoteUser.forEach((habit) => merged.set(habit.id, habit));
-  localUser.forEach((habit) => {
-    const current = merged.get(habit.id);
-    if (!current || habitRevision(habit) >= habitRevision(current)) {
-      merged.set(habit.id, habit);
-    }
-  });
-  return omitDeletedHabits(Array.from(merged.values()));
+  return mergeHabitRevisions(local, remote, deletedHabitIdSet());
 }
 
 export { mergeRemindersByUpdatedAt } from '../providers/remindersState';

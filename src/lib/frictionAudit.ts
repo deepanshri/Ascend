@@ -1,5 +1,13 @@
-import { FrictionAudit, Habit } from '../types';
 import { readJson, writeJson } from './storage';
+import { appendFrictionPrompts, frictionPromptKey, type PendingFrictionPrompt } from './frictionAuditCore';
+
+export {
+  appendFrictionPrompts,
+  createMissedFrictionAudit,
+  frictionPromptKey,
+  mergeFrictionAuditsFromLogs,
+  type PendingFrictionPrompt,
+} from './frictionAuditCore';
 
 export const FRICTION_REASON_CHIPS = [
   'Time Constraint',
@@ -8,18 +16,8 @@ export const FRICTION_REASON_CHIPS = [
   'System Friction',
 ] as const;
 
-export interface PendingFrictionPrompt {
-  habitId: string;
-  habitName: string;
-  loggedDate: string;
-}
-
 const PENDING_KEY = 'ascend_pending_friction_audits';
 const PROMPTED_KEY = 'ascend_friction_prompted_keys';
-
-export function frictionPromptKey(habitId: string, loggedDate: string): string {
-  return `${habitId}|${loggedDate}`;
-}
 
 export function loadPendingFrictionPrompts(): PendingFrictionPrompt[] {
   const parsed = readJson<PendingFrictionPrompt[]>(PENDING_KEY, []);
@@ -49,63 +47,17 @@ export function markFrictionPrompted(habitId: string, loggedDate: string): void 
   savePromptedKeys(keys);
 }
 
+/** Queue prompts not already queued and not already answered on this device. */
 export function enqueueFrictionPrompts(
   current: PendingFrictionPrompt[],
   incoming: PendingFrictionPrompt[]
 ): PendingFrictionPrompt[] {
-  const seen = new Set(current.map((item) => frictionPromptKey(item.habitId, item.loggedDate)));
-  const next = [...current];
-  incoming.forEach((item) => {
-    const key = frictionPromptKey(item.habitId, item.loggedDate);
-    if (seen.has(key) || wasFrictionPrompted(item.habitId, item.loggedDate)) return;
-    seen.add(key);
-    next.push(item);
-  });
-  return next;
+  return appendFrictionPrompts(current, unansweredFrictionPrompts(incoming));
 }
 
-export function createMissedFrictionAudit(
-  prompt: PendingFrictionPrompt,
-  reason: string
-): FrictionAudit {
-  const day = new Date(`${prompt.loggedDate}T12:00:00`);
-  return {
-    id: `fa-${prompt.habitId}-${prompt.loggedDate}`,
-    date: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    dayNumber: Number.isNaN(day.getTime()) ? 1 : day.getDay() === 0 ? 7 : day.getDay(),
-    habitName: prompt.habitName,
-    habitId: prompt.habitId,
-    loggedDate: prompt.loggedDate,
-    type: 'missed',
-    reason,
-    note: reason,
-    timestamp: Date.now(),
-  };
-}
-
-export function mergeFrictionAuditsFromLogs(
-  current: FrictionAudit[],
-  rows: Array<{ habitId: string; loggedDate: string; reason: string }>,
-  habits: Habit[]
-): FrictionAudit[] {
-  const byKey = new Map<string, FrictionAudit>();
-  current.forEach((item) => {
-    const key = item.habitId && item.loggedDate
-      ? frictionPromptKey(item.habitId, item.loggedDate)
-      : item.id;
-    byKey.set(key, item);
-  });
-  const names = new Map(habits.map((habit) => [habit.id, habit.name]));
-  rows.forEach((row) => {
-    if (!row.reason?.trim()) return;
-    const key = frictionPromptKey(row.habitId, row.loggedDate);
-    if (byKey.has(key)) return;
-    const prompt: PendingFrictionPrompt = {
-      habitId: row.habitId,
-      habitName: names.get(row.habitId) || 'Habit',
-      loggedDate: row.loggedDate,
-    };
-    byKey.set(key, createMissedFrictionAudit(prompt, row.reason.trim()));
-  });
-  return Array.from(byKey.values()).sort((a, b) => b.timestamp - a.timestamp);
+/** Drop prompts already answered (or skipped) on this device. */
+export function unansweredFrictionPrompts(prompts: PendingFrictionPrompt[]): PendingFrictionPrompt[] {
+  if (prompts.length === 0) return prompts;
+  const answered = loadPromptedKeys();
+  return prompts.filter((item) => !answered.has(frictionPromptKey(item.habitId, item.loggedDate)));
 }

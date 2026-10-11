@@ -112,6 +112,11 @@ function rememberDeletedHabits(habitIds: string[]): void {
   persistDeletedHabitIds();
 }
 
+/** Snapshot of the habits deleted on this device, for the pure merge helpers. */
+export function deletedHabitIdSet(): ReadonlySet<string> {
+  return new Set(deletedHabitIds);
+}
+
 export function omitDeletedHabits<T extends { id: string }>(habits: T[]): T[] {
   if (deletedHabitIds.size === 0) return habits;
   return habits.filter((habit) => !deletedHabitIds.has(habit.id));
