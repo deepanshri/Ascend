@@ -7,6 +7,7 @@ import './index.css';
 import { applyNativeChrome } from './lib/nativeChrome';
 import { THEME_STORAGE_KEY } from './lib/themeStore';
 import { startOfflineSyncListener } from './lib/offlineSync';
+import { migrateLegacyMomentumIds } from './lib/momentumEvents';
 import { installBackgroundFlush } from './lib/backgroundFlush';
 
 let isDarkBoot = false;
@@ -16,6 +17,9 @@ try {
   isDarkBoot = savedTheme === 'dark' || (!savedTheme && systemDark) || (savedTheme === 'system' && systemDark);
 } catch {}
 void applyNativeChrome(isDarkBoot).catch(() => {});
+try {
+  migrateLegacyMomentumIds();
+} catch {}
 startOfflineSyncListener();
 installBackgroundFlush();
 

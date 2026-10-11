@@ -5,6 +5,7 @@ import { parseToIsoDate, toISODate } from '../utils/dates';
 import { isUuid } from '../utils/momentum';
 import { isTimeOfDay } from '../utils/timeOfDay';
 import { readJson, writeJson } from './storage';
+import { remapLegacyMomentumIds, remapLegacyMomentumIdsBy } from '../utils/momentumIds';
 
 export const MOMENTUM_EVENTS_STORAGE_KEY = 'ascend_momentum_events';
 const MOMENTUM_QUEUE_KEY = 'ascend_offline_momentum_event_queue';
@@ -216,3 +217,32 @@ export async function flushMomentumEventQueue(): Promise<void> {
 
 export { createMomentumEvent, habitWeight } from '../utils/momentum';
 
+const isStoredEvent = (value: unknown): value is MomentumEvent =>
+  Boolean(value) && typeof value === 'object' && typeof (value as MomentumEvent).id === 'string' &&
+  typeof (value as MomentumEvent).habitId === 'string';
+
+/**
+ * Idempotent migration: legacy `evt_` ids in the stored momentum log and the
+ * offline queue become stable UUIDs, so the queue and account sync can upload
+ * them. Malformed entries are left in place for the loaders to dead-letter.
+ */
+export function migrateLegacyMomentumIds(): void {
+  const log = readJson<unknown>(MOMENTUM_EVENTS_STORAGE_KEY, null);
+  if (Array.isArray(log)) {
+    const { events, remapped, dropped } = remapLegacyMomentumIds(log.filter(isStoredEvent));
+    if (remapped + dropped > 0) {
+      writeJson(MOMENTUM_EVENTS_STORAGE_KEY, [...events, ...log.filter((entry) => !isStoredEvent(entry))]);
+    }
+  }
+  const queue = readJson<unknown>(MOMENTUM_QUEUE_KEY, null);
+  if (Array.isArray(queue)) {
+    const isItem = (value: unknown): value is MomentumQueueItem =>
+      Boolean(value) && typeof value === 'object' && isStoredEvent((value as MomentumQueueItem).event);
+    const { items, remapped, dropped } = remapLegacyMomentumIdsBy(
+      queue.filter(isItem),
+      (item) => item.event,
+      (item, event) => ({ ...item, event })
+    );
+    if (remapped + dropped > 0) writeQueue([...items, ...queue.filter((entry) => !isItem(entry))]);
+  }
+}

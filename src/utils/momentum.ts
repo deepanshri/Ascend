@@ -15,6 +15,7 @@ import { syncHabitLogDelete, syncHabitLogUpsert, syncHabitLogUpserts } from '../
 import { isHabitScheduledOnIso } from './schedule';
 import { resolveHabitTimeOfDay } from './timeOfDay';
 import { resolveMomentumEventDate } from './momentumDates';
+import { stableMomentumEventId } from './stableId';
 
 export const WORK_HABIT_WEIGHT = 1.5;
 export const SELF_IMPROVEMENT_HABIT_WEIGHT = 1.5;
@@ -87,7 +88,7 @@ export function createMomentumEvent(
 ): MomentumEvent {
   const habitId = habit.id;
   return {
-    id: `evt_${habitId}_${loggedDate}_${eventType}`,
+    id: stableMomentumEventId(habitId, loggedDate, eventType),
     habitId,
     eventType,
     weight: weight !== undefined ? weight : habitWeight(habit as Habit),
@@ -115,7 +116,7 @@ export function momentumEventsFromCompletionLog(
       const baseWeight = habit ? habitWeight(habit) : SELF_IMPROVEMENT_HABIT_WEIGHT;
       const weight = eventType === 'fallback' ? baseWeight * 0.5 : baseWeight;
       return {
-        id: `evt_${event.habitId}_${iso}_${eventType}`,
+        id: stableMomentumEventId(event.habitId, iso, eventType),
         habitId: event.habitId,
         eventType,
         weight,
