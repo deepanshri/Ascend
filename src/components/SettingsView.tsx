@@ -10,7 +10,8 @@ import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import type { NotificationWindowKey, PsychologyNotificationWindows } from '../lib/notifications';
 import type { EveningChronicleSettings } from '../lib/chronicle';
 import { downloadCsvFile } from '../lib/reportExport';
-import { importDeadLetters, readDeadLetters } from '../lib/deadLetter';
+import { importDeadLetters, readDeadLetters, recordDeadLetters } from '../lib/deadLetter';
+import { parseBackup, rejectedCount } from '../lib/backupImport';
 
 interface SettingsViewProps {
   habits: Habit[];
@@ -173,13 +174,23 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
       try {
         const text = evt.target?.result as string;
         const parsed = JSON.parse(text);
-        if (parsed && Array.isArray(parsed.habits)) {
-          if (parsed.deadLetter !== undefined) importDeadLetters(parsed.deadLetter);
-          onImportJSON(parsed.habits, parsed.evidenceLedger, parsed.completionEvents, parsed.momentumEvents);
-          flashFeedback('Imported Successfully ✓', 2500);
-        } else {
+        const result = parseBackup(parsed);
+        if (result.status === 'not_a_backup') {
           alert('Invalid Ascend backup format.');
+          return;
         }
+        // Keep everything unreadable recoverable instead of failing the import.
+        if (parsed.deadLetter !== undefined) importDeadLetters(parsed.deadLetter);
+        for (const section of result.rejected) recordDeadLetters(section.source, section.entries);
+        const unreadable = rejectedCount(result.rejected);
+        if (!('contents' in result)) {
+          alert(`No readable habits in this backup. ${unreadable} unreadable entries were kept aside.`);
+          return;
+        }
+        const { habits: importedHabits, evidence, completionEvents: importedEvents, momentumEvents: importedMomentum } =
+          result.contents;
+        onImportJSON(importedHabits, evidence, importedEvents, importedMomentum);
+        flashFeedback(unreadable > 0 ? `Imported ✓ · ${unreadable} unreadable kept aside` : 'Imported Successfully ✓', 2500);
       } catch {
         alert('Could not parse JSON file.');
       }

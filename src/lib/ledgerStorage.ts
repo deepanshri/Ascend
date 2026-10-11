@@ -63,15 +63,13 @@ function parsePayload(raw: string | null): Payload {
   }
 }
 
-function parseList<T>(raw: string | null, parseEntry: (entry: unknown) => EntryResult<T>): ParseResult<T> {
-  const payload = parsePayload(raw);
-  if ('result' in payload) return payload.result;
-  if (!Array.isArray(payload.value)) {
-    return { items: null, rejected: [{ reason: 'not_a_list', value: payload.value }] };
+function parseEntries<T>(value: unknown, parseEntry: (entry: unknown) => EntryResult<T>): ParseResult<T> {
+  if (!Array.isArray(value)) {
+    return { items: null, rejected: [{ reason: 'not_a_list', value }] };
   }
   const items: T[] = [];
   const rejected: RejectedEntry[] = [];
-  for (const entry of payload.value) {
+  for (const entry of value) {
     let result: EntryResult<T>;
     try {
       result = parseEntry(entry);
@@ -84,6 +82,11 @@ function parseList<T>(raw: string | null, parseEntry: (entry: unknown) => EntryR
   return { items, rejected };
 }
 
+function parseList<T>(raw: string | null, parseEntry: (entry: unknown) => EntryResult<T>): ParseResult<T> {
+  const payload = parsePayload(raw);
+  return 'result' in payload ? payload.result : parseEntries(payload.value, parseEntry);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -92,46 +95,55 @@ function hasStringField<K extends string>(value: unknown, key: K): value is Reco
   return isRecord(value) && typeof value[key] === 'string' && value[key] !== '';
 }
 
-export function parseStoredHabits(raw: string | null): ParseResult<Habit> {
-  return parseList(raw, (entry) => {
-    if (!hasStringField(entry, 'id')) return REJECT;
-    const habit = entry as unknown as Habit;
-    if (isSeedHabitId(habit.id)) return DROP;
-    const category = normalizeHabitCategory(habit.category);
-    return hydrateHabitTimeOfDay({
-      ...habit,
-      category,
-      days: Array.isArray(habit.days) ? habit.days : [...EMPTY_WEEK],
-      microDays: Array.isArray(habit.microDays) ? habit.microDays : [...EMPTY_WEEK],
-      tags: [habitCategoryBadge(category)],
-    });
+function parseHabitEntry(entry: unknown): EntryResult<Habit> {
+  if (!hasStringField(entry, 'id')) return REJECT;
+  const habit = entry as unknown as Habit;
+  if (isSeedHabitId(habit.id)) return DROP;
+  const category = normalizeHabitCategory(habit.category);
+  return hydrateHabitTimeOfDay({
+    ...habit,
+    category,
+    days: Array.isArray(habit.days) ? habit.days : [...EMPTY_WEEK],
+    microDays: Array.isArray(habit.microDays) ? habit.microDays : [...EMPTY_WEEK],
+    tags: [habitCategoryBadge(category)],
   });
+}
+
+/** Completion and momentum rows share the same rule: a habitId, and not a seed habit. */
+function parseHabitRowEntry<T extends { habitId: string }>(entry: unknown): EntryResult<T> {
+  if (!hasStringField(entry, 'habitId')) return REJECT;
+  const row = entry as unknown as T;
+  return isSeedHabitId(row.habitId) ? DROP : row;
+}
+
+function parseEvidenceEntry(entry: unknown): EntryResult<IdentityEvidence> {
+  if (!hasStringField(entry, 'habitId')) return REJECT;
+  const item = entry as unknown as IdentityEvidence;
+  if (isSeedHabitId(item.habitId)) return DROP;
+  return { ...item, category: normalizeHabitCategory(item.category) };
+}
+
+export function parseStoredHabits(raw: string | null): ParseResult<Habit> {
+  return parseList(raw, parseHabitEntry);
 }
 
 export function parseStoredCompletionEvents(raw: string | null): ParseResult<HabitCompletionEvent> {
-  return parseList(raw, (entry) => {
-    if (!hasStringField(entry, 'habitId')) return REJECT;
-    const event = entry as unknown as HabitCompletionEvent;
-    return isSeedHabitId(event.habitId) ? DROP : event;
-  });
+  return parseList(raw, parseHabitRowEntry<HabitCompletionEvent>);
 }
 
 export function parseStoredMomentumEvents(raw: string | null): ParseResult<MomentumEvent> {
-  return parseList(raw, (entry) => {
-    if (!hasStringField(entry, 'habitId')) return REJECT;
-    const event = entry as unknown as MomentumEvent;
-    return isSeedHabitId(event.habitId) ? DROP : event;
-  });
+  return parseList(raw, parseHabitRowEntry<MomentumEvent>);
 }
 
 export function parseStoredEvidence(raw: string | null): ParseResult<IdentityEvidence> {
-  return parseList(raw, (entry) => {
-    if (!hasStringField(entry, 'habitId')) return REJECT;
-    const item = entry as unknown as IdentityEvidence;
-    if (isSeedHabitId(item.habitId)) return DROP;
-    return { ...item, category: normalizeHabitCategory(item.category) };
-  });
+  return parseList(raw, parseEvidenceEntry);
 }
+
+/** Same rules as the stored-payload parsers, for already-parsed values (backup files). */
+export const parseHabitList = (value: unknown) => parseEntries(value, parseHabitEntry);
+export const parseCompletionEventList = (value: unknown) => parseEntries(value, parseHabitRowEntry<HabitCompletionEvent>);
+export const parseMomentumEventList = (value: unknown) => parseEntries(value, parseHabitRowEntry<MomentumEvent>);
+export const parseEvidenceList = (value: unknown) => parseEntries(value, parseEvidenceEntry);
 
 /** Reminders without demo seed rows; notification ids are attached by the loader. */
 export function parseStoredReminders(raw: string | null): ParseResult<StandaloneReminder> {
