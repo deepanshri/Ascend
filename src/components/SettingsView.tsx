@@ -10,6 +10,7 @@ import { ScreenHeader, SCREEN_INSET_CLASS } from './ScreenHeader';
 import type { NotificationWindowKey, PsychologyNotificationWindows } from '../lib/notifications';
 import type { EveningChronicleSettings } from '../lib/chronicle';
 import { downloadCsvFile } from '../lib/reportExport';
+import { importDeadLetters, readDeadLetters } from '../lib/deadLetter';
 
 interface SettingsViewProps {
   habits: Habit[];
@@ -104,6 +105,8 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
       completionEvents,
       momentumEvents,
       evidenceLedger: evidenceList,
+      /** Stored entries the app could not read; kept so they can be recovered. */
+      deadLetter: readDeadLetters(),
       totalHabits: safeHabits.length,
       activeHabits: safeHabits.filter((h) => !h.archived).length,
       archivedHabits: archivedHabits.length,
@@ -171,6 +174,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
         const text = evt.target?.result as string;
         const parsed = JSON.parse(text);
         if (parsed && Array.isArray(parsed.habits)) {
+          if (parsed.deadLetter !== undefined) importDeadLetters(parsed.deadLetter);
           onImportJSON(parsed.habits, parsed.evidenceLedger, parsed.completionEvents, parsed.momentumEvents);
           flashFeedback('Imported Successfully ✓', 2500);
         } else {
