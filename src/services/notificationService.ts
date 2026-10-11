@@ -1,7 +1,6 @@
 /** Structured headline copy and natural, action-oriented notification phrasing. */
 
 import { Habit } from '../types';
-import { isHabitScheduledOnDayIndex } from '../utils/schedule';
 
 /** Formats a habit or task title with a clean bullet or action prefix. */
 export function formatActionTitle(prefix: string, rawTitle: string): string {
@@ -41,27 +40,6 @@ export function habitTargetCopy(
   return {
     title: 'Target Time Reached',
     body: `${habitTitle} — time to execute.`,
-  };
-}
-
-/** Clean direct phrasing helper for custom habit targets */
-export function formatHabitTargetCopy(
-  habitName: string,
-  _purposeAnchor?: string
-): { title: string; body: string } {
-  const habitTitle = habitName.trim() || 'Daily Habit';
-  return {
-    title: 'Target Time Reached',
-    body: `${habitTitle} — time to execute.`,
-  };
-}
-
-/** Alternative headline format with bullet divider: Target Time Reached • Wake at 5 */
-export function formatActionHeadline(habitTitle: string): { title: string; body: string } {
-  const title = habitTitle.trim() || 'Daily Habit';
-  return {
-    title: `Target Time Reached • ${title}`,
-    body: `${title} — time to execute.`,
   };
 }
 
@@ -107,30 +85,4 @@ export function nightWrapUpCopy(
     title: `Evening Wrap-up • ${name}`,
     body: 'Lock in your daily momentum vote before midnight.',
   };
-}
-
-/** Backward compatible helpers so any legacy references continue to function seamlessly */
-export function reminderPromptCopy(habitName: string): string {
-  return formatActionTitle('Target Time Reached', habitName);
-}
-
-export function completionConfirmCopy(habitName: string): string {
-  return `Scheduled Execution: ${habitName.trim() || 'Habit'}`;
-}
-
-export function compactNotificationPair(habitName: string): { title: string; body: string } {
-  const name = habitName.trim() || 'Daily Habit';
-  return {
-    title: `Daily Focus • ${name}`,
-    body: `${name} — time to execute and lock in your momentum.`,
-  };
-}
-
-/** Swipe/toast alerts only fire on scheduled days — off-day toggles stay silent. */
-export function shouldNotifyHabitSwipe(
-  habit: Pick<Habit, 'scheduledDays'>,
-  dayIndex: number,
-  origin: Date = new Date()
-): boolean {
-  return isHabitScheduledOnDayIndex(habit, dayIndex, origin);
 }

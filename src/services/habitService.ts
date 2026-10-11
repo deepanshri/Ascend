@@ -1,18 +1,4 @@
-import { deleteHabit as deleteHabitFromApi, deleteHabitCascade } from '../lib/habitsApi';
-
-export {
-  BOWL_MODE_STORAGE_KEY,
-  habitsForTimeOfDay,
-  hydrateHabitTimeOfDay,
-  inferBowlModeFromClock,
-  inferTimeOfDayFromTimestamp,
-  isTimeOfDay,
-  parseTimeOfDay,
-  persistBowlMode,
-  readStoredBowlMode,
-  resolveHabitTimeOfDay,
-  type TimeOfDay,
-} from '../utils/timeOfDay';
+import { deleteHabit as deleteHabitFromApi } from '../lib/habitsApi';
 
 /**
  * Stable daily habit_log identity for Supabase UPSERT on (habit_id, logged_date).
@@ -41,6 +27,3 @@ export function stableHabitLogId(habitId: string, loggedDate: string): string {
 export async function deleteHabit(habitIdOrUserId: string | null | undefined, maybeHabitId?: string): Promise<boolean> {
   return deleteHabitFromApi(habitIdOrUserId, maybeHabitId);
 }
-
-export { deleteHabitCascade };
-

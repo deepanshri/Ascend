@@ -7,8 +7,6 @@ export const FRICTION_REASON_CHIPS = [
   'System Friction',
 ] as const;
 
-export type FrictionReasonChip = (typeof FRICTION_REASON_CHIPS)[number];
-
 export interface PendingFrictionPrompt {
   habitId: string;
   habitName: string;
@@ -127,21 +125,4 @@ export function mergeFrictionAuditsFromLogs(
     byKey.set(key, createMissedFrictionAudit(prompt, row.reason.trim()));
   });
   return Array.from(byKey.values()).sort((a, b) => b.timestamp - a.timestamp);
-}
-
-export function weeklyFrictionPatterns(
-  audits: FrictionAudit[],
-  now: number = Date.now()
-): Array<{ reason: string; count: number }> {
-  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-  const counts = new Map<string, number>();
-  audits.forEach((audit) => {
-    if (audit.timestamp < weekAgo) return;
-    const reason = (audit.reason || (audit.type === 'missed' ? audit.note : '') || '').trim();
-    if (!reason) return;
-    counts.set(reason, (counts.get(reason) || 0) + 1);
-  });
-  return Array.from(counts.entries())
-    .map(([reason, count]) => ({ reason, count }))
-    .sort((a, b) => b.count - a.count);
 }

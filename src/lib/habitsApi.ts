@@ -2,7 +2,6 @@
 import { parseTimeOfDay, resolveHabitTimeOfDay } from '../utils/timeOfDay';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
 import { habitCategoryBadge } from '../utils/categories';
-import { getTodayDayIndex, isoDateForDayIndex, toISODate, getLocalDateString } from '../utils/dates';
 import { HabitLogRow, isUuid, mapHabitLogRowToEvent } from '../utils/momentum';
 import { isSeedHabitId, SEED_HABIT_IDS } from '../data/initialHabits';
 import { MAX_ACTIVE_HABITS } from './protection';
@@ -108,10 +107,6 @@ export function rememberDeletedHabit(habitId: string): void {
   persistDeletedHabitIds();
 }
 
-export function isDeletedHabitId(habitId: string): boolean {
-  return Boolean(habitId) && deletedHabitIds.has(habitId);
-}
-
 export function omitDeletedHabits<T extends { id: string }>(habits: T[]): T[] {
   if (deletedHabitIds.size === 0) return habits;
   return habits.filter((habit) => !deletedHabitIds.has(habit.id));
@@ -210,15 +205,6 @@ export async function fetchHabitsFromTable(userId?: string | null): Promise<{
     if (import.meta.env.DEV) console.warn('Habits fetch offline:', err);
     return { ok: false, habits: [], error: 'Offline or network error' };
   }
-}
-
-export async function fetchActiveHabits(
-  userId?: string | null
-): Promise<Habit[]> {
-  const result = await fetchHabitsFromTable(userId);
-  return result.ok
-    ? result.habits.filter((habit) => !habit.archived)
-    : [];
 }
 
 export async function persistHabitsToTable(userId: string, habits: Habit[]): Promise<boolean> {
@@ -365,49 +351,6 @@ export async function deleteHabit(
   }
 }
 
-export async function deleteHabitCascade(
-  _userId: string | null | undefined,
-  habitId: string
-): Promise<boolean> {
-  return deleteHabit(habitId);
-}
-
-export async function fetchHabitLogsForDate(
-  userId?: string | null,
-  loggedDate: string = toISODate()
-): Promise<HabitCompletionEvent[]> {
-  if (!canSync(userId) || !supabase) return [];
-  try {
-    let { data, error } = await supabase
-      .from('habit_logs')
-      .select('*')
-      .eq('user_id', userId as string)
-      .eq('logged_date', loggedDate);
-
-    if (error) {
-      const fallback = await supabase
-        .from('habit_logs')
-        .select('*')
-        .eq('user_id', userId as string)
-        .eq('date', loggedDate);
-      data = fallback.data;
-      error = fallback.error;
-    }
-
-    if (error) {
-      if (import.meta.env.DEV) console.warn('habit_logs date fetch failed:', error.message);
-      return [];
-    }
-
-    return (data as HabitLogRow[] | null || [])
-      .map((row) => mapHabitLogRowToEvent(row))
-      .filter((event): event is HabitCompletionEvent => event !== null && !isSeedHabitId(event.habitId));
-  } catch (err) {
-    if (import.meta.env.DEV) console.warn('habit_logs date fetch offline:', err);
-    return [];
-  }
-}
-
 /** Inclusive habit_logs fetch for Bowl / Reports cycle window (startIso → endIso).
  * Matches both `logged_date` and legacy `date` columns, then client-filters to the
  * window. Read-only — never writes or resets cycle epoch.
@@ -468,19 +411,6 @@ export async function fetchHabitLogsForDateRange(
     if (import.meta.env.DEV) console.warn('habit_logs range fetch offline:', err);
     return [];
   }
-}
-
-export async function fetchTodayHabitLogs(
-  userId?: string | null,
-  dayIndex: number = getTodayDayIndex(),
-  origin: Date = new Date()
-): Promise<HabitCompletionEvent[]> {
-  const dateStr = dayIndex === getTodayDayIndex() ? getLocalDateString(origin) : isoDateForDayIndex(dayIndex, origin);
-  return fetchHabitLogsForDate(userId, dateStr);
-}
-
-export async function fetchHabitLogsForToday(userId?: string | null): Promise<HabitCompletionEvent[]> {
-  return fetchHabitLogsForDate(userId, getLocalDateString());
 }
 
 export async function persistHabitLogFrictionReason(

@@ -195,49 +195,6 @@ export async function saveChronicleEntry(
 }
 
 /**
- * Fetch chronicle entries from Supabase for authenticated user and rehydrate local cache.
- */
-export async function fetchRemoteChronicleEntries(): Promise<ChronicleEntriesMap> {
-  try {
-    const { data: authData } = await supabase.auth.getUser();
-    if (!authData?.user) return loadChronicleEntries();
-
-    const { data, error } = await supabase
-      .from('chronicle_entries')
-      .select('*')
-      .eq('user_id', authData.user.id)
-      .order('iso_date', { ascending: false })
-      .limit(90);
-
-    if (error || !data) {
-      return loadChronicleEntries();
-    }
-
-    const map: ChronicleEntriesMap = {};
-    const syncCache: Record<string, unknown> = {};
-
-    for (const row of data) {
-      const iso = row.iso_date;
-      map[iso] = {
-        isoDate: iso,
-        phase1: row.phase1 || '',
-        phase2: row.phase2 || '',
-        phase3: row.phase3 || '',
-        updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
-      };
-      syncCache[iso] = row;
-    }
-
-    localStorage.setItem('ascend_chronicle', JSON.stringify(syncCache));
-    localStorage.setItem(CHRONICLE_STORAGE_KEY, JSON.stringify(map));
-    return map;
-  } catch (err) {
-    if (import.meta.env.DEV) console.warn('Failed to fetch remote chronicle entries:', err);
-    return loadChronicleEntries();
-  }
-}
-
-/**
  * Get a chronicle entry for a specific ISO date, or null if none exists.
  */
 export function getChronicleEntry(isoDate: string): ChronicleEntry | null {

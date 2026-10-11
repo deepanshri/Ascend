@@ -11,10 +11,6 @@ export function countActiveKeystones(habits: Habit[], exceptId?: string): number
   return habits.filter((habit) => !habit.archived && habit.isKeystone && habit.id !== exceptId).length;
 }
 
-export function canEnableKeystone(habits: Habit[], habitId?: string): boolean {
-  return countActiveKeystones(habits, habitId) < MAX_KEYSTONE_HABITS;
-}
-
 export function activeKeystoneHabits(habits: Habit[]): Habit[] {
   return habits.filter((habit) => !habit.archived && habit.isKeystone);
 }

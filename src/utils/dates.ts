@@ -25,14 +25,6 @@ export function getWeekDateNumber(dayIndex: number, date: Date = new Date()): nu
   return getWeekDates(date)[dayIndex]?.getDate() ?? date.getDate();
 }
 
-export function getWeekdayShort(dayIndex: number, date: Date = new Date()): string {
-  return getWeekDates(date)[dayIndex]?.toLocaleDateString('en-US', { weekday: 'short' }) ?? '';
-}
-
-export function getWeekdayNarrow(dayIndex: number, date: Date = new Date()): string {
-  return getWeekDates(date)[dayIndex]?.toLocaleDateString('en-US', { weekday: 'narrow' }) ?? '';
-}
-
 export function formatEvidenceDate(date: Date = new Date()): string {
   return date.toLocaleDateString('en-US', {
     weekday: 'short',

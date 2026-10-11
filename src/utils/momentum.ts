@@ -1,6 +1,6 @@
 import { Habit, HabitCompletionEvent, CompletionType, MomentumEvent, MomentumEventType, ProtectionWindow } from '../types';
 import { isSeedHabitId } from '../data/initialHabits';
-import { isSupabaseConfigured, supabase, fetchSequentialMomentumEvents } from '../lib/supabase';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   addDaysIso,
   dayIndexForIso,
@@ -81,64 +81,6 @@ export function applyRollingMomentumStep(
   // Positive completion must NEVER decrease momentum score
   const nextScore = Math.max(prevScore + 0.5, blended);
   return clampMomentum(nextScore);
-}
-
-export function applyMomentumDecayStep(
-  prev: number,
-  score: number,
-  weight: number,
-  decayFactor: number = MOMENTUM_DECAY_FACTOR
-): number {
-  return applyRollingMomentumStep(prev, score, weight, decayFactor);
-}
-
-/**
- * Reversal step: Legacy mathematical reversal for single-step evaluations.
- * In rolling replay (calculateMomentumScore), event-pair cancellation via
- * filterReversedMomentumEvents takes precedence to eliminate division drift.
- * nextScore = clamp((prevScore - observation * δ) / (1 - δ), 0, 100)
- */
-export function applyReversalMomentumStep(
-  prevScore: number,
-  eventWeight: number,
-  decayFactor: number = MOMENTUM_DECAY_FACTOR
-): number {
-  const observation = (eventWeight / WORK_HABIT_WEIGHT) * 100;
-  const denominator = 1 - decayFactor;
-  if (denominator <= 0) return clampMomentum(prevScore - observation);
-  const reversed = (prevScore - observation * decayFactor) / denominator;
-  return clampMomentum(reversed);
-}
-
-export function applyMomentumEvent(
-  prev: number,
-  event: Pick<MomentumEvent, 'eventType' | 'weight'>,
-  decayFactor: number = MOMENTUM_DECAY_FACTOR
-): number {
-  if (event.eventType === 'reversal') {
-    return applyReversalMomentumStep(prev, event.weight, decayFactor);
-  }
-  return applyRollingMomentumStep(prev, eventScore(event.eventType), event.weight, decayFactor);
-}
-
-/** Maps sequential `public.momentum_events` rows into the in-app log. */
-export async function fetchSequentialMomentumEventsLog(
-  userId?: string | null
-): Promise<MomentumEvent[]> {
-  const records = await fetchSequentialMomentumEvents(userId);
-  return records
-    .map((row) => {
-      const parsed = Date.parse(row.timestamp);
-      return {
-        id: row.id,
-        habitId: row.habitId,
-        eventType: row.eventType,
-        weight: row.weight,
-        timestamp: Number.isNaN(parsed) ? Date.now() : parsed,
-        loggedDate: parseToIsoDate(row.timestamp) || undefined,
-      } satisfies MomentumEvent;
-    })
-    .sort((a, b) => a.timestamp - b.timestamp);
 }
 
 export function createMomentumEvent(
@@ -310,13 +252,6 @@ export function habitWeight(habit: Habit | Partial<Habit>): number {
   }
 
   return weight;
-}
-
-/** Full swipe = 1.0, fallback swipe = 0.5, unlogged/missed = 0.0. */
-export function completionValueForHabit(habit: Habit, dayIndex: number): number {
-  if (!habit.days?.[dayIndex]) return MISSED_COMPLETION_VALUE;
-  if (habit.microDays?.[dayIndex]) return FALLBACK_COMPLETION_VALUE;
-  return FULL_COMPLETION_VALUE;
 }
 
 function resolveDayIndex(row: HabitLogRow, origin: Date = new Date()): number {
@@ -509,41 +444,6 @@ export function deriveHabitsFromEventLog(
   });
 }
 
-/**
- * Same-day weighted snapshot (0–100) for the 7-day fan dots.
- * Dynamic Priority: High = 1.5x, Medium = 1.0x, Low = 0.7x.
- * Full swipe = 1.0, fallback = 0.5, unlogged/missed = 0.0.
- */
-export function calculateDailyWeightedScore(
-  habits: Habit[],
-  dayIndex: number = 3,
-  examShield: boolean = false,
-  logs?: HabitCompletionEvent[],
-  origin: Date = new Date()
-): number {
-  const scoredHabits =
-    logs && logs.length > 0 ? deriveHabitsFromEventLog(habits, logs, origin) : habits;
-  const activeHabits = scoredHabits.filter((h) => !h.archived);
-  if (activeHabits.length === 0) return 0;
-
-  const scheduled = activeHabits.filter((h) => isHabitScheduledOnDayIndex(h, dayIndex, origin));
-  const pool = scheduled;
-
-  let weightedSum = 0;
-  let weightTotal = 0;
-
-  pool.forEach((habit) => {
-    const weight = habitWeight(habit);
-    const value = completionValueForHabit(habit, dayIndex);
-    if (examShield && value === MISSED_COMPLETION_VALUE) return;
-    weightedSum += weight * value;
-    weightTotal += weight;
-  });
-
-  if (weightTotal <= 0) return examShield ? 100 : 0;
-  return clampMomentum(Math.round((weightedSum / weightTotal) * 100));
-}
-
 export interface RollingMomentumOptions {
   examShield?: boolean;
   vacationMode?: boolean;
@@ -733,12 +633,4 @@ export function calculateMomentumScore(
   }
 
   return Math.round(clampMomentum(prevScore));
-}
-
-export async function calculateMomentumScoreFromTable(
-  userId: string | null | undefined,
-  options: RollingMomentumOptions = {}
-): Promise<number> {
-  const events = await fetchSequentialMomentumEventsLog(userId);
-  return calculateMomentumScore(events, options);
 }

@@ -1,6 +1,5 @@
 import { HabitCompletionEvent } from '../types';
 import { addDaysIso, resolveEventIsoDate, toISODate } from '../utils/dates';
-import type { TimeOfDay } from '../types/habit';
 
 export const CYCLE_DAY_OPTIONS = [3, 5, 7, 10] as const;
 export type CycleDays = (typeof CYCLE_DAY_OPTIONS)[number];
@@ -161,16 +160,6 @@ export function resetBowlCycleEpoch(endIso: string, resetAt: number = Date.now()
   return epoch;
 }
 
-/**
- * Archive + reset in one step (tests / non-UI callers).
- * Writes ONLY cycle localStorage keys — never habit_logs, momentum_events, or Identity Ledger evidence.
- */
-export function completeBowlCycle(summary: Omit<CompletedCycleSummary, 'id' | 'completedAt'>): CompletedCycleSummary {
-  const entry = archiveCompletedCycle(summary);
-  resetBowlCycleEpoch(summary.endIso, entry.completedAt);
-  return entry;
-}
-
 /** Sliding fallback when no epoch is active (legacy). Prefer activeCycleWindow. */
 export function cycleWindow(
   cycleDays: number,
@@ -202,11 +191,6 @@ export function activeCycleWindow(
   const startIso = epochStart > slidingStart ? epochStart : slidingStart;
   if (startIso > todayIso) return { startIso: todayIso, endIso: todayIso };
   return { startIso, endIso: todayIso };
-}
-
-/** Light theme = Morning bowl, Dark theme = Night bowl. */
-export function themeBowlMode(isDark: boolean): TimeOfDay {
-  return isDark ? 'night' : 'morning';
 }
 
 /** C = H_active × cycleDays */

@@ -1,8 +1,8 @@
 import { MomentumEvent, MomentumEventType } from '../types';
 import { isSeedHabitId } from '../data/initialHabits';
-import { countMomentumCompletedActions, fetchSequentialMomentumEvents, insertMomentumEvent, isSupabaseConfigured, supabase } from './supabase';
+import { fetchSequentialMomentumEvents, insertMomentumEvent, isSupabaseConfigured, supabase } from './supabase';
 import { parseToIsoDate, toISODate } from '../utils/dates';
-import { isUuid, mergeMomentumEvents } from '../utils/momentum';
+import { isUuid } from '../utils/momentum';
 import { isTimeOfDay } from '../utils/timeOfDay';
 
 export const MOMENTUM_EVENTS_STORAGE_KEY = 'ascend_momentum_events';
@@ -146,11 +146,6 @@ export async function fetchMomentumEventsFromTable(userId?: string | null): Prom
     .filter((event): event is MomentumEvent => event !== null && !isSeedHabitId(event.habitId));
 }
 
-/** COUNT(*) of full | fallback rows. Returns null when the table is unreachable. */
-export async function fetchIdentityVoteCount(userId?: string | null): Promise<number | null> {
-  return countMomentumCompletedActions(userId);
-}
-
 async function insertMomentumEventRemote(userId: string, event: MomentumEvent): Promise<boolean> {
   if (!canSync(userId)) return false;
   return insertMomentumEvent({
@@ -228,13 +223,6 @@ export async function flushMomentumEventQueue(): Promise<void> {
     if (!ok) remaining.push(item);
   }
   writeQueue(remaining);
-}
-
-export function mergeFetchedMomentumEvents(
-  local: MomentumEvent[],
-  remote: MomentumEvent[]
-): MomentumEvent[] {
-  return mergeMomentumEvents(local, remote);
 }
 
 export { createMomentumEvent, habitWeight } from '../utils/momentum';

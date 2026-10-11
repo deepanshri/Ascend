@@ -40,17 +40,3 @@ export function formatTargetTimeDisplay(raw?: string | null): string {
   const minuteStr = String(minute).padStart(2, '0');
   return `${hour12}:${minuteStr} ${suffix}`;
 }
-
-/**
- * Formats a target time with zero-padded hour (e.g., "05:00" -> "05:00 AM").
- */
-export function formatTargetTimePadded(raw?: string | null): string {
-  const parsed = parseTargetTimeHHmm(raw);
-  if (!parsed) return '';
-  const { hour, minute } = parsed;
-  const suffix = hour >= 12 ? 'PM' : 'AM';
-  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
-  const hourStr = String(hour12).padStart(2, '0');
-  const minuteStr = String(minute).padStart(2, '0');
-  return `${hourStr}:${minuteStr} ${suffix}`;
-}

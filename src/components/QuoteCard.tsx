@@ -13,8 +13,6 @@ import {
   getStoredUserInterests,
 } from '../utils/quotes';
 
-export type { Quote } from '../utils/quotes';
-export { INTEREST_QUOTES, DEFAULT_HABIT_QUOTES } from '../utils/quotes';
 
 function mapQuoteRow(row: Record<string, unknown>): Quote | null {
   const text = String(row.text || row.quote || row.content || row.body || '').trim();

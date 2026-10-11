@@ -4,8 +4,6 @@ import { isTimeOfDay, type TimeOfDay } from '../types/habit';
 export type { TimeOfDay };
 export { isTimeOfDay };
 
-export const BOWL_MODE_STORAGE_KEY = 'ascend_bowl_mode';
-
 /** AM (0–11) = morning bowl, PM (12–23) = night bowl. */
 export function inferBowlModeFromClock(date: Date = new Date()): TimeOfDay {
   return date.getHours() < 12 ? 'morning' : 'night';
@@ -41,27 +39,4 @@ export function resolveHabitTimeOfDay(
 
 export function hydrateHabitTimeOfDay<T extends Pick<Habit, 'timeOfDay' | 'timestamp'>>(habit: T): T {
   return { ...habit, timeOfDay: resolveHabitTimeOfDay(habit) };
-}
-
-export function habitsForTimeOfDay(habits: readonly Habit[], mode: TimeOfDay): Habit[] {
-  return habits.filter((habit) => resolveHabitTimeOfDay(habit) === mode);
-}
-
-export function readStoredBowlMode(): TimeOfDay {
-  try {
-    const raw = localStorage.getItem(BOWL_MODE_STORAGE_KEY);
-    if (isTimeOfDay(raw)) return raw;
-  } catch {
-    // private mode
-  }
-  return inferBowlModeFromClock();
-}
-
-export function persistBowlMode(mode: TimeOfDay): void {
-  if (!isTimeOfDay(mode)) return;
-  try {
-    localStorage.setItem(BOWL_MODE_STORAGE_KEY, mode);
-  } catch {
-    // private mode
-  }
 }

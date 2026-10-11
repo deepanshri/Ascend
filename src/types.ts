@@ -112,9 +112,6 @@ export interface StandaloneReminder {
 }
 
 export type ActiveTab = 'home' | 'reminders' | 'report' | 'personal' | 'settings';
-export type ReportPeriod = 'today' | 'week' | 'month';
-export type GraphType = 'rings' | 'radar';
-export type ReportTimeWindow = '7d' | '30d' | '90d';
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 export interface UserSession {
