@@ -131,6 +131,18 @@ async function insertMomentumEventRemote(userId: string, event: MomentumEvent): 
   });
 }
 
+/**
+ * Append many events in one request: pushMomentumEventsRemote sends a single
+ * INSERT ... ON CONFLICT (id) DO NOTHING, so stored rows are skipped and never
+ * updated. Offline or on failure the events join the offline queue.
+ */
+export async function appendMomentumEventsRemote(
+  userId: string | null | undefined,
+  events: MomentumEvent[]
+): Promise<void> {
+  await pushMomentumEventsRemote(userId, events);
+}
+
 /** Insert-only. Never upserts or deletes historical rows. */
 export async function appendMomentumEventRemote(
   userId: string | null | undefined,
@@ -188,13 +200,18 @@ export async function pushMomentumEventsRemote(
 
 export async function flushMomentumEventQueue(): Promise<void> {
   if (!isOnline() || !isSupabaseConfigured || !supabase) return;
-  const remaining: MomentumQueueItem[] = [];
-  for (const item of readQueue()) {
+  const queued = readQueue();
+  if (queued.length === 0) return;
+  // One batch request per user (normally one); failures re-queue themselves.
+  writeQueue([]);
+  const byUser = new Map<string, MomentumEvent[]>();
+  for (const item of queued) {
     if (isSeedHabitId(item.event.habitId)) continue;
-    const ok = await insertMomentumEventRemote(item.userId, item.event);
-    if (!ok) remaining.push(item);
+    byUser.set(item.userId, [...(byUser.get(item.userId) ?? []), item.event]);
   }
-  writeQueue(remaining);
+  for (const [userId, events] of byUser) {
+    await pushMomentumEventsRemote(userId, events);
+  }
 }
 
 export { createMomentumEvent, habitWeight } from '../utils/momentum';

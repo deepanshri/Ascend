@@ -132,17 +132,13 @@ function enqueueProfile(item: ProfileQueueItem): void {
   writeJson(PROFILE_QUEUE_KEY, [...next, item]);
 }
 
-export async function pushHabitLogRemote(
-  userId: string,
-  event: HabitCompletionEvent
-): Promise<boolean> {
-  if (!canSync(userId) || !supabase) return false;
+function habitLogRow(userId: string, event: HabitCompletionEvent) {
   const loggedDate = isIsoDate(event.date)
     ? event.date
     : isoDateForDayIndex(event.dayIndex, new Date(event.timestamp || Date.now()));
   const completion = event.type === 'fallback_micro' ? 0.5 : 1;
   const completionType = event.type === 'fallback_micro' ? 'fallback' : 'full';
-  const row = {
+  return {
     id: event.id,
     user_id: userId,
     habit_id: event.habitId,
@@ -157,6 +153,15 @@ export async function pushHabitLogRemote(
     friction_reason: event.frictionReason || null,
     timestamp: event.timestamp,
   };
+}
+
+export async function pushHabitLogRemote(
+  userId: string,
+  event: HabitCompletionEvent
+): Promise<boolean> {
+  if (!canSync(userId) || !supabase) return false;
+  const row = habitLogRow(userId, event);
+  const loggedDate = row.logged_date;
 
   try {
     const upserted = await supabase.from('habit_logs').upsert(row, { onConflict: 'habit_id,logged_date' });
@@ -240,6 +245,38 @@ export async function pushProfileRemote(
     return !error;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Upsert many habit logs in one request (one statement on (habit_id, logged_date)).
+ * Offline or on failure every row joins the offline queue, whose flush keeps
+ * the per-row schema fallbacks of pushHabitLogRemote.
+ */
+export async function syncHabitLogUpserts(
+  userId: string | null | undefined,
+  events: HabitCompletionEvent[]
+): Promise<void> {
+  if (!canSync(userId) || !userId || events.length === 0) return;
+  // One row per (habit, day): Postgres rejects a statement that hits the same conflict key twice.
+  const byKey = new Map<string, HabitCompletionEvent>();
+  for (const event of events) {
+    const { habitId, loggedDate } = resolveQueueItemKey({ kind: 'upsert', userId, event });
+    byKey.set(`${habitId}|${loggedDate}`, event);
+  }
+  const unique = [...byKey.values()];
+  const queueAll = () => unique.forEach((event) => enqueueLog({ kind: 'upsert', userId, event }));
+  if (!isOnline() || !supabase) {
+    queueAll();
+    return;
+  }
+  try {
+    const { error } = await supabase
+      .from('habit_logs')
+      .upsert(unique.map((event) => habitLogRow(userId, event)), { onConflict: 'habit_id,logged_date' });
+    if (error) queueAll();
+  } catch {
+    queueAll();
   }
 }
 

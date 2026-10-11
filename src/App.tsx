@@ -12,6 +12,9 @@ import { useReminders, useRemindersActions } from './providers/RemindersProvider
 import { useUI, useUIActions } from './providers/UIProvider';
 import { useSession, useSessionActions, useUserDataReset } from './providers/SessionProvider';
 import { useOnboarding, useOnboardingActions } from './providers/OnboardingProvider';
+import { useCalendar, useCalendarActions } from './providers/CalendarProvider';
+import { useProtection, useProtectionActions } from './providers/ProtectionProvider';
+import { computeDayRollover } from './lib/dayRollover';
 import { findModal } from './providers/uiReducer';
 import { ModalHost } from './components/ModalHost';
 import {
@@ -23,12 +26,10 @@ import {
   FrictionAudit,
   HabitCompletionEvent,
   MomentumEvent,
-  ProtectionWindow,
 } from './types';
 import { isSeedHabitId } from './data/initialHabits';
 import {
   calculateMomentumScore,
-  collectMissedMomentumEvents,
   createMomentumEvent,
   habitWeight,
   deriveHabitsFromEventLog,
@@ -37,22 +38,22 @@ import {
   momentumEventsFromCompletionLog,
   newMomentumEventId,
   upsertHabitLog,
+  upsertHabitLogs,
   deleteHabitLog,
 } from './utils/momentum';
-import { appendMomentumEventRemote, MOMENTUM_EVENTS_STORAGE_KEY, saveLocalMomentumEvents } from './lib/momentumEvents';
+import {
+  appendMomentumEventRemote,
+  appendMomentumEventsRemote,
+  MOMENTUM_EVENTS_STORAGE_KEY,
+  saveLocalMomentumEvents,
+} from './lib/momentumEvents';
 import {
   addDaysIso,
   dayIndexForIso,
-  diffDaysIso,
   endOfIsoDate,
   formatEvidenceDate,
   formatIsoShort,
-  getTodayDayIndex,
-  getWeekDates,
-  isIsoDate,
-  parseIsoDateParts,
   resolveEventIsoDate,
-  startOfDay,
   toISODate,
   getLocalDateString,
 } from './utils/dates';
@@ -64,7 +65,7 @@ import { persistStoredAvatarId, resolveAvatarId } from './data/avatars';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
 import { mergeHabitsByUpdatedAt, touchHabit } from './lib/syncMerge';
 import { fetchHabitLogsForDateRange, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable, omitDeletedHabitRefs } from './lib/habitsApi';
-import { removeStorage, writeJson } from './lib/storage';
+import { readStorage, removeStorage, writeJson, writeStorage } from './lib/storage';
 import {
   ACTIVE_FALLBACKS_STORAGE_KEY,
   COMPLETION_EVENTS_STORAGE_KEY,
@@ -113,24 +114,13 @@ import {
 } from './services/reportService';
 import { getMarbleColor } from './utils/colors';
 import { HomeView } from './components/HomeView';
-import { useHabitAutoReset, useHabits, withHabitTimeOfDay } from './hooks/useHabits';
+import { useHabits, withHabitTimeOfDay } from './hooks/useHabits';
 import { resolveHabitTimeOfDay } from './utils/timeOfDay';
 import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
 import { WidgetBridge } from './lib/widgetBridge';
 import type { WidgetPendingAction, WidgetRoute } from './lib/widgetSync';
-import {
-  getExamShieldStatus,
-  getVacationStatus,
-  isAtActiveHabitCap,
-  loadProtectionState,
-  MAX_ACTIVE_HABITS,
-  saveProtectionState,
-  tickProtectionState,
-  toggleExamShield,
-  toggleVacation,
-} from './lib/protection';
+import { isAtActiveHabitCap, MAX_ACTIVE_HABITS } from './lib/protection';
 import { countActiveKeystones, MAX_KEYSTONE_HABITS } from './lib/keystone';
-import { closeProtectionWindow, fetchProtectionWindows, recordProtectionWindow } from './lib/protectionWindows';
 import {
   createMissedFrictionAudit,
   enqueueFrictionPrompts,
@@ -227,33 +217,13 @@ export default function App() {
   const { theme, isDark } = useTheme();
   const { setTheme: handleThemeChange } = useThemeActions();
 
-  const [protection, setProtection] = usePersistedState(loadProtectionState, saveProtectionState);
-  const [protectionWindows, setProtectionWindows] = useState<ProtectionWindow[]>([]);
-  const examShieldActive = protection.examShield.active;
-  const vacationModeActive = protection.vacation.active;
-  const examShieldStatus = getExamShieldStatus(protection);
-  const vacationStatus = getVacationStatus(protection);
-
-  const examShieldRef = useRef(examShieldActive);
-  const vacationModeRef = useRef(vacationModeActive);
+  const { protectionWindows, examShieldActive, vacationModeActive, examShieldStatus, vacationStatus, paused } =
+    useProtection();
+  const { activateExamShield, deactivateExamShield, toggleVacation: handleToggleVacationMode } = useProtectionActions();
+  const protectionPausedRef = useRef(paused);
+  protectionPausedRef.current = paused;
   const habitsRef = useRef<Habit[]>([]);
   const momentumEventsRef = useRef<MomentumEvent[]>([]);
-  const protectionWindowsRef = useRef<ProtectionWindow[]>(protectionWindows);
-  examShieldRef.current = examShieldActive;
-  vacationModeRef.current = vacationModeActive;
-  protectionWindowsRef.current = protectionWindows;
-
-  useEffect(() => {
-    if (!session?.id || session.isGuest) {
-      setProtectionWindows([]);
-      return;
-    }
-    let cancelled = false;
-    void fetchProtectionWindows(session.id).then((windows) => {
-      if (!cancelled) setProtectionWindows(windows);
-    });
-    return () => { cancelled = true; };
-  }, [session?.id, session?.isGuest]);
 
   const { selectedInterests, notificationWindows, eveningChronicle, completionSound, hapticVibration, cycleDays } =
     usePreferences();
@@ -393,104 +363,55 @@ export default function App() {
 
   const CALENDAR_LAST_ACTIVE_KEY = 'ascend_last_active_date';
 
-  const [calendarOrigin, setCalendarOrigin] = useState<Date>(() => startOfDay(new Date()));
+  const {
+    todayIso: currentDateString,
+    calendarOrigin,
+    originIso,
+    todayDayIndex,
+    currentDayIndex,
+    selectedIso: currentSelectedDate,
+    isViewingToday,
+  } = useCalendar();
+  const { selectDate: setCurrentSelectedDate } = useCalendarActions();
   const refetchHabitsAndLogsRef = useRef<() => Promise<void> | void>(() => {});
+  /**
+   * Missed-day processing gate, kept exactly as written before Step 6. Note it
+   * is false for returning (onboarded) users, unlike every other sync gate.
+   */
+  const processMissedDays = !isOnboarded || onboardingStep >= 3;
 
-  const handleDayRollOver = useCallback(() => {
-    const freshDate = getLocalDateString();
-    const nextOrigin = startOfDay(new Date());
-    setCalendarOrigin(nextOrigin);
-    setCurrentSelectedDate(freshDate);
-    setActiveFallbackIds([]);
-
-    const lastActive = localStorage.getItem(CALENDAR_LAST_ACTIVE_KEY);
-    if (!lastActive) {
-      try {
-        localStorage.setItem(CALENDAR_LAST_ACTIVE_KEY, freshDate);
-      } catch {}
+  // Day rollover: decided by the pure computeDayRollover, applied here.
+  useEffect(() => {
+    const result = computeDayRollover({
+      todayIso: currentDateString,
+      lastActiveIso: readStorage(CALENDAR_LAST_ACTIVE_KEY),
+      habits: habitsRef.current,
+      momentumEvents: momentumEventsRef.current,
+      protectionPaused: protectionPausedRef.current,
+      processMissedDays,
+    });
+    writeStorage(CALENDAR_LAST_ACTIVE_KEY, result.lastActiveIso);
+    if (result.clearActiveFallbacks) setActiveFallbackIds([]);
+    if (result.graceHabitIds) {
+      setRolledOverHabits(result.graceHabitIds);
+      saveRolledOverHabits(currentDateString, result.graceHabitIds);
     }
-    const originIso = lastActive && isIsoDate(lastActive) ? lastActive : toISODate(nextOrigin);
-
-    if (originIso !== freshDate) {
-      setProtection((prev) => tickProtectionState(prev, freshDate));
-
-      const dayDiff = diffDaysIso(originIso, freshDate);
-      if (dayDiff > 0 && (!isOnboarded || onboardingStep >= 3)) {
-        let runningEvents = momentumEventsRef.current;
-        const accumulatedMissed: MomentumEvent[] = [];
-        const accumulatedPrompts: { habitId: string; habitName: string; loggedDate: string }[] = [];
-        const newRolledOverHabits: string[] = [];
-
-        // Loop day-by-day from originIso up to (today - 1 day)
-        for (let step = 0; step < dayDiff; step++) {
-          const stepIso = addDaysIso(originIso, step);
-          const parts = parseIsoDateParts(stepIso);
-          const stepOrigin = parts
-            ? new Date(parts.year, parts.month - 1, parts.day, 12, 0, 0)
-            : new Date(nextOrigin.getTime() + (step - dayDiff) * 86_400_000);
-
-          if (!examShieldRef.current && !vacationModeRef.current) {
-            const missed = collectMissedMomentumEvents(
-              habitsRef.current,
-              runningEvents,
-              stepIso,
-              stepOrigin
-            );
-            if (missed.length > 0) {
-              if (dayDiff === 1) {
-                // Yesterday's roll-over: 24-hour grace window instead of immediately emitting hard 'missed' event
-                missed.forEach((event) => {
-                  newRolledOverHabits.push(event.habitId);
-                  const habit = habitsRef.current.find((item) => item.id === event.habitId);
-                  accumulatedPrompts.push({
-                    habitId: event.habitId,
-                    habitName: habit?.name || 'Habit',
-                    loggedDate: stepIso,
-                  });
-                });
-              } else {
-                // More than 24 hours elapsed: finalize hard 'missed' events as usual
-                accumulatedMissed.push(...missed);
-                runningEvents = mergeMomentumEvents(runningEvents, missed);
-                missed.forEach((event) => {
-                  const habit = habitsRef.current.find((item) => item.id === event.habitId);
-                  accumulatedPrompts.push({
-                    habitId: event.habitId,
-                    habitName: habit?.name || 'Habit',
-                    loggedDate: stepIso,
-                  });
-                });
-              }
-            }
-          }
-        }
-
-        const nextRolledOver = dayDiff === 1 ? newRolledOverHabits : [];
-        setRolledOverHabits(nextRolledOver);
-        saveRolledOverHabits(freshDate, nextRolledOver);
-
-        if (accumulatedMissed.length > 0) {
-          setMomentumEvents((prev) => mergeMomentumEvents(prev, accumulatedMissed));
-          const userId = sessionRef.current?.id;
-          accumulatedMissed.forEach((event) => {
-            void appendMomentumEventRemote(userId, event);
-          });
-        }
-        if (accumulatedPrompts.length > 0) {
-          setPendingFriction((prev) => enqueueFrictionPrompts(prev, accumulatedPrompts));
-        }
-      }
-
-      try {
-        localStorage.setItem(CALENDAR_LAST_ACTIVE_KEY, freshDate);
-      } catch {}
+    if (result.missed.length > 0) {
+      const habitsById = new Map(habitsRef.current.map((habit) => [habit.id, habit]));
+      const missedEvents = result.missed.flatMap(({ habitId, isoDate }) => {
+        const habit = habitsById.get(habitId);
+        return habit ? [createMomentumEvent(habit, 'missed', isoDate, endOfIsoDate(isoDate))] : [];
+      });
+      setMomentumEvents((prev) => mergeMomentumEvents(prev, missedEvents));
+      // One request for every missed day, not one per event.
+      void appendMomentumEventsRemote(sessionRef.current?.id, missedEvents).catch(() => {});
     }
-
-    void refetchHabitsAndLogsRef.current?.();
-  }, [isOnboarded, onboardingStep]);
-
-  const { currentDateString } = useHabitAutoReset(handleDayRollOver);
-  const [currentSelectedDate, setCurrentSelectedDate] = useState<string>(() => getLocalDateString());
+    if (result.frictionPrompts.length > 0) {
+      setPendingFriction((prev) => enqueueFrictionPrompts(prev, result.frictionPrompts));
+    }
+    if (result.dayChanged) void refetchHabitsAndLogsRef.current?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentDateString, processMissedDays]);
  
   // Startup trigger: Strategy/Vision overlay auto-launch on new day (deferred 150ms post-paint)
   useEffect(() => {
@@ -509,31 +430,6 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [isOnboarded, isTabActive, currentDateString]);
 
-  useEffect(() => {
-    (window as any).__setCalendarOrigin = (target: Date | string) => {
-      let d: Date;
-      if (typeof target === 'string') {
-        const parts = parseIsoDateParts(target);
-        d = parts ? new Date(parts.year, parts.month - 1, parts.day) : new Date(target);
-      } else {
-        d = target;
-      }
-      setCalendarOrigin(startOfDay(d));
-    };
-    return () => {
-      delete (window as any).__setCalendarOrigin;
-    };
-  }, []);
-
-  useEffect(() => {
-    // Initial check on mount to ensure lastActiveDate catches up
-    handleDayRollOver();
-  }, [handleDayRollOver]);
-
-  useEffect(() => {
-    setProtection((prev) => tickProtectionState(prev, toISODate(calendarOrigin)));
-  }, [calendarOrigin]);
-
   const [momentumPulse, setMomentumPulse] = useState(0);
 
   useEffect(() => {
@@ -548,93 +444,11 @@ export default function App() {
 
 
   const handleToggleExamShield = useCallback(() => {
-    if (!examShieldRef.current) {
-      openModal({ kind: 'examShield' });
-      return;
-    }
-
-    setProtection((prev) => {
-      const result = toggleExamShield(prev);
-      const today = toISODate(calendarOrigin);
-
-      if (
-        result.ok &&
-        prev.examShield.active &&
-        !result.state.examShield.active
-      ) {
-        const active = [...protectionWindowsRef.current]
-          .reverse()
-          .find(
-            (window) =>
-              window.mode === 'exam_shield' &&
-              window.endsOn >= today &&
-              !window.deactivatedOn
-          );
-
-        if (active) {
-          const closed = {
-            ...active,
-            endsOn: today,
-            deactivatedOn: today,
-          };
-
-          setProtectionWindows((windows) =>
-            windows.map((window) =>
-              window.id === active.id ? closed : window
-            )
-          );
-
-          void closeProtectionWindow(
-            sessionRef.current?.id,
-            active.id,
-            today
-          ).catch(() => {});
-        }
-      }
-
-      return result.state;
-    });
-  }, [calendarOrigin]);
-
-  const handleConfirmActivateExamShield = () => {
-    setProtection((prev) => {
-      const result = toggleExamShield(prev);
-      if (result.ok && result.state.examShield.active && !prev.examShield.active) {
-        const startsOn = result.state.examShield.startedOn || toISODate(calendarOrigin);
-        const endsOn = result.state.examShield.endsOn || startsOn;
-        const window: ProtectionWindow = {
-          id: crypto.randomUUID(), userId: sessionRef.current?.id || '', mode: 'exam_shield', startsOn, endsOn,
-        };
-        setProtectionWindows((windows) => [...windows, window]);
-        void recordProtectionWindow(sessionRef.current?.id, window).catch(() => {});
-      }
-      return result.state;
-    });
-  };
-
-  const handleToggleVacationMode = useCallback(() => {
-    setProtection((prev) => {
-      const result = toggleVacation(prev);
-      const today = toISODate(calendarOrigin);
-      if (result.ok && result.state.vacation.active && !prev.vacation.active) {
-        const window: ProtectionWindow = {
-          id: crypto.randomUUID(), userId: sessionRef.current?.id || '', mode: 'vacation',
-          startsOn: result.state.vacation.startedOn || today,
-          endsOn: result.state.vacation.endsOn || today,
-        };
-        setProtectionWindows((windows) => [...windows, window]);
-        void recordProtectionWindow(sessionRef.current?.id, window).catch(() => {});
-      } else if (result.ok && prev.vacation.active && !result.state.vacation.active) {
-        const active = [...protectionWindowsRef.current].reverse().find((window) => window.mode === 'vacation' && window.endsOn >= today);
-        if (active) {
-          const closed = { ...active, endsOn: today, deactivatedOn: today };
-          setProtectionWindows((windows) => windows.map((window) => window.id === active.id ? closed : window));
-          void closeProtectionWindow(sessionRef.current?.id, active.id, today).catch(() => {});
-        }
-      }
-      return result.state;
-    });
-  }, [calendarOrigin]);
+    // Turning it on asks for confirmation first; turning it off is immediate.
+    if (examShieldActive) deactivateExamShield();
+    else openModal({ kind: 'examShield' });
+  }, [examShieldActive, deactivateExamShield, openModal]);
+  const handleConfirmActivateExamShield = activateExamShield;
 
 
 
@@ -647,14 +461,7 @@ export default function App() {
   }, []);
 
 
-  const weekIsoDates = useMemo(() => getWeekDates(calendarOrigin).map((date) => toISODate(date)), [calendarOrigin]);
-  const todayDayIndex = getTodayDayIndex();
-  const currentDayIndex = useMemo(() => {
-    const idx = weekIsoDates.indexOf(currentSelectedDate);
-    return idx >= 0 ? idx : todayDayIndex;
-  }, [weekIsoDates, currentSelectedDate, todayDayIndex]);
   const selectedDay = currentDayIndex + 1;
-  const isViewingToday = currentSelectedDate === weekIsoDates[todayDayIndex];
 
 
   // Derive habit states (days, microDays) by replaying the append-only event log
@@ -668,7 +475,7 @@ export default function App() {
   }, [derivedHabits]);
   const activeKeystoneCount = useMemo(() => countActiveKeystones(habits), [habits]);
   const activeFallbackIdSet = useMemo(() => new Set(activeFallbackIds), [activeFallbackIds]);
-  const todayIso = toISODate(calendarOrigin);
+  const todayIso = originIso;
   const chronicleCompletedToday = useMemo(
     () => Boolean(getChronicleEntry(todayIso)),
     [todayIso, chronicleVersion]
@@ -1080,54 +887,62 @@ setMomentumEvents((prev) =>
     return true;
   };
 
-  const handleRolloverSingleHabit = useCallback(
-    (targetHabit: Habit, dateIso: string) => {
+  /**
+   * Grace rollover: log each habit as a 50% micro-habit on `dateIso`, in one
+   * state update and one remote write per table.
+   */
+  const applyGraceRollover = useCallback(
+    (targets: Habit[], dateIso: string) => {
+      if (targets.length === 0) return;
       const dayIndex = dayIndexForIso(dateIso, calendarOrigin);
       const safeDayIndex = dayIndex >= 0 ? dayIndex : 2;
-      const completionEvent: HabitCompletionEvent = withHabitTimeOfDay(
-        {
-          id: stableHabitLogId(targetHabit.id, dateIso),
+      const items = targets.map((targetHabit) => {
+        const completionEvent: HabitCompletionEvent = withHabitTimeOfDay(
+          {
+            id: stableHabitLogId(targetHabit.id, dateIso),
+            habitId: targetHabit.id,
+            dayIndex: safeDayIndex,
+            date: dateIso,
+            type: 'fallback_micro',
+            note: targetHabit.fallbackMicroHabit || 'Grace rollover (50% micro-habit)',
+            timestamp: endOfIsoDate(dateIso) - 60_000,
+          },
+          targetHabit
+        );
+        const momentumEvent = createMomentumEvent(
+          targetHabit,
+          'fallback',
+          dateIso,
+          completionEvent.timestamp,
+          habitWeight(targetHabit) * 0.5
+        );
+        const evidence: IdentityEvidence = {
+          id: `ev-micro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           habitId: targetHabit.id,
-          dayIndex: safeDayIndex,
-          date: dateIso,
-          type: 'fallback_micro',
-          note: targetHabit.fallbackMicroHabit || 'Grace rollover (50% micro-habit)',
-          timestamp: endOfIsoDate(dateIso) - 60_000,
-        },
-        targetHabit
-      );
-
-      const baseWeight = habitWeight(targetHabit);
-      const eventWeight = baseWeight * 0.5;
-      const momentumEvent = createMomentumEvent(
-        targetHabit,
-        'fallback',
-        dateIso,
-        completionEvent.timestamp,
-        eventWeight
-      );
-
-      const newEvidence: IdentityEvidence = {
-        id: `ev-micro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        habitId: targetHabit.id,
-        habitName: targetHabit.name,
-        identityStatement: `Micro-Habit rollover: ${targetHabit.name || 'Consistency preserved'}`,
-        category: targetHabit.category || 'work',
-        date: `${formatIsoShort(dateIso)} • Grace rollover (50%)`,
-        dayNumber: safeDayIndex + 1,
-        loggedDate: dateIso,
-      };
+          habitName: targetHabit.name,
+          identityStatement: `Micro-Habit rollover: ${targetHabit.name || 'Consistency preserved'}`,
+          category: targetHabit.category || 'work',
+          date: `${formatIsoShort(dateIso)} • Grace rollover (50%)`,
+          dayNumber: safeDayIndex + 1,
+          loggedDate: dateIso,
+        };
+        return { completionEvent, momentumEvent, evidence };
+      });
 
       startTransition(() => {
-        setCompletionEvents((prev) => replaceTodayCompletion(prev, completionEvent, calendarOrigin));
-        setMomentumEvents((prev) => mergeMomentumEvents(prev, [momentumEvent]));
-        setEvidenceList((prev) => upsertTodayEvidence(prev, newEvidence, dateIso, calendarOrigin));
+        setCompletionEvents((prev) =>
+          items.reduce((acc, item) => replaceTodayCompletion(acc, item.completionEvent, calendarOrigin), prev)
+        );
+        setMomentumEvents((prev) => mergeMomentumEvents(prev, items.map((item) => item.momentumEvent)));
+        setEvidenceList((prev) =>
+          items.reduce((acc, item) => upsertTodayEvidence(acc, item.evidence, dateIso, calendarOrigin), prev)
+        );
         setMomentumPulse((n) => n + 1);
       });
 
       const userId = sessionRef.current?.id;
-      void upsertHabitLog(userId, completionEvent).catch(() => {});
-      void appendMomentumEventRemote(userId, momentumEvent).catch(() => {});
+      void upsertHabitLogs(userId, items.map((item) => item.completionEvent)).catch(() => {});
+      void appendMomentumEventsRemote(userId, items.map((item) => item.momentumEvent)).catch(() => {});
       try {
         void pulseCompletionHaptic('fallback');
       } catch {}
@@ -1139,27 +954,24 @@ setMomentumEvents((prev) =>
     if (rolledOverHabits.length === 0) return;
     const yesterdayIso = addDaysIso(getLocalDateString(), -1);
 
-    rolledOverHabits.forEach((habitId) => {
-      const targetHabit = habits.find((h) => h.id === habitId);
-      if (targetHabit) {
-        handleRolloverSingleHabit(targetHabit, yesterdayIso);
-      }
-    });
+    const habitsById = new Map(habits.map((habit) => [habit.id, habit]));
+    applyGraceRollover(
+      rolledOverHabits.flatMap((habitId) => habitsById.get(habitId) ?? []),
+      yesterdayIso
+    );
 
     setRolledOverHabits([]);
     saveRolledOverHabits(getLocalDateString(), []);
     setPendingFriction((prev) =>
       prev.filter((p) => !(rolledOverHabits.includes(p.habitId) && p.loggedDate === yesterdayIso))
     );
-  }, [rolledOverHabits, habits, handleRolloverSingleHabit]);
+  }, [rolledOverHabits, habits, applyGraceRollover]);
 
   const handleFrictionRolloverMicro = useCallback(() => {
     const prompt = pendingFriction[0];
     if (!prompt) return;
     const targetHabit = habits.find((h) => h.id === prompt.habitId);
-    if (targetHabit) {
-      handleRolloverSingleHabit(targetHabit, prompt.loggedDate);
-    }
+    applyGraceRollover(targetHabit ? [targetHabit] : [], prompt.loggedDate);
     markFrictionPrompted(prompt.habitId, prompt.loggedDate);
     setPendingFriction((prev) => prev.slice(1));
     setRolledOverHabits((prev) => {
@@ -1167,7 +979,7 @@ setMomentumEvents((prev) =>
       saveRolledOverHabits(getLocalDateString(), next);
       return next;
     });
-  }, [pendingFriction, habits, handleRolloverSingleHabit]);
+  }, [pendingFriction, habits, applyGraceRollover]);
 
   const activeFrictionPrompt = pendingFriction[0] ?? null;
 
@@ -1657,8 +1469,6 @@ setMomentumEvents((prev) =>
     setPendingFriction([]);
     setActiveFallbackIds([]);
     setRolledOverHabits([]);
-    setProtection(loadProtectionState());
-    setProtectionWindows([]);
     setBowlEpoch(readBowlCycleEpoch(toISODate()));
     setCelebrationPieces(null);
     setBowlCelebrating(false);

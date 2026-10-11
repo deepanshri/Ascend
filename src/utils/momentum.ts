@@ -5,16 +5,16 @@ import {
   addDaysIso,
   dayIndexForIso,
   diffDaysIso,
-  endOfIsoDate,
   getTodayDayIndex,
   getWeekDates,
   parseToIsoDate,
   resolveEventIsoDate,
   toISODate,
 } from './dates';
-import { syncHabitLogDelete, syncHabitLogUpsert } from '../lib/offlineSync';
-import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from './schedule';
+import { syncHabitLogDelete, syncHabitLogUpsert, syncHabitLogUpserts } from '../lib/offlineSync';
+import { isHabitScheduledOnIso } from './schedule';
 import { resolveHabitTimeOfDay } from './timeOfDay';
+import { resolveMomentumEventDate } from './momentumDates';
 
 export const WORK_HABIT_WEIGHT = 1.5;
 export const SELF_IMPROVEMENT_HABIT_WEIGHT = 1.5;
@@ -49,12 +49,7 @@ export function eventScore(eventType: MomentumEventType): number {
   return MISSED_COMPLETION_VALUE;
 }
 
-export function resolveMomentumEventDate(event: MomentumEvent): string {
-  if (event.loggedDate && parseToIsoDate(event.loggedDate)) {
-    return parseToIsoDate(event.loggedDate) as string;
-  }
-  return toISODate(new Date(event.timestamp));
-}
+export { resolveMomentumEventDate };
 
 /**
  * Exponential moving average step (δ defaults to MOMENTUM_DECAY_FACTOR = 0.12).
@@ -174,30 +169,6 @@ export function countIdentityVotes(
     }
   }
   return keys.size;
-}
-
-export function collectMissedMomentumEvents(
-  habits: Habit[],
-  events: MomentumEvent[],
-  isoDate: string,
-  origin: Date = new Date()
-): MomentumEvent[] {
-  const dayIndex = dayIndexForIso(isoDate, origin);
-  const logged = new Set(
-    events
-      .filter((event) => resolveMomentumEventDate(event) === isoDate)
-      .map((event) => event.habitId)
-  );
-
-  const missed: MomentumEvent[] = [];
-  habits.forEach((habit) => {
-    if (habit.archived) return;
-    if (dayIndex >= 0 && !isHabitScheduledOnDayIndex(habit, dayIndex, origin)) return;
-    if (!isHabitScheduledOnIso(habit, isoDate)) return;
-    if (logged.has(habit.id)) return;
-    missed.push(createMomentumEvent(habit, 'missed', isoDate, endOfIsoDate(isoDate)));
-  });
-  return missed;
 }
 
 export interface HabitLogRow {
@@ -368,6 +339,14 @@ export async function fetchHabitLogsFromTable(userId?: string | null): Promise<H
     console.warn('habit_logs fetch offline:', err);
     return [];
   }
+}
+
+/** Upsert many habit logs in one request; seed-habit rows are skipped. */
+export async function upsertHabitLogs(
+  userId: string | null | undefined,
+  events: HabitCompletionEvent[]
+): Promise<void> {
+  await syncHabitLogUpserts(userId, events.filter((event) => !isSeedHabitId(event.habitId)));
 }
 
 export async function upsertHabitLog(

@@ -1,6 +1,8 @@
 import React from 'react';
+import { CalendarProvider } from './CalendarProvider';
 import { OnboardingProvider } from './OnboardingProvider';
 import { PreferencesProvider } from './PreferencesProvider';
+import { ProtectionProvider } from './ProtectionProvider';
 import { RemindersProvider } from './RemindersProvider';
 import { SessionProvider } from './SessionProvider';
 import { ThemeProvider } from './ThemeProvider';
@@ -13,9 +15,13 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <SessionProvider>
         <OnboardingProvider>
           <PreferencesProvider>
-            <RemindersProvider>
-              <UIProvider>{children}</UIProvider>
-            </RemindersProvider>
+            <CalendarProvider>
+              <ProtectionProvider>
+                <RemindersProvider>
+                  <UIProvider>{children}</UIProvider>
+                </RemindersProvider>
+              </ProtectionProvider>
+            </CalendarProvider>
           </PreferencesProvider>
         </OnboardingProvider>
       </SessionProvider>
