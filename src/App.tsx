@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Plus } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -10,6 +10,8 @@ import { usePreferences, usePreferencesActions } from './providers/PreferencesPr
 import { toggleInterest } from './providers/preferencesReducer';
 import { useReminders, useRemindersActions } from './providers/RemindersProvider';
 import { useUI, useUIActions } from './providers/UIProvider';
+import { useSession, useSessionActions, useUserDataReset } from './providers/SessionProvider';
+import { useOnboarding, useOnboardingActions } from './providers/OnboardingProvider';
 import { findModal } from './providers/uiReducer';
 import { ModalHost } from './components/ModalHost';
 import {
@@ -57,18 +59,8 @@ import {
 import { isHabitScheduledOnDayIndex } from './utils/schedule';
 import { hideNativeSplash } from './lib/nativeChrome';
 import { getThemeIsDark } from './lib/themeStore';
-import {
-  getStoredSession,
-  setStoredSession,
-  isOnboardingCompleted,
-  setOnboardingCompleted,
-  authService,
-  supabase,
-  isSupabaseConfigured,
-  generateAvatarUrl,
-} from './lib/supabase';
-import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted, resolveTutorialCompleted } from './lib/profile';
-import { persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from './data/avatars';
+import { fetchUserProfile, persistUserProfile, getLocalTutorialCompleted, resolveTutorialCompleted } from './lib/profile';
+import { persistStoredAvatarId, resolveAvatarId } from './data/avatars';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
 import { mergeHabitsByUpdatedAt, touchHabit } from './lib/syncMerge';
 import { fetchHabitLogsForDateRange, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable, omitDeletedHabitRefs } from './lib/habitsApi';
@@ -102,7 +94,6 @@ import {
   type TutorialScreen,
 } from './lib/tutorial';
 import {
-  requestNotificationPermissions,
   schedulePsychologyNotifications,
   cancelHabitTargetTimeNotification,
   scheduleHabitTargetTimeNotification,
@@ -177,6 +168,8 @@ import FlyingPieceOverlay, {
 import { ScrolledBowlOverlay } from './components/ScrolledBowlOverlay';
 import { pulseCompletionHaptic } from './lib/completionFeedback';
 
+const NO_NOTIFICATION_WINDOWS = { morning: false, afternoon: false, night: false };
+
 /** Debounce for ledger writes so swipe-complete doesn't block the main thread. */
 const STORAGE_DEBOUNCE_MS = 320;
 
@@ -198,49 +191,38 @@ export default function App() {
     resetView,
     focusReminder,
     setOpenCreateTask,
-    resetAll: resetUI,
   } = useUIActions();
   const isAddModalOpen = modalStack.some((modal) => modal.kind === 'addHabit');
   const longPressModal = findModal(modalStack, 'habitLongPress');
   const longPressedHabitId = longPressModal?.habitId ?? null;
-  // Authentication & Session State
-  const [session, setSession] = useState<UserSession | null>(() => {
-    const stored = getStoredSession();
-    // Guest sessions are retired — require real auth before Home.
-    if (stored?.isGuest || stored?.id?.startsWith('guest_')) {
-      try {
-        setStoredSession(null);
-      } catch {
-        // ignore
-      }
-      return null;
-    }
-    if (stored) {
-      return { ...stored, syncStatus: stored.syncStatus === 'error' ? 'error' : 'syncing' };
-    }
-    return null;
-  });
-  const [authLoading, setAuthLoading] = useState<boolean>(() => {
-    const stored = getStoredSession();
-    return !stored && isSupabaseConfigured;
-  });
+  const { session, authLoading } = useSession();
+  const {
+    signIn,
+    signOut,
+    deleteAccount,
+    setSyncStatus: applySyncStatus,
+    updateAvatar: handleUpdateAvatar,
+    updateName: handleUpdateName,
+  } = useSessionActions();
   const sessionRef = useRef<UserSession | null>(session);
   sessionRef.current = session;
-  /** Ensures the post-login OS permission dialog fires at most once per app session. */
-  const hasRequestedPermissionsRef = useRef(false);
   const derivedHabitsRef = useRef<Habit[]>([]);
   const todayDayIndexRef = useRef(3);
   const handleCompleteTodayRef = useRef<(habitId: string, isFallback?: boolean, originCoord?: { x: number; y: number; marbleColor?: string }) => void>(() => {});
   const handleResetTodayRef = useRef<(habitId: string) => void>(() => {});
   const handleToggleFallbackModeRef = useRef<(habitId: string) => void>(() => {});
   const handleToggleKeystoneRef = useRef<(habitId: string, next: boolean) => void>(() => {});
-  const [isOnboarded, setIsOnboarded] = useState<boolean>(() => {
-    if (typeof window !== 'undefined' && window.location.search.includes('onboarding=true')) {
-      return false;
-    }
-    return isOnboardingCompleted();
-  });
-  const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3>(1);
+  const { isOnboarded, onboardingStep, hasCompletedTutorial } = useOnboarding();
+  const {
+    completeOnboarding: handleOnboardingComplete,
+    setOnboardingStep: handleOnboardingStepChange,
+    startAsNewUser,
+    startAsReturningUser,
+    setTutorialCompleted,
+    completeTutorial,
+    tutorialLock,
+    setTutorialLocked,
+  } = useOnboardingActions();
 
   const { theme, isDark } = useTheme();
   const { setTheme: handleThemeChange } = useThemeActions();
@@ -282,7 +264,6 @@ export default function App() {
     setCompletionSound: handleCompletionSoundChange,
     setHapticVibration: handleHapticVibrationChange,
     setCycleDays: handleCycleDaysChange,
-    resetAll: resetAllPreferences,
   } = usePreferencesActions();
   const [chronicleVersion, setChronicleVersion] = useState(0);
   const CHRONICLE_LAST_AUTO_LAUNCH_KEY = 'ascend_chronicle_last_auto_launch_date';
@@ -339,8 +320,8 @@ export default function App() {
   useEffect(() => {
     if (!session) {
       destroyAscendSpotlightTutorial();
-      setHasCompletedTutorial(getLocalTutorialCompleted() ? true : null);
-      tutorialLockRef.current = false;
+      setTutorialCompleted(getLocalTutorialCompleted() ? true : null);
+      setTutorialLocked(false);
       return;
     }
 
@@ -354,14 +335,9 @@ export default function App() {
       if (profile.avatar_url) {
         const avatarUrl = resolveAvatarId(profile.avatar_url);
         persistStoredAvatarId(avatarUrl);
-        setSession((prev) => {
-          if (!prev) return prev;
-          const next = { ...prev, avatarUrl };
-          setStoredSession(next);
-          return next;
-        });
+        handleUpdateAvatar(avatarUrl);
       }
-      setHasCompletedTutorial(resolveTutorialCompleted(profile.has_completed_tutorial));
+      setTutorialCompleted(resolveTutorialCompleted(profile.has_completed_tutorial));
     })();
 
     return () => {
@@ -411,12 +387,7 @@ export default function App() {
     snoozeReminder: handleSnoozeReminder,
     mergeHydrated: handleRemindersHydrated,
     syncNow: handleSyncReminders,
-    resetAll: resetAllReminders,
-    bindSession: bindRemindersSession,
   } = useRemindersActions();
-  useLayoutEffect(() => {
-    bindRemindersSession(session);
-  }, [session, bindRemindersSession]);
 
   const isTabActive = useCallback((tab: ActiveTab) => activeTab === tab, [activeTab]);
 
@@ -575,14 +546,6 @@ export default function App() {
     };
   }, []);
 
-  const tutorialLockRef = useRef(false);
-  const [hasCompletedTutorial, setHasCompletedTutorial] = useState<boolean | null>(() => {
-    try {
-      return getLocalTutorialCompleted() ? true : null;
-    } catch {
-      return null;
-    }
-  });
 
   const handleToggleExamShield = useCallback(() => {
     if (!examShieldRef.current) {
@@ -675,70 +638,6 @@ export default function App() {
 
 
 
-  // Listen to Supabase auth state and restore session
-  useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return;
-
-    const applyAuthUser = (user: {
-      id: string;
-      email?: string | null;
-      created_at?: string;
-      user_metadata?: Record<string, unknown>;
-    }) => {
-      const restoredSession: UserSession = {
-        id: user.id,
-        email: user.email || '',
-        name: String(user.user_metadata?.full_name || user.email?.split('@')[0] || 'Ascender'),
-        avatarUrl: readStoredAvatarId(String(user.user_metadata?.avatar_url || generateAvatarUrl(user.email || 'User'))),
-        isGuest: false,
-        memberSince: new Date(user.created_at || Date.now()).toLocaleDateString('en-US', {
-          month: 'short',
-          year: 'numeric',
-        }),
-        syncStatus: 'syncing',
-      };
-      setSession(restoredSession);
-      setStoredSession(restoredSession);
-      if (!hasRequestedPermissionsRef.current) {
-        hasRequestedPermissionsRef.current = true;
-        void requestNotificationPermissions();
-      }
-    };
-
-    void authService.restoreExistingSession().then((result) => {
-      if (result === 'pending') {
-        setAuthLoading(false);
-        return;
-      }
-      if (!result) {
-        setSession(null);
-        setStoredSession(null);
-        setAuthLoading(false);
-        return;
-      }
-      setSession(result);
-      setAuthLoading(false);
-    }).catch((err) => {
-      console.warn('Auth restore offline:', err);
-      setAuthLoading(false);
-    });
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, supabaseSession) => {
-      if (supabaseSession?.user) {
-        applyAuthUser(supabaseSession.user);
-        return;
-      }
-      if (event === 'SIGNED_OUT') {
-        setSession(null);
-        setStoredSession(null);
-        setAuthLoading(false);
-      }
-    });
-
-    return () => {
-      authListener?.subscription?.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -958,15 +857,6 @@ export default function App() {
   hasCompletedTutorialRef.current = hasCompletedTutorial;
   momentumScoreRef.current = todayMomentumScore;
 
-  const applySyncStatus = (status: UserSession['syncStatus']) => {
-    setSession((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev, syncStatus: status };
-      setStoredSession(next);
-      return next;
-    });
-  };
-
   const runAuthenticatedSync = async (targetSession: UserSession) => {
     if (targetSession?.isGuest) {
       return { ok: false, error: 'Guest sessions stay local' };
@@ -982,6 +872,8 @@ export default function App() {
       momentumScore: momentumScoreRef.current,
       getLatestHabits: () => habitsRef.current,
     });
+    // The user signed out or switched while this ran: never apply their data to the next state.
+    if (sessionRef.current?.id !== targetSession.id) return result;
     setHabits((prev) => mergeHabitsByUpdatedAt(prev, result.habits));
     setCompletionEvents(result.completionEvents);
 
@@ -1083,17 +975,19 @@ setMomentumEvents((prev) =>
     rolledOverHabits,
   ]);
 
+  const hasSession = Boolean(session);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void schedulePsychologyNotifications({
-        windows: notificationWindows,
+        // Nobody signed in: all windows off, which cancels the nudges.
+        windows: hasSession ? notificationWindows : NO_NOTIFICATION_WINDOWS,
         habits: activeHabits,
         todayIndex: todayDayIndex,
         momentumScore: todayMomentumScore,
       });
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [notificationWindows, activeHabits, todayDayIndex, todayMomentumScore, completionEvents]);
+  }, [hasSession, notificationWindows, activeHabits, todayDayIndex, todayMomentumScore, completionEvents]);
 
   useEffect(() => {
     if (!isOnboarded && onboardingStep < 3) return;
@@ -1702,60 +1596,18 @@ setMomentumEvents((prev) =>
     localStorage.removeItem('ascend_cache_timestamp');
   }, []);
 
-  // Delete Account — JWT-scoped RPC deletes auth.users + owned public data (no service_role on client)
+  // Delete Account — JWT-scoped RPC deletes auth.users + owned public data, then local data is purged.
   const handleDeleteAccount = useCallback(async () => {
-    const curSession = sessionRef.current;
-    if (!curSession) return;
-    try {
-      const err = await authService.deleteAccount(curSession.id);
-      if (err) return;
-    } catch {
-      return;
-    }
-    // Success — wipe ALL local persistence layers
-    localStorage.clear();
+    await deleteAccount();
+  }, [deleteAccount]);
 
-    // Clear IndexedDB stores (best-effort, non-blocking)
-    try {
-      const databases = await indexedDB.databases();
-      for (const db of databases) {
-        if (db.name) indexedDB.deleteDatabase(db.name);
-      }
-    } catch {
-      /* indexedDB.databases() not available in all browsers — ignore */
-    }
-
-    // Reset every React state atom to initial values
-    setSession(null);
-    setStoredSession(null);
-    setIsOnboarded(false);
-    setHabits([]);
-    setEvidenceList([]);
-    setCompletionEvents([]);
-    setMomentumEvents([]);
-    resetAllReminders();
-    setFrictionAudits([]);
-    resetAllPreferences();
-    resetUI();
-  }, [resetAllPreferences, resetAllReminders, resetUI]);
-
-  // Sign out / Log out handler
-  const handleLogout = useCallback(async () => {
-    await authService.signOut();
-    setSession(null);
-    setStoredSession(null);
-    resetUI();
-  }, [resetUI]);
+  // Sign out: queued writes are pushed, then every user-scoped store is purged and reset.
+  const handleLogout = signOut;
 
   // Auth Success handler
   const handleAuthSuccess = (newSession: UserSession, isNewUser?: boolean, interests?: string[]) => {
-    setSession(newSession);
-    setStoredSession(newSession);
+    signIn(newSession);
     setActiveTab('home');
-    if (!hasRequestedPermissionsRef.current) {
-      hasRequestedPermissionsRef.current = true;
-      void requestNotificationPermissions();
-    }
     if (interests && interests.length > 0) {
       setSelectedInterests(interests);
       if (newSession && !newSession?.isGuest) {
@@ -1780,40 +1632,39 @@ setMomentumEvents((prev) =>
         setMomentumEvents([]);
         setEvidenceList([]);
       }
-      setIsOnboarded(false);
-      setOnboardingCompleted(false);
-      setHasCompletedTutorial(false);
-      setLocalTutorialCompleted(false, { force: true });
-      tutorialLockRef.current = false;
+      startAsNewUser();
     } else {
       setHabits((prev) => prev.filter((habit) => !isSeedHabitId(habit.id)));
       setCompletionEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
       setMomentumEvents((prev) => prev.filter((event) => !isSeedHabitId(event.habitId)));
       setEvidenceList((prev) => prev.filter((item) => !isSeedHabitId(item.habitId)));
-      setIsOnboarded(true);
-      setOnboardingCompleted(true);
-      setHasCompletedTutorial(true);
-      setLocalTutorialCompleted(true);
-      tutorialLockRef.current = true;
+      startAsReturningUser();
     }
   };
 
-  // Onboarding Complete handler
-  const handleOnboardingComplete = useCallback(() => {
-    setIsOnboarded(true);
-    setOnboardingCompleted(true);
-    if (typeof window !== 'undefined' && window.location.search.includes('onboarding=true')) {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('onboarding');
-      window.history.replaceState({}, '', url.toString());
-    }
-  }, []);
-
-  const handleOnboardingStepChange = useCallback((step: 1 | 2 | 3) => {
-    startTransition(() => {
-      setOnboardingStep(step);
-    });
-  }, []);
+  // RESET_ALL for the ledger state App still owns (moves into HabitLedgerProvider in step 7).
+  useUserDataReset(() => {
+    hydratedUserIdRef.current = null;
+    for (const pending of pendingGraceMomentumRef.current.values()) window.clearTimeout(pending.timer);
+    pendingGraceMomentumRef.current.clear();
+    // The previous user's habit alarms must not keep firing on this device.
+    for (const habit of habitsRef.current) void cancelHabitTargetTimeNotification(habit.id);
+    setHabits([]);
+    setCompletionEvents([]);
+    setMomentumEvents([]);
+    setEvidenceList([]);
+    setFrictionAudits([]);
+    setPendingFriction([]);
+    setActiveFallbackIds([]);
+    setRolledOverHabits([]);
+    setProtection(loadProtectionState());
+    setProtectionWindows([]);
+    setBowlEpoch(readBowlCycleEpoch(toISODate()));
+    setCelebrationPieces(null);
+    setBowlCelebrating(false);
+    setPieceFlights([]);
+    setChronicleVersion((v) => v + 1);
+  });
 
   derivedHabitsRef.current = derivedHabits;
   todayDayIndexRef.current = todayDayIndex;
@@ -2081,19 +1932,6 @@ setMomentumEvents((prev) =>
     }
   }, []);
 
-  const handleUpdateAvatar = useCallback((avatarUrl: string) => {
-    setSession((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev, avatarUrl };
-      setStoredSession(next);
-      return next;
-    });
-  }, []);
-
-  const handleUpdateName = useCallback((newName: string) => {
-    setSession((prev) => (prev ? { ...prev, name: newName } : prev));
-  }, []);
-
   // Nav chrome: toggle via DOM class — never setState on scroll (that re-rendered every habit card).
   const navScrollVisibleRef = useRef(true);
   const lastScrollYRef = useRef(0);
@@ -2213,7 +2051,7 @@ setMomentumEvents((prev) =>
   useEffect(() => {
     if (!session || !isOnboarded) return;
     if (hasCompletedTutorial !== false) return;
-    if (tutorialLockRef.current) return;
+    if (tutorialLock.current) return;
 
     if (activeTab !== 'home') {
       setActiveTab('home');
@@ -2223,11 +2061,10 @@ setMomentumEvents((prev) =>
     navScrollVisibleRef.current = true;
     syncNavChrome();
     const timer = window.setTimeout(() => {
-      if (tutorialLockRef.current || hasCompletedTutorial !== false || isAddModalOpen) return;
-      tutorialLockRef.current = true;
+      if (tutorialLock.current || hasCompletedTutorial !== false || isAddModalOpen) return;
+      setTutorialLocked(true);
       startAscendSpotlightTutorial(() => {
-        setHasCompletedTutorial(true);
-        setLocalTutorialCompleted(true);
+        completeTutorial();
         markScreenTutorialCompleted('home');
         if (session && !session?.isGuest) {
           void persistUserProfile(session, {

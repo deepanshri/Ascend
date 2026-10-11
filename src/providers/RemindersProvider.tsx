@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { StandaloneReminder, UserSession } from '../types';
+import { useSession, useUserDataReset } from './SessionProvider';
 import { usePersistEffect } from '../hooks/usePersistedState';
 import { REMINDERS_STORAGE_KEY } from '../lib/ledgerStorage';
 import { loadStoredReminders } from '../lib/ledgerStorageLoaders';
@@ -42,11 +43,6 @@ interface RemindersActions {
   syncNow: () => void;
   /** Cancel every reminder's alerts and clear the list, in memory and storage. */
   resetAll: () => void;
-  /**
-   * Temporary seam until SessionProvider exists (Phase 3, Step 5): App passes
-   * the current session so syncs and upserts run as that user.
-   */
-  bindSession: (session: UserSession | null) => void;
 }
 
 const RemindersStateContext = createContext<RemindersState | null>(null);
@@ -60,8 +56,10 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
   const [reminders, setReminders] = useState<StandaloneReminder[]>(loadStoredReminders);
   /** Latest list, updated synchronously so back-to-back actions never see stale data. */
   const remindersRef = useRef(reminders);
-  const sessionRef = useRef<UserSession | null>(null);
-  const [syncUserId, setSyncUserId] = useState<string | null>(null);
+  const { session } = useSession();
+  const sessionRef = useRef<UserSession | null>(session);
+  sessionRef.current = session;
+  const syncUserId = sessionKey(session);
   /** Incremented per sync request; only the newest response is applied. */
   const syncSeqRef = useRef(0);
 
@@ -189,16 +187,14 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
     commit([]);
   }, [commit]);
 
-  const boundUserRef = useRef<string | null>(null);
-  const bindSession = useCallback((session: UserSession | null) => {
-    sessionRef.current = session;
-    const userId = sessionKey(session);
-    if (userId === boundUserRef.current) return;
-    boundUserRef.current = userId;
-    // A response for the previous user must not merge into the new one.
+  // A response for a previous user must never merge into the next one.
+  const boundUserRef = useRef(syncUserId);
+  if (boundUserRef.current !== syncUserId) {
+    boundUserRef.current = syncUserId;
     syncSeqRef.current += 1;
-    setSyncUserId(userId);
-  }, []);
+  }
+
+  useUserDataReset(resetAll);
 
   const state = useMemo<RemindersState>(
     () => ({ reminders, pendingCount: countPendingReminders(reminders) }),
@@ -216,7 +212,6 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
       mergeHydrated,
       syncNow,
       resetAll,
-      bindSession,
     }),
     [
       addReminder,
@@ -228,7 +223,6 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
       mergeHydrated,
       syncNow,
       resetAll,
-      bindSession,
     ]
   );
 

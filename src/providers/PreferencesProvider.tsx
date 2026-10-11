@@ -30,6 +30,7 @@ import {
   setHapticVibrationEnabled,
 } from '../utils/feedback';
 import { preferencesReducer, type PreferencesState } from './preferencesReducer';
+import { useUserDataReset } from './SessionProvider';
 
 interface PreferencesActions {
   /** Replace interests, or derive them from the previous list. */
@@ -130,6 +131,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     persistWindowsRef.current = true;
     dispatch({ type: 'RESET_ALL', defaults });
   }, []);
+
+  useUserDataReset(resetAll);
 
   const actions = useMemo<PreferencesActions>(
     () => ({

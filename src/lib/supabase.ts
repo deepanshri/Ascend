@@ -478,7 +478,6 @@ export interface SyncResult {
   lastSyncedAt: number;
 }
 
-const REMINDERS_LOCAL_STORAGE_KEY = 'habit_tracker_reminders';
 const REMINDERS_LAST_SYNC_KEY = 'ascend_reminders_last_sync_timestamp';
 
 type ReminderRow = Record<string, unknown>;
@@ -557,9 +556,13 @@ function fromReminderRow(row: ReminderRow): StandaloneReminder {
   });
 }
 
-async function persistMergedReminders(reminders: StandaloneReminder[], lastSyncedAt: number) {
+/**
+ * Record when reminders last synced. The merged list itself is persisted by
+ * RemindersProvider, which discards responses for a user who has since signed
+ * out; writing it here could restore a previous user's reminders after a purge.
+ */
+async function recordRemindersSync(lastSyncedAt: number) {
   try {
-    localStorage.setItem(REMINDERS_LOCAL_STORAGE_KEY, JSON.stringify(reminders));
     localStorage.setItem(REMINDERS_LAST_SYNC_KEY, lastSyncedAt.toString());
   } catch {}
 }
@@ -677,7 +680,7 @@ export const remindersSyncService = {
     const hydratedLocal = localReminders.map(withReminderNotificationIds);
 
     if (!isSupabaseConfigured || !supabase || !userSession || userSession?.isGuest) {
-      await persistMergedReminders(hydratedLocal.filter((item) => !item.deleted), now);
+      await recordRemindersSync(now);
       await rescheduleAllReminderDualAlerts(hydratedLocal);
       return {
         reminders: hydratedLocal.filter((item) => !item.deleted),
@@ -762,7 +765,7 @@ export const remindersSyncService = {
       await rescheduleAllReminderDualAlerts(merged);
 
       const finalActiveReminders = merged.filter((item) => !item.deleted);
-      await persistMergedReminders(finalActiveReminders, now);
+      await recordRemindersSync(now);
 
       return {
         reminders: finalActiveReminders,

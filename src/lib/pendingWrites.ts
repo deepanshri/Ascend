@@ -51,3 +51,9 @@ export function flushPendingWrites(): number {
 export function pendingWriteCount(): number {
   return pending.size;
 }
+
+/** Drop every pending write without running it (used before purging user data). */
+export function discardPendingWrites(): void {
+  for (const entry of pending.values()) clearTimeout(entry.timer);
+  pending.clear();
+}

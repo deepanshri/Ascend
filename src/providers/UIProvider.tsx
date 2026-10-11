@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useReducer, useRe
 import { App as CapacitorApp } from '@capacitor/app';
 import type { ActiveTab } from '../types';
 import { useBackButton } from '../hooks/useBackButton';
+import { useUserDataReset } from './SessionProvider';
 import { initialUIState, resolveBackAction, uiReducer, type AppModal, type AppModalKind, type UIState } from './uiReducer';
 
 interface UIActions {
@@ -70,6 +71,8 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     }),
     []
   );
+
+  useUserDataReset(actions.resetAll);
 
   useBackButton(() => {
     const overlays = overlaysRef.current;

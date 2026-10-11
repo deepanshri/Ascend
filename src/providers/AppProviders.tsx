@@ -1,6 +1,8 @@
 import React from 'react';
+import { OnboardingProvider } from './OnboardingProvider';
 import { PreferencesProvider } from './PreferencesProvider';
 import { RemindersProvider } from './RemindersProvider';
+import { SessionProvider } from './SessionProvider';
 import { ThemeProvider } from './ThemeProvider';
 import { UIProvider } from './UIProvider';
 
@@ -8,11 +10,15 @@ import { UIProvider } from './UIProvider';
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
-      <PreferencesProvider>
-        <RemindersProvider>
-          <UIProvider>{children}</UIProvider>
-        </RemindersProvider>
-      </PreferencesProvider>
+      <SessionProvider>
+        <OnboardingProvider>
+          <PreferencesProvider>
+            <RemindersProvider>
+              <UIProvider>{children}</UIProvider>
+            </RemindersProvider>
+          </PreferencesProvider>
+        </OnboardingProvider>
+      </SessionProvider>
     </ThemeProvider>
   );
 }
