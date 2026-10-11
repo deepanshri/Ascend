@@ -183,17 +183,3 @@ export async function readSleepSnapshot(todayIso: string = toISODate()): Promise
     return { ...EMPTY_SNAPSHOT };
   }
 }
-
-export function sleepRingRate(snapshot: SleepSnapshot, window: 'today' | 'week'): number {
-  if (!snapshot.hasSleepData) return 0;
-  if (window === 'today') {
-    const hours =
-      snapshot.todayHours ??
-      snapshot.dailyHours.find((row) => row.isoDate === toISODate())?.hours ??
-      null;
-    if (hours == null || !Number.isFinite(hours)) return 0;
-    return Math.min(1, Math.max(0, hours / SLEEP_TARGET_HOURS));
-  }
-  if (snapshot.weekHours == null || !Number.isFinite(snapshot.weekHours)) return 0;
-  return Math.min(1, Math.max(0, snapshot.weekHours / (SLEEP_TARGET_HOURS * 7)));
-}

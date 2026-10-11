@@ -344,8 +344,6 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
     }
   }, []);
 
-  if (!isOpen) return null;
-
   // Pre-compute slide track style so we don't create a new object every render
   const slideTrackStyle = useMemo<React.CSSProperties>(() => {
     const offset = `${(step - 1) * 33.333333}%`;
@@ -357,6 +355,9 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({
       WebkitBackfaceVisibility: 'hidden' as const,
     };
   }, [step]);
+
+  // After every hook, so the hook order never depends on isOpen.
+  if (!isOpen) return null;
 
   return (
     <div

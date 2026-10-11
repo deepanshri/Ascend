@@ -206,10 +206,6 @@ const SCREEN_STEPS: Record<Exclude<TutorialScreen, 'home'>, DriveStep[]> = {
   ],
 };
 
-export function isTutorialActive(): boolean {
-  return Boolean(activeTour?.isActive());
-}
-
 export function startAscendSpotlightTutorial(onComplete: () => void): void {
   startScreenTutorial('home', onComplete);
 }

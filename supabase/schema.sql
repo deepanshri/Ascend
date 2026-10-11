@@ -115,7 +115,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.reminders TO authenticated;
 
 -- Auth email confirmation: do NOT auto-confirm.
 -- Trigger public.auto_confirm_auth_user / auto_confirm_auth_user on auth.users
--- was removed in migration 017_remove_auto_confirm.sql (Friends requires real emails).
+-- was removed in migration 017a_remove_auto_confirm.sql (Friends requires real emails).
 DROP TRIGGER IF EXISTS auto_confirm_auth_user ON auth.users;
 DROP FUNCTION IF EXISTS public.auto_confirm_auth_user();
 

@@ -1171,21 +1171,6 @@ export function matchesCategory(quoteCategory: string, userCategories: string[])
   });
 }
 
-/**
- * Filter an array of quotes based on active user interests.
- * If userInterests is empty, falls back safely to DEFAULT_HABIT_QUOTES.
- */
-export function filterQuotesByInterests(
-  quotes: Quote[] = INTEREST_QUOTES,
-  userInterests: string[] = []
-): Quote[] {
-  if (!Array.isArray(userInterests) || userInterests.length === 0) {
-    return DEFAULT_HABIT_QUOTES;
-  }
-  const matched = quotes.filter((q) => matchesCategory(q.category, userInterests));
-  return matched.length > 0 ? matched : DEFAULT_HABIT_QUOTES;
-}
-
 export const USER_INTERESTS_STORAGE_KEY = 'ascend_personal_interests';
 
 export function getStoredUserInterests(): string[] {

@@ -17,7 +17,7 @@ import {
 } from '../lib/marbleRenderer';
 import { MarbleLightRig, StudioEnvironment } from '../lib/marbleScene';
 import { getThemeIsDark, subscribeTheme } from '../lib/themeStore';
-import type { FlightHandoffVelocity } from './FlyingPieceOverlay';
+import type { FlightHandoffVelocity } from '../lib/completionFlight';
 import { BowlPhysicsWorld } from '../lib/bowlPhysics';
 
 // Preload the 3D bowl model at module scope for instant rendering

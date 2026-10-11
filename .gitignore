@@ -12,3 +12,9 @@ android/key.properties
 *.keystore
 *.jks
 .kotlin/
+
+# IDE settings
+.idea/
+
+# Supabase CLI local cache
+supabase/.temp/

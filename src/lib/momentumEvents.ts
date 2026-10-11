@@ -1,9 +1,11 @@
 import { MomentumEvent, MomentumEventType } from '../types';
 import { isSeedHabitId } from '../data/initialHabits';
-import { countMomentumCompletedActions, fetchSequentialMomentumEvents, insertMomentumEvent, isSupabaseConfigured, supabase } from './supabase';
+import { fetchSequentialMomentumEvents, insertMomentumEvent, isSupabaseConfigured, supabase } from './supabase';
 import { parseToIsoDate, toISODate } from '../utils/dates';
-import { isUuid, mergeMomentumEvents } from '../utils/momentum';
+import { isUuid } from '../utils/momentum';
 import { isTimeOfDay } from '../utils/timeOfDay';
+import { readJson, writeJson } from './storage';
+import { remapLegacyMomentumIds, remapLegacyMomentumIdsBy } from '../utils/momentumIds';
 
 export const MOMENTUM_EVENTS_STORAGE_KEY = 'ascend_momentum_events';
 const MOMENTUM_QUEUE_KEY = 'ascend_offline_momentum_event_queue';
@@ -32,35 +34,6 @@ function isOnline(): boolean {
     return typeof navigator === 'undefined' ? true : navigator.onLine;
   } catch {
     return true;
-  }
-}
-
-function readJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJson(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Quota / private-mode: local queue is best-effort.
-  }
-}
-
-export function loadLocalMomentumEvents(): MomentumEvent[] | null {
-  try {
-    const raw = localStorage.getItem(MOMENTUM_EVENTS_STORAGE_KEY);
-    if (raw == null) return null;
-    const parsed = JSON.parse(raw) as MomentumEvent[];
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
   }
 }
 
@@ -146,11 +119,6 @@ export async function fetchMomentumEventsFromTable(userId?: string | null): Prom
     .filter((event): event is MomentumEvent => event !== null && !isSeedHabitId(event.habitId));
 }
 
-/** COUNT(*) of full | fallback rows. Returns null when the table is unreachable. */
-export async function fetchIdentityVoteCount(userId?: string | null): Promise<number | null> {
-  return countMomentumCompletedActions(userId);
-}
-
 async function insertMomentumEventRemote(userId: string, event: MomentumEvent): Promise<boolean> {
   if (!canSync(userId)) return false;
   return insertMomentumEvent({
@@ -162,6 +130,18 @@ async function insertMomentumEventRemote(userId: string, event: MomentumEvent): 
     timestamp: event.timestamp,
     timeOfDay: event.timeOfDay,
   });
+}
+
+/**
+ * Append many events in one request: pushMomentumEventsRemote sends a single
+ * INSERT ... ON CONFLICT (id) DO NOTHING, so stored rows are skipped and never
+ * updated. Offline or on failure the events join the offline queue.
+ */
+export async function appendMomentumEventsRemote(
+  userId: string | null | undefined,
+  events: MomentumEvent[]
+): Promise<void> {
+  await pushMomentumEventsRemote(userId, events);
 }
 
 /** Insert-only. Never upserts or deletes historical rows. */
@@ -221,21 +201,46 @@ export async function pushMomentumEventsRemote(
 
 export async function flushMomentumEventQueue(): Promise<void> {
   if (!isOnline() || !isSupabaseConfigured || !supabase) return;
-  const remaining: MomentumQueueItem[] = [];
-  for (const item of readQueue()) {
+  const queued = readQueue();
+  if (queued.length === 0) return;
+  // One batch request per user (normally one); failures re-queue themselves.
+  writeQueue([]);
+  const byUser = new Map<string, MomentumEvent[]>();
+  for (const item of queued) {
     if (isSeedHabitId(item.event.habitId)) continue;
-    const ok = await insertMomentumEventRemote(item.userId, item.event);
-    if (!ok) remaining.push(item);
+    byUser.set(item.userId, [...(byUser.get(item.userId) ?? []), item.event]);
   }
-  writeQueue(remaining);
+  for (const [userId, events] of byUser) {
+    await pushMomentumEventsRemote(userId, events);
+  }
 }
 
-export function mergeFetchedMomentumEvents(
-  local: MomentumEvent[],
-  remote: MomentumEvent[]
-): MomentumEvent[] {
-  return mergeMomentumEvents(local, remote);
+const isStoredEvent = (value: unknown): value is MomentumEvent =>
+  Boolean(value) && typeof value === 'object' && typeof (value as MomentumEvent).id === 'string' &&
+  typeof (value as MomentumEvent).habitId === 'string';
+
+/**
+ * Idempotent migration: legacy `evt_` ids in the stored momentum log and the
+ * offline queue become stable UUIDs, so the queue and account sync can upload
+ * them. Malformed entries are left in place for the loaders to dead-letter.
+ */
+export function migrateLegacyMomentumIds(): void {
+  const log = readJson<unknown>(MOMENTUM_EVENTS_STORAGE_KEY, null);
+  if (Array.isArray(log)) {
+    const { events, remapped, dropped } = remapLegacyMomentumIds(log.filter(isStoredEvent));
+    if (remapped + dropped > 0) {
+      writeJson(MOMENTUM_EVENTS_STORAGE_KEY, [...events, ...log.filter((entry) => !isStoredEvent(entry))]);
+    }
+  }
+  const queue = readJson<unknown>(MOMENTUM_QUEUE_KEY, null);
+  if (Array.isArray(queue)) {
+    const isItem = (value: unknown): value is MomentumQueueItem =>
+      Boolean(value) && typeof value === 'object' && isStoredEvent((value as MomentumQueueItem).event);
+    const { items, remapped, dropped } = remapLegacyMomentumIdsBy(
+      queue.filter(isItem),
+      (item) => item.event,
+      (item, event) => ({ ...item, event })
+    );
+    if (remapped + dropped > 0) writeQueue([...items, ...queue.filter((entry) => !isItem(entry))]);
+  }
 }
-
-export { createMomentumEvent, habitWeight } from '../utils/momentum';
-

@@ -24,7 +24,11 @@ function loadEnv() {
 }
 
 const env = loadEnv();
-const url = (env.VITE_SUPABASE_URL || 'https://dpgupbcbhkmjtyqkljpr.supabase.co').replace(/\/$/, '');
+if (!env.VITE_SUPABASE_URL) {
+  console.error('Set VITE_SUPABASE_URL in .env (see .env.example).');
+  process.exit(2);
+}
+const url = env.VITE_SUPABASE_URL.replace(/\/$/, '');
 const anon = env.VITE_SUPABASE_ANON_KEY || '';
 const headers = {
   apikey: anon,

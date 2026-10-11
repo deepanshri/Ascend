@@ -1,4 +1,4 @@
-import { Habit, IdentityEvidence, HabitCompletionEvent } from '../types';
+import { Habit } from '../types';
 import { seedCompletedDays } from '../utils/dates';
 
 const seededDays = seedCompletedDays(3);
@@ -93,7 +93,3 @@ export const SEED_HABIT_IDS: ReadonlySet<string> = new Set(INITIAL_HABITS.map((h
 export function isSeedHabitId(id: string): boolean {
   return SEED_HABIT_IDS.has(id) || id.startsWith('habit-onboarding-');
 }
-
-export const INITIAL_EVIDENCE: IdentityEvidence[] = [];
-
-export const INITIAL_COMPLETION_EVENTS: HabitCompletionEvent[] = [];

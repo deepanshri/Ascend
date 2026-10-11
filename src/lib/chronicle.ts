@@ -63,6 +63,17 @@ export type ChronicleEntriesMap = Record<string, ChronicleEntry>;
  * Load all chronicle entries from local storage.
  * Reads both 'ascend_chronicle' and 'ascend_chronicle_entries' to guarantee consistency.
  */
+/** A chronicle row as stored by older and newer app versions (snake or camel case). */
+interface StoredChronicleRow {
+  iso_date?: string;
+  isoDate?: string;
+  phase1?: string;
+  phase2?: string;
+  phase3?: string;
+  updated_at?: string;
+  updatedAt?: string;
+}
+
 export function loadChronicleEntries(): ChronicleEntriesMap {
   try {
     const rawLegacy = localStorage.getItem(CHRONICLE_STORAGE_KEY);
@@ -80,7 +91,7 @@ export function loadChronicleEntries(): ChronicleEntriesMap {
     if (rawSync) {
       const parsed = JSON.parse(rawSync);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        for (const [k, v] of Object.entries(parsed as Record<string, any>)) {
+        for (const [k, v] of Object.entries(parsed as Record<string, StoredChronicleRow | null>)) {
           if (v && typeof v === 'object') {
             const iso = v.iso_date || v.isoDate || k;
             entries[iso] = {
@@ -191,49 +202,6 @@ export async function saveChronicleEntry(
 
   if (error) {
     if (import.meta.env.DEV) console.error('Failed to sync chronicle entry to Supabase:', error);
-  }
-}
-
-/**
- * Fetch chronicle entries from Supabase for authenticated user and rehydrate local cache.
- */
-export async function fetchRemoteChronicleEntries(): Promise<ChronicleEntriesMap> {
-  try {
-    const { data: authData } = await supabase.auth.getUser();
-    if (!authData?.user) return loadChronicleEntries();
-
-    const { data, error } = await supabase
-      .from('chronicle_entries')
-      .select('*')
-      .eq('user_id', authData.user.id)
-      .order('iso_date', { ascending: false })
-      .limit(90);
-
-    if (error || !data) {
-      return loadChronicleEntries();
-    }
-
-    const map: ChronicleEntriesMap = {};
-    const syncCache: Record<string, unknown> = {};
-
-    for (const row of data) {
-      const iso = row.iso_date;
-      map[iso] = {
-        isoDate: iso,
-        phase1: row.phase1 || '',
-        phase2: row.phase2 || '',
-        phase3: row.phase3 || '',
-        updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
-      };
-      syncCache[iso] = row;
-    }
-
-    localStorage.setItem('ascend_chronicle', JSON.stringify(syncCache));
-    localStorage.setItem(CHRONICLE_STORAGE_KEY, JSON.stringify(map));
-    return map;
-  } catch (err) {
-    if (import.meta.env.DEV) console.warn('Failed to fetch remote chronicle entries:', err);
-    return loadChronicleEntries();
   }
 }
 

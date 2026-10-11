@@ -47,22 +47,6 @@ export const springGentle: Transition = {
   mass: 1,
 };
 
-/** Ultra-soft for page-level or hero-element entrances. */
-export const springLush: Transition = {
-  type: 'spring',
-  stiffness: 120,
-  damping: 20,
-  mass: 1,
-};
-
-/** Elastic pop for confirmations, celebrations and reward moments. */
-export const springElastic: Transition = {
-  type: 'spring',
-  stiffness: 400,
-  damping: 18,
-  mass: 0.8,
-};
-
 // ─── Micro-Interaction Tokens ─────────────────────────────────────────────────
 
 /**
@@ -73,21 +57,6 @@ export const springElastic: Transition = {
  * <motion.button whileTap={tapPress} transition={springSnappy} />
  */
 export const tapPress = { scale: 0.94 };
-
-/**
- * Heavier press for large primary CTAs or habit day buttons.
- */
-export const tapPressHeavy = { scale: 0.88 };
-
-/**
- * Subtle hover lift — for cards and list items on desktop/mouse input.
- */
-export const hoverLift = { scale: 1.018, y: -1 };
-
-/**
- * Subtle hover for small icon buttons and chips.
- */
-export const hoverGlow = { scale: 1.08 };
 
 /**
  * Active/pressed state for nav tabs — scale + slight brightness.
@@ -128,16 +97,6 @@ export const bottomSheetMotion = {
   transition: springFluid,
 };
 
-/**
- * Contextual popover / tooltip — scales from 95 % and fades.
- */
-export const popoverMotion = {
-  initial:    { opacity: 0, scale: 0.95, y: 6  },
-  animate:    { opacity: 1, scale: 1,    y: 0  },
-  exit:       { opacity: 0, scale: 0.95, y: 4  },
-  transition: springSnappy,
-};
-
 // ─── List & Stagger Tokens ────────────────────────────────────────────────────
 
 /**
@@ -174,49 +133,9 @@ export const staggerItem = {
   exit:   { opacity: 0, y: 6,  scale: 0.97 },
 };
 
-/**
- * Faster, lighter stagger item for dense lists (habit cards, reminders).
- */
-export const staggerItemFast = {
-  hidden: { opacity: 0, y: 8,  scale: 0.985 },
-  show:   { opacity: 1, y: 0,  scale: 1,    transition: springSnappy },
-  exit:   { opacity: 0, y: 4,  scale: 0.985 },
-};
-
 // ─── Page / Tab Transition Tokens ─────────────────────────────────────────────
 
-/**
- * Full-screen page fade — for tab pane visibility switches.
- */
-export const pageFade = {
-  initial:    { opacity: 0 },
-  animate:    { opacity: 1 },
-  exit:       { opacity: 0 },
-  transition: { ...springFluid },
-};
-
-/**
- * Slide-up page entrance — for views that appear over content.
- */
-export const pageSlideUp = {
-  initial:    { opacity: 0, y: 24 },
-  animate:    { opacity: 1, y: 0  },
-  exit:       { opacity: 0, y: 16 },
-  transition: springFluid,
-};
-
 // ─── Navigation Active-Indicator Token ────────────────────────────────────────
-
-/**
- * Shared layout spring for `layoutId` nav pill and indicator dot transitions.
- * Faster than `springFluid` so tab switching feels instant.
- */
-export const navLayoutSpring: Transition = {
-  type: 'spring',
-  stiffness: 500,
-  damping: 40,
-  mass: 1,
-};
 
 // ─── Utility: build a stagger delay for index n ───────────────────────────────
 

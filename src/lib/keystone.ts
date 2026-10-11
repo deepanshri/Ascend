@@ -1,5 +1,5 @@
 import { Habit, MomentumEvent } from '../types';
-import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentum';
+import { eventScore, habitWeight, resolveMomentumEventDate } from '../utils/momentumCore';
 import { toISODate } from '../utils/dates';
 import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from '../utils/schedule';
 
@@ -9,10 +9,6 @@ export const KEYSTONE_CORRELATION_MIN_SPAN = 7;
 
 export function countActiveKeystones(habits: Habit[], exceptId?: string): number {
   return habits.filter((habit) => !habit.archived && habit.isKeystone && habit.id !== exceptId).length;
-}
-
-export function canEnableKeystone(habits: Habit[], habitId?: string): boolean {
-  return countActiveKeystones(habits, habitId) < MAX_KEYSTONE_HABITS;
 }
 
 export function activeKeystoneHabits(habits: Habit[]): Habit[] {

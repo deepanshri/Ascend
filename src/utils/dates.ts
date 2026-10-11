@@ -25,14 +25,6 @@ export function getWeekDateNumber(dayIndex: number, date: Date = new Date()): nu
   return getWeekDates(date)[dayIndex]?.getDate() ?? date.getDate();
 }
 
-export function getWeekdayShort(dayIndex: number, date: Date = new Date()): string {
-  return getWeekDates(date)[dayIndex]?.toLocaleDateString('en-US', { weekday: 'short' }) ?? '';
-}
-
-export function getWeekdayNarrow(dayIndex: number, date: Date = new Date()): string {
-  return getWeekDates(date)[dayIndex]?.toLocaleDateString('en-US', { weekday: 'narrow' }) ?? '';
-}
-
 export function formatEvidenceDate(date: Date = new Date()): string {
   return date.toLocaleDateString('en-US', {
     weekday: 'short',
@@ -42,9 +34,32 @@ export function formatEvidenceDate(date: Date = new Date()): string {
 }
 
 /** Return YYYY-MM-DD in user's local timezone (en-CA standard). */
+const pad2 = (value: number) => String(value).padStart(2, '0');
+
+/**
+ * The device-local calendar date as strict `YYYY-MM-DD`, built from the date's
+ * local fields rather than locale formatting, so it never depends on ICU data
+ * and always reflects the device's current timezone.
+ */
 export function getLocalDateString(date: Date = new Date()): string {
   const valid = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
-  return valid.toLocaleDateString('en-CA');
+  return `${valid.getFullYear()}-${pad2(valid.getMonth() + 1)}-${pad2(valid.getDate())}`;
+}
+
+/** Local midnight at the start of `iso`; `null` for a malformed date. */
+export function localMidnightOf(iso: string): Date | null {
+  const parts = parseIsoDateParts(iso);
+  return parts ? new Date(parts.year, parts.month - 1, parts.day) : null;
+}
+
+/**
+ * Milliseconds until the next local calendar day begins (plus a 1s margin).
+ * Built from local fields, so DST shifts and zones where midnight is skipped
+ * resolve to the real start of the next day.
+ */
+export function msUntilNextLocalDay(now: Date = new Date()): number {
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+  return Math.max(1000, next.getTime() - now.getTime());
 }
 
 export function toISODate(date: Date = new Date()): string {

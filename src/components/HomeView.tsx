@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { Bowl } from './Bowl';
 import { MomentumPill } from './MomentumPill';
 import type { AccumulationPiece, BowlFill, CycleDays } from '../services/reportService';
 import type { Habit } from '../types';
 import { getTodayDayIndex, getLocalDateString } from '../utils/dates';
-import type { FlightHandoffVelocity } from './FlyingPieceOverlay';
+import type { FlightHandoffVelocity } from '../lib/completionFlight';
 
 interface HomeViewProps {
   isActive?: boolean;
@@ -30,6 +29,26 @@ interface HomeViewProps {
 }
 
 const EMPTY_PIECES: AccumulationPiece[] = [];
+
+/** three.js, @react-three/fiber and drei load with the bowl, after first paint, never in the startup bundle. */
+const Bowl = React.lazy(() => import('./Bowl').then((m) => ({ default: m.Bowl })));
+
+/**
+ * Same footprint and ids as the bowl while its 3D chunk loads, so the layout
+ * does not jump and completion flights still find their landing frame.
+ */
+function BowlPlaceholder({ votes, capacity, cycleDays }: { votes: number; capacity: number; cycleDays: number }) {
+  return (
+    <section id="accumulation-bowl" className="relative mx-auto my-0 flex w-full flex-col items-center justify-center select-none" aria-busy="true">
+      <div id="accumulation-bowl-frame" className="relative mx-auto h-40 w-48 max-w-xs" />
+      <div className="relative mb-1 mt-1 flex w-full justify-center">
+        <span className="px-2.5 py-0.5 rounded-full text-[11px] tabular-nums border bg-white/90 border-slate-200 text-slate-700 dark:bg-slate-800/80 dark:border-slate-700/60 dark:text-slate-300">
+          {votes}/{capacity} · {cycleDays} Days ▾
+        </span>
+      </div>
+    </section>
+  );
+}
 
 const HomeViewInner: React.FC<HomeViewProps> = ({
   isActive = true,
@@ -65,7 +84,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
     const set = new Set<string>();
     if (habits) {
       for (const habit of habits) {
-        if (Boolean(habit.days?.[checkDay])) {
+        if (habit.days?.[checkDay]) {
           set.add(habit.id);
         }
       }
@@ -85,7 +104,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
       pendingBatchChangesRef.current.clear();
       const freshSet = new Set<string>();
       for (const habit of habits || []) {
-        if (Boolean(habit.days?.[checkDay])) {
+        if (habit.days?.[checkDay]) {
           freshSet.add(habit.id);
         }
       }
@@ -97,7 +116,7 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
       initializedRef.current = true;
       const initialSet = new Set<string>();
       for (const habit of habits) {
-        if (Boolean(habit.days?.[checkDay])) {
+        if (habit.days?.[checkDay]) {
           initialSet.add(habit.id);
         }
       }
@@ -163,12 +182,12 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
   }, [habits, checkDay, visualCompletedIds]);
 
   useEffect(() => {
+    const timers = pendingTimersRef.current;
+    const batch = pendingBatchChangesRef.current;
     return () => {
-      for (const timerId of pendingTimersRef.current.values()) {
-        window.clearTimeout(timerId);
-      }
-      pendingTimersRef.current.clear();
-      pendingBatchChangesRef.current.clear();
+      for (const timerId of timers.values()) window.clearTimeout(timerId);
+      timers.clear();
+      batch.clear();
     };
   }, []);
 
@@ -231,22 +250,24 @@ const HomeViewInner: React.FC<HomeViewProps> = ({
       </div>
 
       <div ref={bowlContainerRef} className="mx-auto mt-0 flex w-full flex-col items-center justify-center">
-        <Bowl
-          isActive={isActive && isBowlInView}
-          completedCount={safePieces.length}
-          pieces={safePieces}
-          fillPercent={fillPercent}
-          isOverflowing={isOverflowing}
-          votes={votes}
-          capacity={capacity}
-          cycleDays={cycleDays}
-          onCycleDaysChange={onCycleDaysChange}
-          celebrating={celebrating}
-          onCelebrationDone={onCelebrationDone}
-          deferredPieceIds={deferredPieceIds}
-          settlePieceIds={settlePieceIds}
-          settleHandoffs={settleHandoffs}
-        />
+        <Suspense fallback={<BowlPlaceholder votes={votes} capacity={capacity} cycleDays={cycleDays} />}>
+          <Bowl
+            isActive={isActive && isBowlInView}
+            completedCount={safePieces.length}
+            pieces={safePieces}
+            fillPercent={fillPercent}
+            isOverflowing={isOverflowing}
+            votes={votes}
+            capacity={capacity}
+            cycleDays={cycleDays}
+            onCycleDaysChange={onCycleDaysChange}
+            celebrating={celebrating}
+            onCelebrationDone={onCelebrationDone}
+            deferredPieceIds={deferredPieceIds}
+            settlePieceIds={settlePieceIds}
+            settleHandoffs={settleHandoffs}
+          />
+        </Suspense>
       </div>
 
       <div className="mt-1.5 flex w-full flex-col gap-2">

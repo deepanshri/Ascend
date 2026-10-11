@@ -2,7 +2,6 @@
 import { parseTimeOfDay, resolveHabitTimeOfDay } from '../utils/timeOfDay';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
 import { habitCategoryBadge } from '../utils/categories';
-import { getTodayDayIndex, isoDateForDayIndex, toISODate, getLocalDateString } from '../utils/dates';
 import { HabitLogRow, isUuid, mapHabitLogRowToEvent } from '../utils/momentum';
 import { isSeedHabitId, SEED_HABIT_IDS } from '../data/initialHabits';
 import { MAX_ACTIVE_HABITS } from './protection';
@@ -108,8 +107,14 @@ export function rememberDeletedHabit(habitId: string): void {
   persistDeletedHabitIds();
 }
 
-export function isDeletedHabitId(habitId: string): boolean {
-  return Boolean(habitId) && deletedHabitIds.has(habitId);
+function rememberDeletedHabits(habitIds: string[]): void {
+  habitIds.forEach((id) => id && deletedHabitIds.add(id));
+  persistDeletedHabitIds();
+}
+
+/** Snapshot of the habits deleted on this device, for the pure merge helpers. */
+export function deletedHabitIdSet(): ReadonlySet<string> {
+  return new Set(deletedHabitIds);
 }
 
 export function omitDeletedHabits<T extends { id: string }>(habits: T[]): T[] {
@@ -210,15 +215,6 @@ export async function fetchHabitsFromTable(userId?: string | null): Promise<{
     if (import.meta.env.DEV) console.warn('Habits fetch offline:', err);
     return { ok: false, habits: [], error: 'Offline or network error' };
   }
-}
-
-export async function fetchActiveHabits(
-  userId?: string | null
-): Promise<Habit[]> {
-  const result = await fetchHabitsFromTable(userId);
-  return result.ok
-    ? result.habits.filter((habit) => !habit.archived)
-    : [];
 }
 
 export async function persistHabitsToTable(userId: string, habits: Habit[]): Promise<boolean> {
@@ -329,11 +325,7 @@ export async function insertHabitToSupabase(
  * Delete a single habit invoking the delete_habit_cascade RPC to bypass the
  * momentum_events append-only trigger lock, with a direct table fallback.
  */
-export async function deleteHabit(
-  habitIdOrUserId: string | null | undefined,
-  maybeHabitId?: string
-): Promise<boolean> {
-  const habitId = maybeHabitId || (typeof habitIdOrUserId === 'string' ? habitIdOrUserId : '');
+export async function deleteHabit(habitId: string): Promise<boolean> {
   if (!habitId) return false;
 
   rememberDeletedHabit(habitId);
@@ -365,46 +357,24 @@ export async function deleteHabit(
   }
 }
 
-export async function deleteHabitCascade(
-  _userId: string | null | undefined,
-  habitId: string
-): Promise<boolean> {
-  return deleteHabit(habitId);
-}
-
-export async function fetchHabitLogsForDate(
-  userId?: string | null,
-  loggedDate: string = toISODate()
-): Promise<HabitCompletionEvent[]> {
-  if (!canSync(userId) || !supabase) return [];
+/**
+ * Delete every habit owned by `userId` in one delete_all_habits_cascade RPC,
+ * which also purges their glows, habit_logs and momentum_events. The RPC only
+ * touches rows owned by the signed-in user.
+ */
+export async function deleteAllUserHabits(userId: string): Promise<boolean> {
+  if (!canSync(userId) || !supabase) return false;
   try {
-    let { data, error } = await supabase
-      .from('habit_logs')
-      .select('*')
-      .eq('user_id', userId as string)
-      .eq('logged_date', loggedDate);
-
+    const { data, error } = await supabase.rpc('delete_all_habits_cascade');
     if (error) {
-      const fallback = await supabase
-        .from('habit_logs')
-        .select('*')
-        .eq('user_id', userId as string)
-        .eq('date', loggedDate);
-      data = fallback.data;
-      error = fallback.error;
+      if (import.meta.env.DEV) console.error('delete_all_habits_cascade RPC failed:', error);
+      return false;
     }
-
-    if (error) {
-      if (import.meta.env.DEV) console.warn('habit_logs date fetch failed:', error.message);
-      return [];
-    }
-
-    return (data as HabitLogRow[] | null || [])
-      .map((row) => mapHabitLogRowToEvent(row))
-      .filter((event): event is HabitCompletionEvent => event !== null && !isSeedHabitId(event.habitId));
+    rememberDeletedHabits(Array.isArray(data) ? data.map(String) : []);
+    return true;
   } catch (err) {
-    if (import.meta.env.DEV) console.warn('habit_logs date fetch offline:', err);
-    return [];
+    if (import.meta.env.DEV) console.error('Error during bulk habit deletion:', err);
+    return false;
   }
 }
 
@@ -468,19 +438,6 @@ export async function fetchHabitLogsForDateRange(
     if (import.meta.env.DEV) console.warn('habit_logs range fetch offline:', err);
     return [];
   }
-}
-
-export async function fetchTodayHabitLogs(
-  userId?: string | null,
-  dayIndex: number = getTodayDayIndex(),
-  origin: Date = new Date()
-): Promise<HabitCompletionEvent[]> {
-  const dateStr = dayIndex === getTodayDayIndex() ? getLocalDateString(origin) : isoDateForDayIndex(dayIndex, origin);
-  return fetchHabitLogsForDate(userId, dateStr);
-}
-
-export async function fetchHabitLogsForToday(userId?: string | null): Promise<HabitCompletionEvent[]> {
-  return fetchHabitLogsForDate(userId, getLocalDateString());
 }
 
 export async function persistHabitLogFrictionReason(

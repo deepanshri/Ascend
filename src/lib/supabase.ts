@@ -12,9 +12,8 @@ import {
 } from './notifications';
 import { DEFAULT_AVATAR_ID, resolveAvatarId } from '../data/avatars';
 
-const env = (import.meta as any).env || {};
-const supabaseUrl = env.VITE_SUPABASE_URL || 'https://dpgupbcbhkmjtyqkljpr.supabase.co';
-const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_dQDYyETfjDGRHXqqCtXznA_SJHHuxJ8';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
@@ -145,27 +144,6 @@ export async function fetchSequentialMomentumEvents(
   } catch (err) {
     if (import.meta.env.DEV) console.warn('momentum_events fetch offline:', err);
     return [];
-  }
-}
-
-/** COUNT(*) of completed actions: event_type IN ('full', 'fallback'). */
-export async function countMomentumCompletedActions(userId?: string | null): Promise<number | null> {
-  if (!canWriteUserRows(userId) || !supabase || !userId) return null;
-  try {
-    const { count, error } = await supabase
-      .from('momentum_events')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .in('event_type', ['full', 'fallback']);
-
-    if (error) {
-      if (import.meta.env.DEV) console.warn('momentum_events count failed:', error.message);
-      return null;
-    }
-    return count ?? 0;
-  } catch (err) {
-    if (import.meta.env.DEV) console.warn('momentum_events count offline:', err);
-    return null;
   }
 }
 
@@ -500,7 +478,6 @@ export interface SyncResult {
   lastSyncedAt: number;
 }
 
-const REMINDERS_LOCAL_STORAGE_KEY = 'habit_tracker_reminders';
 const REMINDERS_LAST_SYNC_KEY = 'ascend_reminders_last_sync_timestamp';
 
 type ReminderRow = Record<string, unknown>;
@@ -579,9 +556,13 @@ function fromReminderRow(row: ReminderRow): StandaloneReminder {
   });
 }
 
-async function persistMergedReminders(reminders: StandaloneReminder[], lastSyncedAt: number) {
+/**
+ * Record when reminders last synced. The merged list itself is persisted by
+ * RemindersProvider, which discards responses for a user who has since signed
+ * out; writing it here could restore a previous user's reminders after a purge.
+ */
+async function recordRemindersSync(lastSyncedAt: number) {
   try {
-    localStorage.setItem(REMINDERS_LOCAL_STORAGE_KEY, JSON.stringify(reminders));
     localStorage.setItem(REMINDERS_LAST_SYNC_KEY, lastSyncedAt.toString());
   } catch {}
 }
@@ -699,7 +680,7 @@ export const remindersSyncService = {
     const hydratedLocal = localReminders.map(withReminderNotificationIds);
 
     if (!isSupabaseConfigured || !supabase || !userSession || userSession?.isGuest) {
-      await persistMergedReminders(hydratedLocal.filter((item) => !item.deleted), now);
+      await recordRemindersSync(now);
       await rescheduleAllReminderDualAlerts(hydratedLocal);
       return {
         reminders: hydratedLocal.filter((item) => !item.deleted),
@@ -784,7 +765,7 @@ export const remindersSyncService = {
       await rescheduleAllReminderDualAlerts(merged);
 
       const finalActiveReminders = merged.filter((item) => !item.deleted);
-      await persistMergedReminders(finalActiveReminders, now);
+      await recordRemindersSync(now);
 
       return {
         reminders: finalActiveReminders,

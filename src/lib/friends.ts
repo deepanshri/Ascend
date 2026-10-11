@@ -8,13 +8,6 @@ export const FRIENDSHIPS_TABLE = 'friendships';
 
 export type FriendStatus = 'pending' | 'accepted';
 
-export interface ProfileDirectoryHit {
-  id: string;
-  username: string;
-  email?: string;
-  displayName: string;
-}
-
 export interface FriendEdge {
   id: string;
   userId: string;
@@ -25,18 +18,6 @@ export interface FriendEdge {
   peerName: string;
   peerAvatar?: string | null;
 }
-
-export interface FriendActivityItem {
-  id: string;
-  friendId: string;
-  friendName: string;
-  friendAvatar?: string | null;
-  kind: 'habit' | 'milestone';
-  text: string;
-  timestamp: number;
-}
-
-const IDENTITY_STAGE_THRESHOLDS = [1, 10, 25, 50, 100];
 
 function canUse(userId?: string | null): boolean {
   return Boolean(isSupabaseConfigured && supabase && userId && !userId.startsWith('guest_'));
@@ -54,24 +35,6 @@ export function displayNameFromProfile(row: {
   const email = String(row.email || '').trim();
   if (email.includes('@')) return email.split('@')[0];
   return email || 'Friend';
-}
-
-export function identityStageFromVotes(votes: number): number {
-  if (votes >= 100) return 5;
-  if (votes >= 50) return 4;
-  if (votes >= 25) return 3;
-  if (votes >= 10) return 2;
-  if (votes >= 1) return 1;
-  return 0;
-}
-
-function stageUnlockedAt(previousVotes: number, nextVotes: number): number | null {
-  for (const threshold of IDENTITY_STAGE_THRESHOLDS) {
-    if (previousVotes < threshold && nextVotes >= threshold) {
-      return identityStageFromVotes(nextVotes);
-    }
-  }
-  return null;
 }
 
 export async function ensureFriendCode(userId: string, existing?: string | null): Promise<string> {
@@ -212,28 +175,6 @@ export async function connectByFriendCode(
   }
 }
 
-export async function searchProfiles(query: string): Promise<ProfileDirectoryHit[]> {
-  const q = query.trim();
-  if (!supabase || q.length < 2) return [];
-  try {
-    const { data, error } = await supabase.rpc('search_profiles', { query: q });
-    if (error) {
-      if (import.meta.env.DEV) console.warn('search_profiles failed:', error.message);
-      return [];
-    }
-    return (data || [])
-      .map((row: { id?: string; username?: string; email?: string; display_name?: string }) => ({
-        id: String(row.id || ''),
-        username: String(row.username || ''),
-        email: row.email ? String(row.email) : undefined,
-        displayName: displayNameFromProfile(row),
-      }))
-      .filter((row: ProfileDirectoryHit) => Boolean(row.id));
-  } catch {
-    return [];
-  }
-}
-
 interface ProfileLite {
   name: string;
   avatarUrl: string;
@@ -339,49 +280,12 @@ export async function fetchFriendships(userId: string): Promise<FriendEdge[]> {
   }
 }
 
-export function acceptedFriendIds(edges: FriendEdge[], userId: string): string[] {
-  return edges.filter((edge) => edge.status === 'accepted').map((edge) => edge.peerId || (edge.userId === userId ? edge.friendId : edge.userId));
-}
-
 export function incomingPending(edges: FriendEdge[], userId: string): FriendEdge[] {
   return edges.filter((edge) => edge.status === 'pending' && edge.friendId === userId);
 }
 
 export function outgoingPending(edges: FriendEdge[], userId: string): FriendEdge[] {
   return edges.filter((edge) => edge.status === 'pending' && edge.userId === userId);
-}
-
-export async function sendFriendRequest(userId: string, friendId: string): Promise<{ ok: boolean; message: string }> {
-  if (!canUse(userId) || !supabase) return { ok: false, message: 'Sign in to add friends.' };
-  if (userId === friendId) return { ok: false, message: 'You cannot add yourself.' };
-  try {
-    const existing = await fetchFriendships(userId);
-    const overlap = existing.find(
-      (edge) =>
-        (edge.userId === userId && edge.friendId === friendId) ||
-        (edge.userId === friendId && edge.friendId === userId)
-    );
-    if (overlap?.status === 'accepted') return { ok: false, message: 'Already friends.' };
-    if (overlap?.status === 'pending' && overlap.userId === userId) {
-      return { ok: false, message: 'Request already sent.' };
-    }
-    if (overlap?.status === 'pending' && overlap.friendId === userId) {
-      const accepted = await respondToFriendRequest(overlap.id, 'accepted');
-      return accepted ? { ok: true, message: 'Friend request accepted.' } : { ok: false, message: 'Could not accept request.' };
-    }
-    const { error } = await supabase.from(FRIENDSHIPS_TABLE).insert({
-      user_id: userId,
-      friend_id: friendId,
-      status: 'pending',
-    });
-    if (error) {
-      if (import.meta.env.DEV) console.warn('friend request failed:', error.message);
-      return { ok: false, message: 'Could not send request.' };
-    }
-    return { ok: true, message: 'Friend request sent.' };
-  } catch {
-    return { ok: false, message: 'Could not send request.' };
-  }
 }
 
 export async function respondToFriendRequest(edgeId: string, status: 'accepted' | 'declined'): Promise<boolean> {
@@ -451,283 +355,6 @@ export async function removeFriendship(
   } catch {
     return false;
   }
-}
-
-export interface ReceivedAffirmationGlow {
-  id: string;
-  fromUserId: string;
-  fromName: string;
-  fromAvatar?: string | null;
-  eventId: string;
-  note?: string | null;
-  createdAt: string;
-}
-
-export async function fetchSentGlowEventIds(userId: string): Promise<Set<string>> {
-  const sent = new Set<string>();
-  if (!canUse(userId) || !supabase) return sent;
-  try {
-    const { data, error } = await supabase
-      .from('affirmation_glows')
-      .select('event_id')
-      .eq('from_user_id', userId);
-    if (error) return sent;
-    (data || []).forEach((row) => {
-      if (row.event_id) sent.add(String(row.event_id));
-    });
-  } catch {
-    // Table missing until 008_affirmation_glows.sql is applied.
-  }
-  return sent;
-}
-
-export async function fetchReceivedGlows(userId: string): Promise<ReceivedAffirmationGlow[]> {
-  if (!canUse(userId) || !supabase) return [];
-  try {
-    let { data, error } = await supabase
-      .from('affirmation_glows')
-      .select('id, from_user_id, event_id, note, created_at')
-      .eq('to_user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (error && /note/i.test(error.message)) {
-      const retry = await supabase
-        .from('affirmation_glows')
-        .select('id, from_user_id, event_id, created_at')
-        .eq('to_user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(20);
-      data = retry.data as typeof data;
-      error = retry.error;
-    }
-    if (error || !data) return [];
-    const fromIds = Array.from(new Set(data.map((row) => String(row.from_user_id || '')).filter(Boolean)));
-    const profiles = await loadProfileMap(fromIds);
-    return data.map((row) => ({
-      id: String(row.id),
-      fromUserId: String(row.from_user_id),
-      fromName: profiles.get(String(row.from_user_id))?.name || 'A friend',
-      fromAvatar: profiles.get(String(row.from_user_id))?.avatarUrl || null,
-      eventId: String(row.event_id || ''),
-      note: typeof row.note === 'string' && row.note.trim() ? row.note : null,
-      createdAt: String(row.created_at || ''),
-    }));
-  } catch {
-    return [];
-  }
-}
-
-export async function sendAffirmationGlow(
-  fromUserId: string,
-  toUserId: string,
-  eventId: string,
-  note?: string | null
-): Promise<{ ok: boolean; message: string }> {
-  if (!canUse(fromUserId) || !supabase) return { ok: false, message: 'Sign in to send a glow.' };
-  if (fromUserId === toUserId) return { ok: false, message: 'You cannot glow your own update.' };
-  try {
-    const payload: { from_user_id: string; to_user_id: string; event_id: string; note?: string } = {
-      from_user_id: fromUserId,
-      to_user_id: toUserId,
-      event_id: eventId,
-    };
-    const trimmed = typeof note === 'string' ? note.trim() : '';
-    if (trimmed) payload.note = trimmed;
-    const { error } = await supabase.from('affirmation_glows').insert(payload);
-    if (error) {
-      if (String(error.message || '').toLowerCase().includes('duplicate') || error.code === '23505') {
-        return { ok: true, message: 'Glow already sent.' };
-      }
-      if (import.meta.env.DEV) console.warn('affirmation glow failed:', error.message);
-      return { ok: false, message: 'Could not send glow.' };
-    }
-    return { ok: true, message: 'Affirmation Glow sent.' };
-  } catch {
-    return { ok: false, message: 'Could not send glow.' };
-  }
-}
-
-export async function retractAffirmationGlow(fromUserId: string, eventId: string): Promise<boolean> {
-  if (!canUse(fromUserId) || !supabase) return false;
-  try {
-    const { error } = await supabase
-      .from('affirmation_glows')
-      .delete()
-      .eq('from_user_id', fromUserId)
-      .eq('event_id', eventId);
-    return !error;
-  } catch {
-    return false;
-  }
-}
-
-async function loadLiveHabitIds(friendIds: string[]): Promise<Set<string>> {
-  const ids = new Set<string>();
-  if (!supabase || friendIds.length === 0) return ids;
-  try {
-    // Prefer secure RPC returning only active IDs without exposing private habit content
-    const { data: rpcData, error: rpcError } = await supabase.rpc('get_friend_active_habit_ids', {
-      friend_ids: friendIds,
-    });
-    if (!rpcError && Array.isArray(rpcData)) {
-      rpcData.forEach((row: { id?: string }) => {
-        if (row?.id) ids.add(String(row.id));
-      });
-      return ids;
-    }
-  } catch {
-    // Fall back to direct query if RPC not yet deployed
-  }
-  const { data } = await supabase.from('habits').select('id, user_id').in('user_id', friendIds);
-  (data || []).forEach((row) => {
-    if (row.id) ids.add(String(row.id));
-  });
-  return ids;
-}
-
-async function loadVoteTotals(friendIds: string[]): Promise<Map<string, number>> {
-  const totals = new Map<string, number>();
-  if (!supabase || friendIds.length === 0) return totals;
-  await Promise.all(
-    friendIds.map(async (friendId) => {
-      const { count } = await supabase!
-        .from('momentum_events')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', friendId)
-        .in('event_type', ['full', 'fallback']);
-      totals.set(friendId, count ?? 0);
-    })
-  );
-  return totals;
-}
-
-/** Privacy-safe: today's completion count per friend (no habit titles). */
-export async function fetchFriendTodayCompletionCounts(
-  userId: string,
-  edges: FriendEdge[],
-  todayIso: string
-): Promise<Map<string, number>> {
-  const counts = new Map<string, number>();
-  if (!canUse(userId) || !supabase) return counts;
-  const friendIds = acceptedFriendIds(edges, userId);
-  if (friendIds.length === 0) return counts;
-
-  try {
-    const nextIso = (() => {
-      const [y, m, d] = todayIso.split('-').map(Number);
-      const dt = new Date(y, (m || 1) - 1, (d || 1) + 1);
-      const yy = dt.getFullYear();
-      const mm = String(dt.getMonth() + 1).padStart(2, '0');
-      const dd = String(dt.getDate()).padStart(2, '0');
-      return `${yy}-${mm}-${dd}`;
-    })();
-
-    const [{ data: events, error }, liveHabitIds] = await Promise.all([
-      supabase
-        .from('momentum_events')
-        .select('user_id, habit_id, timestamp')
-        .in('user_id', friendIds)
-        .in('event_type', ['full', 'fallback'])
-        .gte('timestamp', `${todayIso}T00:00:00`)
-        .lt('timestamp', `${nextIso}T00:00:00`)
-        .limit(500),
-      loadLiveHabitIds(friendIds),
-    ]);
-
-    if (error) {
-      if (import.meta.env.DEV) console.warn('friend today counts fetch failed:', error.message);
-      return counts;
-    }
-
-    const byFriend = new Map<string, Set<string>>();
-    (events || []).forEach((row) => {
-      const friendId = String(row.user_id || '');
-      const habitId = String(row.habit_id || '');
-      if (!friendId || !habitId) return;
-      // Deleted habits must not surface in friend counts.
-      if (liveHabitIds.size > 0 && !liveHabitIds.has(habitId)) return;
-      if (!byFriend.has(friendId)) byFriend.set(friendId, new Set());
-      byFriend.get(friendId)!.add(habitId);
-    });
-
-    friendIds.forEach((id) => counts.set(id, byFriend.get(id)?.size ?? 0));
-    return counts;
-  } catch {
-    return counts;
-  }
-}
-
-export async function fetchFriendActivity(userId: string, edges: FriendEdge[]): Promise<FriendActivityItem[]> {
-  if (!canUse(userId) || !supabase) return [];
-  const friendIds = acceptedFriendIds(edges, userId);
-  if (friendIds.length === 0) return [];
-
-  try {
-    // Privacy: never attach habit titles. Only anonymous milestone pulses remain.
-    const [{ data: events, error }, liveHabitIds] = await Promise.all([
-      supabase
-        .from('momentum_events')
-        .select('id, user_id, habit_id, event_type, timestamp')
-        .in('user_id', friendIds)
-        .in('event_type', ['full', 'fallback'])
-        .order('timestamp', { ascending: false })
-        .limit(80),
-      loadLiveHabitIds(friendIds),
-    ]);
-
-    if (error) {
-      if (import.meta.env.DEV) console.warn('friend momentum_events fetch failed:', error.message);
-      return [];
-    }
-
-    const recent = (events || []).filter((row) => {
-      const habitId = String(row.habit_id || '');
-      if (!habitId) return false;
-      return liveHabitIds.size === 0 || liveHabitIds.has(habitId);
-    });
-    const activeFriendIds = Array.from(new Set(recent.map((row) => String(row.user_id || '')).filter(Boolean)));
-    const remainingVotes = await loadVoteTotals(activeFriendIds);
-    const names = new Map(edges.map((edge) => [edge.peerId, edge.peerName]));
-    const avatars = new Map(edges.map((edge) => [edge.peerId, edge.peerAvatar]));
-    const items: FriendActivityItem[] = [];
-
-    recent.forEach((row) => {
-      const friendId = String(row.user_id || '');
-      const friendName = names.get(friendId) || 'Friend';
-      const friendAvatar = avatars.get(friendId) || null;
-      const timestamp = Date.parse(String(row.timestamp)) || Date.now();
-      const current = remainingVotes.get(friendId) ?? 0;
-      const previous = Math.max(0, current - 1);
-      const unlocked = stageUnlockedAt(previous, current);
-      if (unlocked && unlocked >= 2) {
-        items.push({
-          id: `stage-${friendId}-${unlocked}-${row.id}`,
-          friendId,
-          friendName,
-          friendAvatar,
-          kind: 'milestone',
-          text: `${friendName} unlocked Identity Stage ${unlocked}`,
-          timestamp,
-        });
-      }
-      remainingVotes.set(friendId, previous);
-    });
-
-    return items.slice(0, 40);
-  } catch {
-    return [];
-  }
-}
-
-/** @deprecated Local seed list. Use fetchFriendships / FriendsFeed. */
-export interface FriendFeedItem {
-  id: string;
-  name: string;
-  momentum: number;
-}
-
-export function loadFriendsFeed(): FriendFeedItem[] {
-  return [];
 }
 
 export interface FriendIdentityLedger {

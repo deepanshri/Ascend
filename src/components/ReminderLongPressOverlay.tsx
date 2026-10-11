@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { StandaloneReminder } from '../types';
 import { ASCEND_STATUS_CHIP_CLASS } from '../utils/categories';
 import { addDaysIso, toISODate } from '../utils/dates';
+import { useBackDismiss } from '../providers/UIProvider';
 
 interface ReminderLongPressOverlayProps {
   reminder: StandaloneReminder;
@@ -19,6 +20,7 @@ export const ReminderLongPressOverlay: React.FC<ReminderLongPressOverlayProps> =
   onOpenEdit,
   onOpenDeleteConfirm,
 }) => {
+  useBackDismiss(true, onClose);
   // Dismiss on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -51,7 +53,7 @@ export const ReminderLongPressOverlay: React.FC<ReminderLongPressOverlayProps> =
     const today = toISODate();
     const tomorrow = addDaysIso(today, 1);
 
-    let prefix = '';
+    let prefix: string;
     if (dateStr === today) {
       prefix = 'Today';
     } else if (dateStr === tomorrow) {

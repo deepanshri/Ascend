@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import { bottomSheetMotion, overlayFade } from '../lib/motionPresets';
 import { askAscend, AskResult } from '../services/todaysRep';
+import { useBackDismiss } from '../providers/UIProvider';
 
 const CHIPS = ['How much protein should I eat?', '5 easy arrays, 20 min', "I'm losing motivation"] as const;
 
@@ -18,6 +19,7 @@ interface TodaysRepSheetProps {
 }
 
 export const TodaysRepSheet: React.FC<TodaysRepSheetProps> = ({ habitId, habitName, onClose }) => {
+  useBackDismiss(true, onClose);
   const keyboardInset = useKeyboardInset(true);
   const [draft, setDraft] = useState('');
   const [phase, setPhase] = useState<Phase>('ask');

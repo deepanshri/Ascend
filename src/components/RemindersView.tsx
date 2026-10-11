@@ -86,6 +86,8 @@ const RemindersViewInner: React.FC<RemindersViewProps> = ({
     return () => {
       cancelled = true;
     };
+    // Re-fetch per user, not when the session object or the (stable) callback changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userSession?.id, userSession?.isGuest]);
 
   useEffect(() => {
