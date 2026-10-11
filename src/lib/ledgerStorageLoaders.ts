@@ -21,6 +21,7 @@ import { readStorage, removeStorage, writeStorage } from './storage';
 import {
   ACTIVE_FALLBACKS_STORAGE_KEY,
   COMPLETION_EVENTS_STORAGE_KEY,
+  DEFAULT_INTERESTS,
   EVIDENCE_STORAGE_KEY,
   FRICTION_AUDITS_STORAGE_KEY,
   HABITS_STORAGE_KEY,
@@ -39,8 +40,6 @@ import {
   type ParseResult,
   type RejectedEntry,
 } from './ledgerStorage';
-
-const DEFAULT_INTERESTS = ['Movies', 'Books', 'Anime', 'Running'];
 
 /** Read and parse `key`, dead-lettering anything the parser rejected. */
 function load<T>(key: string, parse: (raw: string | null) => ParseResult<T>): T[] | null {
@@ -101,7 +100,7 @@ export function loadStoredActiveFallbackIds(): string[] {
 }
 
 export function loadStoredInterests(): string[] {
-  return load(INTERESTS_STORAGE_KEY, parseStoredStringList) ?? DEFAULT_INTERESTS;
+  return load(INTERESTS_STORAGE_KEY, parseStoredStringList) ?? [...DEFAULT_INTERESTS];
 }
 
 export function loadStoredRolledOverHabits(todayIso: string): string[] {

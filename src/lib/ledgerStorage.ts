@@ -28,6 +28,8 @@ export const ROLLED_OVER_HABITS_STORAGE_KEY = 'ascend_rolled_over_habits';
 export const FRICTION_AUDITS_STORAGE_KEY = 'ascend_friction_audits';
 export const INTERESTS_STORAGE_KEY = 'ascend_personal_interests';
 
+export const DEFAULT_INTERESTS: readonly string[] = ['Movies', 'Books', 'Anime', 'Running'];
+
 export type RejectReason = 'invalid_json' | 'not_a_list' | 'invalid_entry';
 
 /** Something a parser could not use: the raw string, the payload, or one entry. */

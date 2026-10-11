@@ -1,18 +1,20 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
 import { useAnyModalOpen, useKeyboardVisible } from './hooks/useKeyboardVisible';
 import { tapPress } from './lib/motionPresets';
-import { MotionModal } from './components/MotionModal';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
+import { useTheme, useThemeActions } from './providers/ThemeProvider';
+import { usePreferences, usePreferencesActions } from './providers/PreferencesProvider';
+import { toggleInterest } from './providers/preferencesReducer';
 import {
   Habit,
   IdentityEvidence,
   ActiveTab,
   StandaloneReminder,
   UserSession,
-  ThemeMode,
   FrictionAudit,
   HabitCompletionEvent,
   MomentumEvent,
@@ -50,8 +52,8 @@ import {
   getLocalDateString,
 } from './utils/dates';
 import { isHabitScheduledOnDayIndex } from './utils/schedule';
-import { applyNativeChrome, hideNativeSplash } from './lib/nativeChrome';
-import { applyDocumentTheme, getThemeIsDark, resolveThemeIsDark } from './lib/themeStore';
+import { hideNativeSplash } from './lib/nativeChrome';
+import { getThemeIsDark } from './lib/themeStore';
 import {
   getStoredSession,
   setStoredSession,
@@ -77,7 +79,6 @@ import {
   EVIDENCE_STORAGE_KEY,
   FRICTION_AUDITS_STORAGE_KEY,
   HABITS_STORAGE_KEY,
-  INTERESTS_STORAGE_KEY,
   REMINDERS_STORAGE_KEY,
 } from './lib/ledgerStorage';
 import {
@@ -87,7 +88,6 @@ import {
   loadStoredEvidence,
   loadStoredFrictionAudits,
   loadStoredHabits,
-  loadStoredInterests,
   loadStoredMomentumEvents,
   loadStoredReminders,
   loadStoredRolledOverHabits,
@@ -104,10 +104,7 @@ import {
   type TutorialScreen,
 } from './lib/tutorial';
 import {
-  hydrateNotificationWindows,
   initializeReminderNotifications,
-  loadNotificationWindows,
-  persistNotificationWindows,
   reminderNotificationIds,
   requestNotificationPermissions,
   schedulePsychologyNotifications,
@@ -116,8 +113,6 @@ import {
   syncAllHabitTargetNotifications,
   weekdayFromIsoDate,
   withReminderNotificationIds,
-  type NotificationWindowKey,
-  type PsychologyNotificationWindows,
 } from './lib/notifications';
 import { displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, removeTodayEvidence, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
 import { deleteHabit, stableHabitLogId } from './services/habitService';
@@ -125,14 +120,10 @@ import {
   accumulationPiecesFromLogs,
   activeCycleWindow,
   archiveCompletedCycle,
-  clampCycleDays,
-  persistCycleDays,
   readBowlCycleEpoch,
-  readStoredCycleDays,
   resetBowlCycleEpoch,
   summarizeDualBowlFill,
   summarizeBowlFill,
-  type CycleDays,
   type AccumulationPiece,
 } from './services/reportService';
 import { getMarbleColor } from './utils/colors';
@@ -170,13 +161,9 @@ import { BottomNav } from './components/BottomNav';
 import { HabitCard } from './components/HabitCard';
 import { QuoteCard } from './components/QuoteCard';
 import {
-  loadEveningChronicleSettings,
-  saveEveningChronicleSettings,
   getChronicleEntry,
   getYesterdayPlanForToday,
-  type EveningChronicleSettings,
 } from './lib/chronicle';
-import { normalizeCategoryKey } from './utils/quotes';
 import { FriendsFeed } from './components/FriendsFeed';
 import { ScreenHeader, SCREEN_INSET_CLASS, HEADER_ICON_BTN_CLASS } from './components/ScreenHeader';
 import { TabLoadingFallback } from './components/TabLoadingFallback';
@@ -204,13 +191,7 @@ import FlyingPieceOverlay, {
   type PieceFlight,
 } from './components/FlyingPieceOverlay';
 import { ScrolledBowlOverlay } from './components/ScrolledBowlOverlay';
-import {
-  isCompletionSoundEnabled,
-  isHapticVibrationEnabled,
-  pulseCompletionHaptic,
-  setCompletionSoundEnabled,
-  setHapticVibrationEnabled,
-} from './lib/completionFeedback';
+import { pulseCompletionHaptic } from './lib/completionFeedback';
 
 /** Debounce for ledger writes so swipe-complete doesn't block the main thread. */
 const STORAGE_DEBOUNCE_MS = 320;
@@ -273,56 +254,8 @@ export default function App() {
   });
   const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3>(1);
 
-  // Theme state ('light' | 'dark' | 'system')
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    try {
-      const saved = localStorage.getItem('ascend_theme') as ThemeMode;
-      if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
-      if (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')) {
-        return 'dark';
-      }
-    } catch {}
-    return 'light';
-  });
-
-  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() => {
-    try {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    } catch {
-      return false;
-    }
-  });
-  const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
-
-  useEffect(() => {
-    try {
-      const mq = window.matchMedia('(prefers-color-scheme: dark)');
-      const onChange = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
-      mq.addEventListener('change', onChange);
-      return () => mq.removeEventListener('change', onChange);
-    } catch {}
-  }, []);
-
-  // Sync html.dark immediately prior to DOM paint (also covers first paint + system preference flips)
-  useLayoutEffect(() => {
-    applyDocumentTheme(isDark);
-  }, [isDark]);
-
-  const handleThemeChange = useCallback(
-    (next: ThemeMode) => {
-      try {
-        localStorage.setItem('ascend_theme', next);
-      } catch {}
-      const dark = resolveThemeIsDark(next, systemPrefersDark);
-      // 0ms visual switch via CSS — before React re-renders the tree
-      applyDocumentTheme(dark);
-      void applyNativeChrome(dark).catch(() => {});
-      startTransition(() => {
-        setTheme(next);
-      });
-    },
-    [systemPrefersDark]
-  );
+  const { theme, isDark } = useTheme();
+  const { setTheme: handleThemeChange } = useThemeActions();
 
   const [protection, setProtection] = usePersistedState(loadProtectionState, saveProtectionState);
   const [protectionWindows, setProtectionWindows] = useState<ProtectionWindow[]>([]);
@@ -353,12 +286,17 @@ export default function App() {
     return () => { cancelled = true; };
   }, [session?.id, session?.isGuest]);
 
-  const [notificationWindows, setNotificationWindows] = useState<PsychologyNotificationWindows>(
-    () => loadNotificationWindows()
-  );
-  const [eveningChronicle, setEveningChronicle] = useState<EveningChronicleSettings>(() =>
-    loadEveningChronicleSettings()
-  );
+  const { selectedInterests, notificationWindows, eveningChronicle, completionSound, hapticVibration, cycleDays } =
+    usePreferences();
+  const {
+    setSelectedInterests,
+    toggleNotificationWindow: handleToggleNotificationWindow,
+    setEveningChronicle: handleEveningChronicleChange,
+    setCompletionSound: handleCompletionSoundChange,
+    setHapticVibration: handleHapticVibrationChange,
+    setCycleDays: handleCycleDaysChange,
+    resetAll: resetAllPreferences,
+  } = usePreferencesActions();
   const [isChronicleOpen, setIsChronicleOpen] = useState(false);
   const [chronicleVersion, setChronicleVersion] = useState(0);
   const CHRONICLE_LAST_AUTO_LAUNCH_KEY = 'ascend_chronicle_last_auto_launch_date';
@@ -372,52 +310,16 @@ export default function App() {
   const handleCloseChronicle = useCallback(() => setIsChronicleOpen(false), []);
   const handleChronicleSave = useCallback(() => setChronicleVersion((v) => v + 1), []);
 
-  const handleEveningChronicleChange = useCallback((next: EveningChronicleSettings) => {
-    setEveningChronicle(next);
-    saveEveningChronicleSettings(next);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void hydrateNotificationWindows().then((windows) => {
-      if (!cancelled) setNotificationWindows(windows);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleToggleNotificationWindow = useCallback((key: NotificationWindowKey) => {
-    setNotificationWindows((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      void persistNotificationWindows(next);
-      return next;
-    });
-  }, []);
-
-  // Selected personal interests state (presets) - powers Home quotes
-  const [selectedInterests, setSelectedInterests] = usePersistedState(loadStoredInterests, (value) =>
-    writeJson(INTERESTS_STORAGE_KEY, value)
-  );
-
   const handleToggleInterest = useCallback((interest: string) => {
     setSelectedInterests((prev) => {
-      const targetNorm = normalizeCategoryKey(interest);
-      const isAlreadySelected = prev.some(
-        (t) => normalizeCategoryKey(t) === targetNorm || t.toLowerCase() === interest.toLowerCase()
-      );
-      const next = isAlreadySelected
-        ? prev.filter(
-            (t) => normalizeCategoryKey(t) !== targetNorm && t.toLowerCase() !== interest.toLowerCase()
-          )
-        : [...prev, interest];
+      const next = toggleInterest(prev, interest);
       const curSession = sessionRef.current;
       if (curSession && !curSession.isGuest) {
         void persistUserProfile(curSession, { interests: next }).catch(() => {});
       }
       return next;
     });
-  }, []);
+  }, [setSelectedInterests]);
 
   // Friction Audit Log state
   const [frictionAudits, setFrictionAudits] = usePersistedState(loadStoredFrictionAudits, (value) =>
@@ -493,7 +395,6 @@ export default function App() {
     STORAGE_DEBOUNCE_MS
   );
 
-  const [cycleDays, setCycleDays] = useState<CycleDays>(() => readStoredCycleDays());
   const [bowlEpoch, setBowlEpoch] = useState(() => readBowlCycleEpoch(toISODate()));
   const [bowlCelebrating, setBowlCelebrating] = useState(false);
   const [pieceFlights, setPieceFlights] = useState<PieceFlight[]>([]);
@@ -501,8 +402,6 @@ export default function App() {
   const [settleHandoffs, setSettleHandoffs] = useState<Map<string, FlightHandoffVelocity>>(
     () => new Map()
   );
-  const [completionSound, setCompletionSound] = useState(() => isCompletionSoundEnabled());
-  const [hapticVibration, setHapticVibration] = useState(() => isHapticVibrationEnabled());
   const [isBowlOffscreen, setIsBowlOffscreen] = useState(false);
   const [bowlArrivalPulse, setBowlArrivalPulse] = useState(false);
   const bowlArrivalPulseTimerRef = useRef<number | null>(null);
@@ -513,12 +412,6 @@ export default function App() {
   const [celebrationPieces, setCelebrationPieces] = useState<AccumulationPiece[] | null>(null);
   const bowlCelebrateLockRef = useRef(false);
   const pendingCycleResetRef = useRef<{ endIso: string; resetAt: number } | null>(null);
-
-  const handleCycleDaysChange = useCallback((days: CycleDays) => {
-    const next = clampCycleDays(days);
-    persistCycleDays(next);
-    setCycleDays(next);
-  }, []);
 
   const [evidenceList, setEvidenceList] = usePersistedState(
     loadStoredEvidence,
@@ -826,10 +719,7 @@ export default function App() {
 
   // Change password modal
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-  const [newPasswordText, setNewPasswordText] = useState('');
-  const [passwordStatusMsg, setPasswordStatusMsg] = useState<string | null>(null);
-  const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
-  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
+  const handleClosePasswordModal = useCallback(() => setIsPasswordModalOpen(false), []);
 
   // Android Native Edge-Swipe & Back Button Gesture Handling
   useEffect(() => {
@@ -961,12 +851,6 @@ export default function App() {
       authListener?.subscription?.unsubscribe();
     };
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('ascend_theme', theme);
-    } catch {}
-  }, [theme]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1952,8 +1836,9 @@ setMomentumEvents((prev) =>
     setMomentumEvents([]);
     setReminders([]);
     setFrictionAudits([]);
+    resetAllPreferences();
     setActiveTab('home');
-  }, []);
+  }, [resetAllPreferences]);
 
   // Sign out / Log out handler
   const handleLogout = useCallback(async () => {
@@ -2195,16 +2080,6 @@ setMomentumEvents((prev) =>
     },
     []
   );
-
-  const handleCompletionSoundChange = useCallback((enabled: boolean) => {
-    setCompletionSoundEnabled(enabled);
-    setCompletionSound(enabled);
-  }, []);
-
-  const handleHapticVibrationChange = useCallback((enabled: boolean) => {
-    setHapticVibrationEnabled(enabled);
-    setHapticVibration(enabled);
-  }, []);
 
   useEffect(
     () => () => {
@@ -3130,126 +3005,7 @@ setMomentumEvents((prev) =>
           status={examShieldStatus}
         />
 
-        {/* Change Password Modal */}
-        <MotionModal
-          isOpen={isPasswordModalOpen}
-          onClose={() => {
-            if (passwordChangeLoading) return;
-            setIsPasswordModalOpen(false);
-            setPasswordStatusMsg(null);
-            setPasswordChangeError(null);
-            setNewPasswordText('');
-          }}
-          overlayClassName="bg-slate-900/60 backdrop-blur-xs"
-          cardClassName="p-5 max-w-sm space-y-3"
-        >
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">Change Password</h3>
-                <button
-                  type="button"
-                  disabled={passwordChangeLoading}
-                  onClick={() => {
-                    setIsPasswordModalOpen(false);
-                    setPasswordStatusMsg(null);
-                    setPasswordChangeError(null);
-                    setNewPasswordText('');
-                  }}
-                  className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer disabled:opacity-50"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {passwordStatusMsg && (
-                <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-blue-950 border border-emerald-200 dark:border-blue-800 text-emerald-800 dark:text-blue-300 text-[11.5px]">
-                  {passwordStatusMsg}
-                </div>
-              )}
-
-              {passwordChangeError && (
-                <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-[11.5px]">
-                  {passwordChangeError}
-                </div>
-              )}
-
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  if (passwordChangeLoading) return;
-                  setPasswordChangeError(null);
-                  setPasswordStatusMsg(null);
-                  setPasswordChangeLoading(true);
-                  try {
-                    // Real Auth call: supabase.auth.updateUser via authService → PATCH {SUPABASE_URL}/auth/v1/user
-                    const err = await authService.changePassword(newPasswordText);
-                    if (err) {
-                      setPasswordChangeError(err);
-                      return;
-                    }
-                    setPasswordStatusMsg('Password updated successfully.');
-                    setNewPasswordText('');
-                    setTimeout(() => {
-                      setIsPasswordModalOpen(false);
-                      setPasswordStatusMsg(null);
-                    }, 1800);
-                  } catch (err) {
-                    setPasswordChangeError(
-                      err instanceof Error ? err.message : 'Password change failed.'
-                    );
-                  } finally {
-                    setPasswordChangeLoading(false);
-                  }
-                }}
-                className="space-y-3"
-              >
-                <div>
-                  <label className="block text-[10.5px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-0.5">
-                    New Password
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={newPasswordText}
-                    onChange={(e) => setNewPasswordText(e.target.value)}
-                    placeholder="At least 6 characters"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[12.5px] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:focus:ring-blue-500"
-                  />
-                </div>
-
-                <div className="flex space-x-2 pt-1">
-                  <motion.button
-                    type="button"
-                    whileTap={passwordChangeLoading ? undefined : tapPress}
-                    disabled={passwordChangeLoading}
-                    onClick={() => {
-                      setIsPasswordModalOpen(false);
-                      setPasswordStatusMsg(null);
-                      setPasswordChangeError(null);
-                      setNewPasswordText('');
-                    }}
-                    className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-[11.5px] hover:bg-slate-200 cursor-pointer disabled:opacity-50"
-                  >
-                    Cancel
-                  </motion.button>
-                  <motion.button
-                    type="submit"
-                    whileTap={passwordChangeLoading ? undefined : tapPress}
-                    disabled={passwordChangeLoading}
-                    className="flex-1 py-2 rounded-xl bg-slate-900 dark:bg-blue-600 text-white font-bold text-[11.5px] hover:bg-slate-800 dark:hover:bg-blue-500 cursor-pointer disabled:opacity-60 flex items-center justify-center space-x-1.5"
-                  >
-                    {passwordChangeLoading ? (
-                      <>
-                        <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>Saving...</span>
-                      </>
-                    ) : (
-                      <span>Save Changes</span>
-                    )}
-                  </motion.button>
-                </div>
-              </form>
-        </MotionModal>
+        <ChangePasswordModal isOpen={isPasswordModalOpen} onClose={handleClosePasswordModal} />
 
       </div>
     </div>

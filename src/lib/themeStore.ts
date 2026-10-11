@@ -5,6 +5,8 @@
 
 type ThemeListener = () => void;
 
+export const THEME_STORAGE_KEY = 'ascend_theme';
+
 let dark = false;
 const listeners = new Set<ThemeListener>();
 
@@ -12,7 +14,7 @@ try {
   if (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')) {
     dark = true;
   } else if (typeof localStorage !== 'undefined') {
-    const saved = localStorage.getItem('ascend_theme');
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
     if (saved === 'dark') {
       dark = true;
     } else if (saved === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
