@@ -8,7 +8,7 @@ import {
   mergeMomentumEvents,
 } from '../utils/momentum';
 import { fetchMomentumEventsFromTable, pushMomentumEventsRemote } from './momentumEvents';
-import { pushHabitLogRemote } from './offlineSync';
+import { pushHabitLogsNow } from './offlineSync';
 import { mergeHabitsByUpdatedAt } from './syncMerge';
 import { getTodayDayIndex, toISODate } from '../utils/dates';
 import { isSupabaseConfigured, supabase } from './supabase';
@@ -41,8 +41,8 @@ function withoutSeedHabits(habits: Habit[]): Habit[] {
 
 async function pushLocalLogs(userId: string, events: HabitCompletionEvent[]): Promise<boolean> {
   if (!events.length) return true;
-  const results = await Promise.all(events.map((event) => pushHabitLogRemote(userId, event)));
-  return results.every(Boolean);
+  // Batched: one upsert per few hundred rows, not one request per log.
+  return pushHabitLogsNow(userId, events);
 }
 
 export async function persistMomentumHistory(

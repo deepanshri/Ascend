@@ -273,6 +273,26 @@ export async function syncHabitLogUpserts(
   if (!(await pushHabitLogsRemote(userId, unique))) queueAll();
 }
 
+/** Rows per request: keeps a full-history push well inside request size limits. */
+const HABIT_LOG_BATCH_SIZE = 500;
+
+/**
+ * Write many logs of one user now: one upsert per HABIT_LOG_BATCH_SIZE rows,
+ * falling back to the per-row path (with its schema fallbacks) only for a
+ * batch the server rejects. Returns whether every row was written.
+ */
+export async function pushHabitLogsNow(userId: string, events: HabitCompletionEvent[]): Promise<boolean> {
+  let ok = true;
+  for (let start = 0; start < events.length; start += HABIT_LOG_BATCH_SIZE) {
+    const batch = events.slice(start, start + HABIT_LOG_BATCH_SIZE);
+    if (await pushHabitLogsRemote(userId, batch)) continue;
+    for (const event of batch) {
+      if (!(await pushHabitLogRemote(userId, event))) ok = false;
+    }
+  }
+  return ok;
+}
+
 /** One upsert request for many logs of one user; rows are de-duplicated per (habit, day). */
 async function pushHabitLogsRemote(userId: string, events: HabitCompletionEvent[]): Promise<boolean> {
   if (!canSync(userId) || !supabase) return false;
