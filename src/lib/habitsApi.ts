@@ -107,6 +107,11 @@ export function rememberDeletedHabit(habitId: string): void {
   persistDeletedHabitIds();
 }
 
+function rememberDeletedHabits(habitIds: string[]): void {
+  habitIds.forEach((id) => id && deletedHabitIds.add(id));
+  persistDeletedHabitIds();
+}
+
 export function omitDeletedHabits<T extends { id: string }>(habits: T[]): T[] {
   if (deletedHabitIds.size === 0) return habits;
   return habits.filter((habit) => !deletedHabitIds.has(habit.id));
@@ -348,20 +353,20 @@ export async function deleteHabit(habitId: string): Promise<boolean> {
 }
 
 /**
- * Delete every habit owned by `userId`, running each through `deleteHabit` so
- * logs and momentum_events are purged by the same cascade. The RPC only touches
- * rows owned by the signed-in user. Returns true only if every delete succeeded.
+ * Delete every habit owned by `userId` in one delete_all_habits_cascade RPC,
+ * which also purges their glows, habit_logs and momentum_events. The RPC only
+ * touches rows owned by the signed-in user.
  */
 export async function deleteAllUserHabits(userId: string): Promise<boolean> {
   if (!canSync(userId) || !supabase) return false;
   try {
-    const { data, error } = await supabase.from('habits').select('id').eq('user_id', userId);
+    const { data, error } = await supabase.rpc('delete_all_habits_cascade');
     if (error) {
-      if (import.meta.env.DEV) console.error('Listing habits for bulk deletion failed:', error);
+      if (import.meta.env.DEV) console.error('delete_all_habits_cascade RPC failed:', error);
       return false;
     }
-    const results = await Promise.all((data ?? []).map((row) => deleteHabit(String(row.id))));
-    return results.every(Boolean);
+    rememberDeletedHabits(Array.isArray(data) ? data.map(String) : []);
+    return true;
   } catch (err) {
     if (import.meta.env.DEV) console.error('Error during bulk habit deletion:', err);
     return false;
