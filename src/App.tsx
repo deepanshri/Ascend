@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, Suspense, startTransition } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -9,11 +9,11 @@ import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { useTheme, useThemeActions } from './providers/ThemeProvider';
 import { usePreferences, usePreferencesActions } from './providers/PreferencesProvider';
 import { toggleInterest } from './providers/preferencesReducer';
+import { useReminders, useRemindersActions } from './providers/RemindersProvider';
 import {
   Habit,
   IdentityEvidence,
   ActiveTab,
-  StandaloneReminder,
   UserSession,
   FrictionAudit,
   HabitCompletionEvent,
@@ -63,14 +63,11 @@ import {
   supabase,
   isSupabaseConfigured,
   generateAvatarUrl,
-  notificationScheduler,
-  remindersSyncService,
-  upsertPublicReminder,
 } from './lib/supabase';
 import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLocalTutorialCompleted, resolveTutorialCompleted } from './lib/profile';
 import { persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from './data/avatars';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
-import { mergeHabitsByUpdatedAt, mergeRemindersByUpdatedAt, touchHabit } from './lib/syncMerge';
+import { mergeHabitsByUpdatedAt, touchHabit } from './lib/syncMerge';
 import { fetchHabitLogsForDateRange, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable, omitDeletedHabitRefs } from './lib/habitsApi';
 import { removeStorage, writeJson } from './lib/storage';
 import {
@@ -79,7 +76,6 @@ import {
   EVIDENCE_STORAGE_KEY,
   FRICTION_AUDITS_STORAGE_KEY,
   HABITS_STORAGE_KEY,
-  REMINDERS_STORAGE_KEY,
 } from './lib/ledgerStorage';
 import {
   loadStoredActiveFallbackIds,
@@ -89,7 +85,6 @@ import {
   loadStoredFrictionAudits,
   loadStoredHabits,
   loadStoredMomentumEvents,
-  loadStoredReminders,
   loadStoredRolledOverHabits,
   saveRolledOverHabits,
 } from './lib/ledgerStorageLoaders';
@@ -104,15 +99,11 @@ import {
   type TutorialScreen,
 } from './lib/tutorial';
 import {
-  initializeReminderNotifications,
-  reminderNotificationIds,
   requestNotificationPermissions,
   schedulePsychologyNotifications,
   cancelHabitTargetTimeNotification,
   scheduleHabitTargetTimeNotification,
   syncAllHabitTargetNotifications,
-  weekdayFromIsoDate,
-  withReminderNotificationIds,
 } from './lib/notifications';
 import { displayedIdentityVoteCount, hasMomentumVoteOnIso, hasTodayLedgerEntry, removeTodayEvidence, replaceTodayCompletion, upsertTodayEvidence } from './services/ledgerService';
 import { deleteHabit, stableHabitLogId } from './services/habitService';
@@ -242,10 +233,6 @@ export default function App() {
   const handleResetTodayRef = useRef<(habitId: string) => void>(() => {});
   const handleToggleFallbackModeRef = useRef<(habitId: string) => void>(() => {});
   const handleToggleKeystoneRef = useRef<(habitId: string, next: boolean) => void>(() => {});
-  const handleSetReminderCompletedRef = useRef<(id: string, completed: boolean) => void>(() => {});
-  const handleToggleReminderRef = useRef<(id: string) => void>(() => {});
-  const handleDeleteReminderRef = useRef<(id: string) => void>(() => {});
-  const handleSnoozeReminderRef = useRef<(id: string, minutes: number) => void>(() => {});
   const [isOnboarded, setIsOnboarded] = useState<boolean>(() => {
     if (typeof window !== 'undefined' && window.location.search.includes('onboarding=true')) {
       return false;
@@ -419,14 +406,22 @@ export default function App() {
     STORAGE_DEBOUNCE_MS
   );
 
-  // Standalone Reminders / Tasks — clean slate (no demo seed rows).
-  const [reminders, setReminders] = usePersistedState(
-    loadStoredReminders,
-    (value) => writeJson(REMINDERS_STORAGE_KEY, value),
-    STORAGE_DEBOUNCE_MS
-  );
-  const remindersRef = useRef<StandaloneReminder[]>(reminders);
-  remindersRef.current = reminders;
+  const { reminders, pendingCount: pendingRemindersCount } = useReminders();
+  const {
+    addReminder: handleAddReminder,
+    updateReminder: handleUpdateReminder,
+    toggleReminder: handleToggleReminder,
+    setReminderCompleted: handleSetReminderCompleted,
+    deleteReminder: handleDeleteReminder,
+    snoozeReminder: handleSnoozeReminder,
+    mergeHydrated: handleRemindersHydrated,
+    syncNow: handleSyncReminders,
+    resetAll: resetAllReminders,
+    bindSession: bindRemindersSession,
+  } = useRemindersActions();
+  useLayoutEffect(() => {
+    bindRemindersSession(session);
+  }, [session, bindRemindersSession]);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [viewResetKey, setViewResetKey] = useState(0);
@@ -1065,7 +1060,6 @@ export default function App() {
   const hasCompletedTutorialRef = useRef(hasCompletedTutorial);
   const momentumScoreRef = useRef(momentumScore);
   const hydratedUserIdRef = useRef<string | null>(null);
-  const reminderSyncSeqRef = useRef(0);
   completionEventsRef.current = completionEvents;
   selectedInterestsRef.current = selectedInterests;
   hasCompletedTutorialRef.current = hasCompletedTutorial;
@@ -1271,11 +1265,6 @@ setMomentumEvents((prev) =>
     };
   }, [session?.id, session?.isGuest, isOnboarded, onboardingStep]);
 
-
-  // Pending reminder count for bottom navigation badge
-  const pendingRemindersCount = useMemo(() => {
-    return reminders.filter((r) => !r.completed).length;
-  }, [reminders]);
 
   const appendMomentumLog = (event: MomentumEvent) => {
     setMomentumEvents((prev) => mergeMomentumEvents(prev, [event]));
@@ -1834,11 +1823,11 @@ setMomentumEvents((prev) =>
     setEvidenceList([]);
     setCompletionEvents([]);
     setMomentumEvents([]);
-    setReminders([]);
+    resetAllReminders();
     setFrictionAudits([]);
     resetAllPreferences();
     setActiveTab('home');
-  }, [resetAllPreferences]);
+  }, [resetAllPreferences, resetAllReminders]);
 
   // Sign out / Log out handler
   const handleLogout = useCallback(async () => {
@@ -1916,132 +1905,12 @@ setMomentumEvents((prev) =>
     });
   }, []);
 
-  // Native dual-alert re-scheduler after force-quit / reboot (RECEIVE_BOOT_COMPLETED)
-  useEffect(() => {
-    void initializeReminderNotifications();
-    notificationScheduler.bootReschedulePendingAlerts(reminders);
-    // Initial reminders come from localStorage; re-arm once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Last-write-wins pull: apply the newest public.reminders row and re-schedule natives.
-  useEffect(() => {
-    if (!session || session?.isGuest) return;
-    let cancelled = false;
-    const seq = ++reminderSyncSeqRef.current;
-    void remindersSyncService.syncReminders(reminders, session).then((res) => {
-      if (cancelled || seq !== reminderSyncSeqRef.current) return;
-      setReminders((prev) => mergeRemindersByUpdatedAt(prev, res.reminders));
-    }).catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, session?.isGuest]);
-
-  // Standalone Reminders Handlers with Supabase LWW sync and OS-level alerts
-  const persistReminderSync = useCallback((updated: StandaloneReminder[]) => {
-    const curSession = sessionRef.current;
-    if (!curSession || curSession.isGuest) return;
-    const seq = ++reminderSyncSeqRef.current;
-    void remindersSyncService.syncReminders(updated, curSession).then((res) => {
-      if (seq !== reminderSyncSeqRef.current) return;
-      setReminders((prev) => mergeRemindersByUpdatedAt(prev, res.reminders));
-    }).catch(() => {});
-  }, []);
-
-  const handleAddReminder = useCallback((
-    newRem: Omit<StandaloneReminder, 'id' | 'completed' | 'createdAt' | 'updatedAt'> & {
-      id?: string;
-      notificationId1?: number;
-      notificationId2?: number;
-    }
-  ) => {
-    const now = Date.now();
-    const id = newRem.id || 'rem-' + now + '-' + Math.random().toString(36).substring(2, 6);
-    const ids = reminderNotificationIds(id);
-    const hasTime = Boolean(newRem.time);
-    const item: StandaloneReminder = {
-      ...newRem,
-      id,
-      completed: false,
-      alert10Min: hasTime && newRem.alert10Min !== false,
-      alertExact: hasTime && newRem.alertExact !== false,
-      createdAt: now,
-      updatedAt: now,
-      habitId: newRem.habitId ?? null,
-      daysOfWeek: newRem.daysOfWeek?.length ? newRem.daysOfWeek : [weekdayFromIsoDate(newRem.date)],
-      isEnabled: true,
-      notificationId1: Math.trunc(newRem.notificationId1 ?? ids.notificationId1),
-      notificationId2: Math.trunc(newRem.notificationId2 ?? ids.notificationId2),
-    };
-
-    notificationScheduler.scheduleReminderAlerts(item);
-
-    setReminders((prev) => {
-      const updated = [item, ...prev.filter((existing) => existing.id !== item.id)];
-      persistReminderSync(updated);
-      return updated;
-    });
-  }, [persistReminderSync]);
-
-  const handleToggleReminder = (id: string) => {
-    const now = Date.now();
-    void requestNotificationPermissions();
-    const updated = reminders.map((r) => {
-      if (r.id !== id) return r;
-      const nextCompleted = !r.completed;
-      const revised = withReminderNotificationIds({
-        ...r,
-        completed: nextCompleted,
-        isEnabled: !nextCompleted,
-        updatedAt: now,
-      });
-      if (nextCompleted) {
-        notificationScheduler.cancelReminderAlerts(id, revised);
-      } else {
-        notificationScheduler.scheduleReminderAlerts(revised);
-      }
-      return revised;
-    });
-    setReminders(updated);
-    const revised = updated.find((item) => item.id === id);
-    if (revised) void upsertPublicReminder(session, revised).catch(() => {});
-    persistReminderSync(updated);
-  };
-
-  const handleSetReminderCompleted = (id: string, completed: boolean) => {
-    const now = Date.now();
-    void requestNotificationPermissions();
-    const updated = reminders.map((r) => {
-      if (r.id !== id) return r;
-      if (r.completed === completed) return r;
-      const revised = withReminderNotificationIds({
-        ...r,
-        completed,
-        isEnabled: !completed,
-        updatedAt: now,
-      });
-      if (completed) {
-        notificationScheduler.cancelReminderAlerts(id, revised);
-      } else {
-        notificationScheduler.scheduleReminderAlerts(revised);
-      }
-      return revised;
-    });
-    setReminders(updated);
-    const revised = updated.find((item) => item.id === id);
-    if (revised) void upsertPublicReminder(session, revised).catch(() => {});
-    persistReminderSync(updated);
-  };
-
   derivedHabitsRef.current = derivedHabits;
   todayDayIndexRef.current = todayDayIndex;
   handleCompleteTodayRef.current = handleCompleteToday;
   handleResetTodayRef.current = handleResetToday;
   handleToggleFallbackModeRef.current = handleToggleFallbackMode;
   handleToggleKeystoneRef.current = handleToggleKeystone;
-  handleSetReminderCompletedRef.current = handleSetReminderCompleted;
 
   const deferredPieceIds = useMemo(
     () => new Set(pieceFlights.map((flight) => flight.pieceId)),
@@ -2217,7 +2086,7 @@ setMomentumEvents((prev) =>
       if (!action?.id) return;
       const completed = Boolean(action.completed);
       if (action.type === 'reminder') {
-        handleSetReminderCompletedRef.current(action.id, completed);
+        handleSetReminderCompleted(action.id, completed);
         return;
       }
       if (action.type !== 'habit') return;
@@ -2289,107 +2158,8 @@ setMomentumEvents((prev) =>
     };
   }, []);
 
-  const handleUpdateReminder = useCallback((
-    id: string,
-    updates: Partial<Omit<StandaloneReminder, 'id' | 'createdAt'>>
-  ) => {
-    const now = Date.now();
-    setReminders((prev) => {
-      const updated = prev.map((r) => {
-        if (r.id !== id) return r;
-        const revised = withReminderNotificationIds({ ...r, ...updates, updatedAt: now });
-        const alertsOff = revised.alert10Min === false && revised.alertExact === false;
-        if (revised.completed || revised.isEnabled === false || alertsOff) {
-          notificationScheduler.cancelReminderAlerts(id, revised);
-        } else {
-          notificationScheduler.scheduleReminderAlerts(revised);
-        }
-        return revised;
-      });
-      const revised = updated.find((item) => item.id === id);
-      if (revised) void upsertPublicReminder(sessionRef.current, revised).catch(() => {});
-      persistReminderSync(updated);
-      return updated;
-    });
-  }, [persistReminderSync]);
-
-  const handleDeleteReminder = (id: string) => {
-    const now = Date.now();
-    const itemToDelete = reminders.find((r) => r.id === id);
-    const updated = reminders.filter((r) => r.id !== id);
-    if (itemToDelete) {
-      const tombstone = withReminderNotificationIds({
-        ...itemToDelete,
-        deleted: true,
-        isEnabled: false,
-        updatedAt: now,
-      });
-      notificationScheduler.cancelReminderAlerts(id, tombstone);
-      void upsertPublicReminder(session, tombstone).catch(() => {});
-      persistReminderSync([tombstone, ...updated]);
-    }
-    setReminders(updated);
-  };
-
-  const handleSnoozeReminder = (id: string, minutes: number) => {
-    const until = new Date(Date.now() + minutes * 60 * 1000);
-    const nowTimestamp = Date.now();
-    const newTime = until.toTimeString().slice(0, 5);
-    const newDate = toISODate(until);
-
-    const updated = reminders.map((r) => {
-      if (r.id !== id) return r;
-      const snoozed = withReminderNotificationIds({
-        ...r,
-        time: newTime,
-        date: newDate,
-        daysOfWeek: [weekdayFromIsoDate(newDate)],
-        isEnabled: true,
-        completed: false,
-        updatedAt: nowTimestamp,
-      });
-      notificationScheduler.scheduleReminderAlerts(snoozed);
-      return snoozed;
-    });
-    setReminders(updated);
-    const snoozed = updated.find((item) => item.id === id);
-    if (snoozed) void upsertPublicReminder(session, snoozed).catch(() => {});
-    persistReminderSync(updated);
-  };
-
-  handleToggleReminderRef.current = handleToggleReminder;
-  handleDeleteReminderRef.current = handleDeleteReminder;
-  handleSnoozeReminderRef.current = handleSnoozeReminder;
-
-  const stableToggleReminder = useCallback((id: string) => {
-    handleToggleReminderRef.current(id);
-  }, []);
-  const stableSetReminderCompleted = useCallback((id: string, completed: boolean) => {
-    handleSetReminderCompletedRef.current(id, completed);
-  }, []);
-  const stableDeleteReminder = useCallback((id: string) => {
-    handleDeleteReminderRef.current(id);
-  }, []);
-  const stableSnoozeReminder = useCallback((id: string, minutes: number) => {
-    handleSnoozeReminderRef.current(id, minutes);
-  }, []);
-
   const handleOpenCreateConsumed = useCallback(() => {
     setWidgetOpenCreateTask(false);
-  }, []);
-
-  const handleRemindersHydrated = useCallback((remote: StandaloneReminder[]) => {
-    const next = Array.isArray(remote) ? remote : [];
-    setReminders((prev) => mergeRemindersByUpdatedAt(prev, next));
-    notificationScheduler.bootReschedulePendingAlerts(next);
-  }, []);
-
-  const handleSyncReminders = useCallback(() => {
-    const seq = ++reminderSyncSeqRef.current;
-    remindersSyncService.syncReminders(remindersRef.current ?? [], sessionRef.current).then((res) => {
-      if (seq !== reminderSyncSeqRef.current) return;
-      setReminders((prev) => mergeRemindersByUpdatedAt(prev, Array.isArray(res.reminders) ? res.reminders : []));
-    });
   }, []);
 
   const handlePersonalSyncNow = useCallback(async () => {
@@ -2704,16 +2474,16 @@ setMomentumEvents((prev) =>
           >
             <Suspense fallback={<TabLoadingFallback />}>
               <RemindersView
-                reminders={reminders ?? []}
+                reminders={reminders}
                 focusReminderId={widgetFocusReminderId}
                 openCreate={widgetOpenCreateTask}
                 onOpenCreateConsumed={handleOpenCreateConsumed}
                 onAddReminder={handleAddReminder}
                 onUpdateReminder={handleUpdateReminder}
-                onToggleComplete={stableToggleReminder}
-                onSetReminderCompleted={stableSetReminderCompleted}
-                onDeleteReminder={stableDeleteReminder}
-                onSnoozeReminder={stableSnoozeReminder}
+                onToggleComplete={handleToggleReminder}
+                onSetReminderCompleted={handleSetReminderCompleted}
+                onDeleteReminder={handleDeleteReminder}
+                onSnoozeReminder={handleSnoozeReminder}
                 userSession={session}
                 onRemindersHydrated={handleRemindersHydrated}
                 onSyncReminders={handleSyncReminders}

@@ -1,4 +1,4 @@
-import { Habit, StandaloneReminder } from '../types';
+import { Habit } from '../types';
 import { isSeedHabitId } from '../data/initialHabits';
 import { omitDeletedHabits } from './habitsApi';
 
@@ -30,22 +30,4 @@ export function mergeHabitsByUpdatedAt(local: Habit[], remote: Habit[]): Habit[]
   return omitDeletedHabits(Array.from(merged.values()));
 }
 
-function reminderRevision(item: StandaloneReminder): number {
-  return item.updatedAt || item.createdAt || 0;
-}
-
-/** Last-write-wins by updatedAt. Equal timestamps keep the local (in-flight) row. */
-export function mergeRemindersByUpdatedAt(
-  local: StandaloneReminder[],
-  incoming: StandaloneReminder[]
-): StandaloneReminder[] {
-  const merged = new Map<string, StandaloneReminder>();
-  incoming.forEach((item) => merged.set(item.id, item));
-  local.forEach((item) => {
-    const current = merged.get(item.id);
-    if (!current || reminderRevision(item) >= reminderRevision(current)) {
-      merged.set(item.id, item);
-    }
-  });
-  return Array.from(merged.values());
-}
+export { mergeRemindersByUpdatedAt } from '../providers/remindersState';
