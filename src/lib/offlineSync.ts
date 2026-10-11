@@ -2,6 +2,7 @@ import { HabitCompletionEvent, UserProfile } from '../types';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { isoDateForDayIndex, isIsoDate } from '../utils/dates';
 import { flushMomentumEventQueue } from './momentumEvents';
+import { readJson, writeJson } from './storage';
 
 const LOG_QUEUE_KEY = 'ascend_offline_habit_log_queue';
 const PROFILE_QUEUE_KEY = 'ascend_offline_profile_queue';
@@ -41,24 +42,6 @@ function isOnline(): boolean {
     return typeof navigator === 'undefined' ? true : navigator.onLine;
   } catch {
     return true;
-  }
-}
-
-function readJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJson(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Quota / private-mode: local queue is best-effort.
   }
 }
 

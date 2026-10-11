@@ -1,4 +1,5 @@
 import { FrictionAudit, Habit } from '../types';
+import { readJson, writeJson } from './storage';
 
 export const FRICTION_REASON_CHIPS = [
   'Time Constraint',
@@ -18,24 +19,6 @@ const PROMPTED_KEY = 'ascend_friction_prompted_keys';
 
 export function frictionPromptKey(habitId: string, loggedDate: string): string {
   return `${habitId}|${loggedDate}`;
-}
-
-function readJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJson(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Quota / private-mode: best-effort.
-  }
 }
 
 export function loadPendingFrictionPrompts(): PendingFrictionPrompt[] {

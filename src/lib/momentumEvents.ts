@@ -4,6 +4,7 @@ import { fetchSequentialMomentumEvents, insertMomentumEvent, isSupabaseConfigure
 import { parseToIsoDate, toISODate } from '../utils/dates';
 import { isUuid } from '../utils/momentum';
 import { isTimeOfDay } from '../utils/timeOfDay';
+import { readJson, writeJson } from './storage';
 
 export const MOMENTUM_EVENTS_STORAGE_KEY = 'ascend_momentum_events';
 const MOMENTUM_QUEUE_KEY = 'ascend_offline_momentum_event_queue';
@@ -32,24 +33,6 @@ function isOnline(): boolean {
     return typeof navigator === 'undefined' ? true : navigator.onLine;
   } catch {
     return true;
-  }
-}
-
-function readJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJson(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Quota / private-mode: local queue is best-effort.
   }
 }
 

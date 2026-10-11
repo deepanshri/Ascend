@@ -32,7 +32,7 @@ import {
   upsertHabitLog,
   deleteHabitLog,
 } from './utils/momentum';
-import { appendMomentumEventRemote, loadLocalMomentumEvents, MOMENTUM_EVENTS_STORAGE_KEY, saveLocalMomentumEvents } from './lib/momentumEvents';
+import { appendMomentumEventRemote, MOMENTUM_EVENTS_STORAGE_KEY, saveLocalMomentumEvents } from './lib/momentumEvents';
 import {
   addDaysIso,
   dayIndexForIso,
@@ -50,7 +50,6 @@ import {
   getLocalDateString,
 } from './utils/dates';
 import { isHabitScheduledOnDayIndex } from './utils/schedule';
-import { habitCategoryBadge, normalizeHabitCategory } from './utils/categories';
 import { applyNativeChrome, hideNativeSplash } from './lib/nativeChrome';
 import { applyDocumentTheme, getThemeIsDark, resolveThemeIsDark } from './lib/themeStore';
 import {
@@ -70,7 +69,32 @@ import { fetchUserProfile, persistUserProfile, setLocalTutorialCompleted, getLoc
 import { persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from './data/avatars';
 import { persistHabitsToTable, persistMomentumHistory, syncAuthenticatedAccount } from './lib/accountSync';
 import { mergeHabitsByUpdatedAt, mergeRemindersByUpdatedAt, touchHabit } from './lib/syncMerge';
-import { fetchHabitLogsForDateRange, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable, omitDeletedHabitRefs, omitDeletedHabits } from './lib/habitsApi';
+import { fetchHabitLogsForDateRange, purgeSeedHabitsFromTable, persistHabitLogFrictionReason, fetchFrictionReasonsFromTable, omitDeletedHabitRefs } from './lib/habitsApi';
+import { removeStorage, writeJson } from './lib/storage';
+import {
+  ACTIVE_FALLBACKS_STORAGE_KEY,
+  COMPLETION_EVENTS_STORAGE_KEY,
+  EVIDENCE_STORAGE_KEY,
+  FRICTION_AUDITS_STORAGE_KEY,
+  HABITS_STORAGE_KEY,
+  INTERESTS_STORAGE_KEY,
+  REMINDERS_STORAGE_KEY,
+} from './lib/ledgerStorage';
+import {
+  loadStoredActiveFallbackIds,
+  loadStoredCompletionEvents,
+  loadStoredCompletionEventsOrNull,
+  loadStoredEvidence,
+  loadStoredFrictionAudits,
+  loadStoredHabits,
+  loadStoredInterests,
+  loadStoredMomentumEvents,
+  loadStoredReminders,
+  loadStoredRolledOverHabits,
+  saveRolledOverHabits,
+} from './lib/ledgerStorageLoaders';
+import { hasLogOn } from './lib/habitLogs';
+import { usePersistedState } from './hooks/usePersistedState';
 import {
   destroyAscendSpotlightTutorial,
   hasScreenTutorialCompleted,
@@ -114,7 +138,7 @@ import {
 import { getMarbleColor } from './utils/colors';
 import { HomeView } from './components/HomeView';
 import { useHabitAutoReset, useHabits, withHabitTimeOfDay } from './hooks/useHabits';
-import { hydrateHabitTimeOfDay, resolveHabitTimeOfDay } from './utils/timeOfDay';
+import { resolveHabitTimeOfDay } from './utils/timeOfDay';
 import { consumeWidgetActions, parseWidgetRoute, publishWidgetSnapshot, readLaunchWidgetRoute } from './lib/widgetSync';
 import { WidgetBridge } from './lib/widgetBridge';
 import type { WidgetPendingAction, WidgetRoute } from './lib/widgetSync';
@@ -187,6 +211,9 @@ import {
   setCompletionSoundEnabled,
   setHapticVibrationEnabled,
 } from './lib/completionFeedback';
+
+/** Debounce for ledger writes so swipe-complete doesn't block the main thread. */
+const STORAGE_DEBOUNCE_MS = 320;
 
 const APP_TABS: readonly ActiveTab[] = ['home', 'reminders', 'report', 'personal', 'settings'];
 
@@ -297,7 +324,7 @@ export default function App() {
     [systemPrefersDark]
   );
 
-  const [protection, setProtection] = useState(() => loadProtectionState());
+  const [protection, setProtection] = usePersistedState(loadProtectionState, saveProtectionState);
   const [protectionWindows, setProtectionWindows] = useState<ProtectionWindow[]>([]);
   const examShieldActive = protection.examShield.active;
   const vacationModeActive = protection.vacation.active;
@@ -313,10 +340,6 @@ export default function App() {
   examShieldRef.current = examShieldActive;
   vacationModeRef.current = vacationModeActive;
   protectionWindowsRef.current = protectionWindows;
-
-  useEffect(() => {
-    saveProtectionState(protection);
-  }, [protection]);
 
   useEffect(() => {
     if (!session?.id || session.isGuest) {
@@ -373,24 +396,9 @@ export default function App() {
   }, []);
 
   // Selected personal interests state (presets) - powers Home quotes
-  const [selectedInterests, setSelectedInterests] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('ascend_personal_interests');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed.filter((item): item is string => typeof item === 'string');
-        }
-      }
-    } catch {}
-    return ['Movies', 'Books', 'Anime', 'Running'];
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('ascend_personal_interests', JSON.stringify(selectedInterests));
-    } catch {}
-  }, [selectedInterests]);
+  const [selectedInterests, setSelectedInterests] = usePersistedState(loadStoredInterests, (value) =>
+    writeJson(INTERESTS_STORAGE_KEY, value)
+  );
 
   const handleToggleInterest = useCallback((interest: string) => {
     setSelectedInterests((prev) => {
@@ -412,99 +420,36 @@ export default function App() {
   }, []);
 
   // Friction Audit Log state
-  const [frictionAudits, setFrictionAudits] = useState<FrictionAudit[]>(() => {
-    try {
-      const saved = localStorage.getItem('ascend_friction_audits');
-      if (saved) return omitDeletedHabitRefs(JSON.parse(saved) as FrictionAudit[]);
-    } catch {}
-    return [];
-  });
+  const [frictionAudits, setFrictionAudits] = usePersistedState(loadStoredFrictionAudits, (value) =>
+    writeJson(FRICTION_AUDITS_STORAGE_KEY, value)
+  );
 
-  const [pendingFriction, setPendingFriction] = useState<PendingFrictionPrompt[]>(() => loadPendingFrictionPrompts());
+  const [pendingFriction, setPendingFriction] = usePersistedState<PendingFrictionPrompt[]>(
+    loadPendingFrictionPrompts,
+    savePendingFrictionPrompts
+  );
 
   // Persistence via localStorage for habits
-  const [habits, setHabits] = useState<Habit[]>(() => {
-    try {
-      const saved = localStorage.getItem('habit_tracker_habits');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (!Array.isArray(parsed)) return [];
-        return omitDeletedHabits(
-          parsed
-            .filter((h: Habit) => h && typeof h === 'object' && !isSeedHabitId(h.id))
-            .map((h: Habit) => {
-              const category = normalizeHabitCategory(h.category);
-              const days = Array.isArray(h.days) ? h.days : [false, false, false, false, false, false, false];
-              const microDays = Array.isArray(h.microDays)
-                ? h.microDays
-                : [false, false, false, false, false, false, false];
-              return hydrateHabitTimeOfDay({
-                ...h,
-                category,
-                days,
-                microDays,
-                tags: [habitCategoryBadge(category)],
-              });
-            }),
-        );
-      }
-    } catch {}
-    return [];
-  });
+  const [habits, setHabits] = usePersistedState(
+    loadStoredHabits,
+    (value) => writeJson(HABITS_STORAGE_KEY, value),
+    STORAGE_DEBOUNCE_MS
+  );
   habitsRef.current = habits;
 
   // Append-only immutable completion event log (ground truth for habit history)
-  const [completionEvents, setCompletionEvents] = useState<HabitCompletionEvent[]>(() => {
-    try {
-      const saved = localStorage.getItem('ascend_completion_events');
-      if (saved) {
-        const parsed = JSON.parse(saved) as HabitCompletionEvent[];
-        return omitDeletedHabitRefs(parsed.filter((event) => !isSeedHabitId(event.habitId)));
-      }
-    } catch {}
-    return [];
-  });
+  const [completionEvents, setCompletionEvents] = usePersistedState(
+    loadStoredCompletionEvents,
+    (value) => writeJson(COMPLETION_EVENTS_STORAGE_KEY, value),
+    STORAGE_DEBOUNCE_MS
+  );
 
-  const [momentumEvents, setMomentumEvents] = useState<MomentumEvent[]>(() => {
-    const stored = loadLocalMomentumEvents();
-    if (stored) {
-      return omitDeletedHabitRefs(stored.filter((event) => !isSeedHabitId(event.habitId)));
-    }
-    try {
-      const saved = localStorage.getItem('ascend_completion_events');
-      const logs: HabitCompletionEvent[] = saved ? JSON.parse(saved) : [];
-      const userLogs = omitDeletedHabitRefs(logs.filter((event) => !isSeedHabitId(event.habitId)));
-      let seedHabits: Habit[] = [];
-      try {
-        const habitSaved = localStorage.getItem('habit_tracker_habits');
-        if (habitSaved) {
-          seedHabits = omitDeletedHabits(
-            (JSON.parse(habitSaved) as Habit[]).filter((habit) => !isSeedHabitId(habit.id)),
-          );
-        }
-      } catch {}
-      return momentumEventsFromCompletionLog(userLogs, seedHabits);
-    } catch {
-      return [];
-    }
-  });
+  const [momentumEvents, setMomentumEvents] = usePersistedState(
+    loadStoredMomentumEvents,
+    saveLocalMomentumEvents,
+    STORAGE_DEBOUNCE_MS
+  );
   momentumEventsRef.current = momentumEvents;
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try {
-        localStorage.setItem('ascend_completion_events', JSON.stringify(completionEvents));
-      } catch {}
-    }, 320);
-    return () => window.clearTimeout(timer);
-  }, [completionEvents]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      saveLocalMomentumEvents(momentumEvents);
-    }, 320);
-    return () => window.clearTimeout(timer);
-  }, [momentumEvents]);
 
   // Hydrate profile interests + tutorial flag from Supabase `profiles`
   useEffect(() => {
@@ -542,22 +487,11 @@ export default function App() {
   }, [session?.id, session?.isGuest]);
 
   // Active fallback mode for habits today (habits switched to fallback micro-task, pending completion)
-  const [activeFallbackIds, setActiveFallbackIds] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('ascend_active_fallbacks');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return [];
-  });
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try {
-        localStorage.setItem('ascend_active_fallbacks', JSON.stringify(activeFallbackIds));
-      } catch {}
-    }, 320);
-    return () => window.clearTimeout(timer);
-  }, [activeFallbackIds]);
+  const [activeFallbackIds, setActiveFallbackIds] = usePersistedState(
+    loadStoredActiveFallbackIds,
+    (value) => writeJson(ACTIVE_FALLBACKS_STORAGE_KEY, value),
+    STORAGE_DEBOUNCE_MS
+  );
 
   const [cycleDays, setCycleDays] = useState<CycleDays>(() => readStoredCycleDays());
   const [bowlEpoch, setBowlEpoch] = useState(() => readBowlCycleEpoch(toISODate()));
@@ -572,17 +506,9 @@ export default function App() {
   const [isBowlOffscreen, setIsBowlOffscreen] = useState(false);
   const [bowlArrivalPulse, setBowlArrivalPulse] = useState(false);
   const bowlArrivalPulseTimerRef = useRef<number | null>(null);
-  const [rolledOverHabits, setRolledOverHabits] = useState<string[]>(() => {
-    try {
-      const raw = localStorage.getItem('ascend_rolled_over_habits');
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.date === getLocalDateString() && Array.isArray(parsed.habitIds)) {
-        return parsed.habitIds;
-      }
-    } catch {}
-    return [];
-  });
+  const [rolledOverHabits, setRolledOverHabits] = useState<string[]>(() =>
+    loadStoredRolledOverHabits(getLocalDateString())
+  );
   const settleTimersRef = useRef<Map<string, number>>(new Map());
   const [celebrationPieces, setCelebrationPieces] = useState<AccumulationPiece[] | null>(null);
   const bowlCelebrateLockRef = useRef(false);
@@ -594,42 +520,20 @@ export default function App() {
     setCycleDays(next);
   }, []);
 
-  const [evidenceList, setEvidenceList] = useState<IdentityEvidence[]>(() => {
-    try {
-      const saved = localStorage.getItem('habit_tracker_evidence');
-      if (saved) {
-        const parsed = JSON.parse(saved) as IdentityEvidence[];
-        return parsed
-          .filter((item) => !isSeedHabitId(item.habitId))
-          .map((item) => ({
-          ...item,
-          category: normalizeHabitCategory(item.category),
-        }));
-      }
-    } catch {}
-    return [];
-  });
+  const [evidenceList, setEvidenceList] = usePersistedState(
+    loadStoredEvidence,
+    (value) => writeJson(EVIDENCE_STORAGE_KEY, value),
+    STORAGE_DEBOUNCE_MS
+  );
 
   // Standalone Reminders / Tasks — clean slate (no demo seed rows).
-  const [reminders, setReminders] = useState<StandaloneReminder[]>(() => {
-    try {
-      const saved = localStorage.getItem('habit_tracker_reminders');
-      if (saved) {
-        const parsed = JSON.parse(saved) as StandaloneReminder[];
-        if (Array.isArray(parsed)) {
-          const SEED_REMINDER_IDS = new Set(['rem-1', 'rem-2']);
-          return parsed
-            .filter((item) => item && !SEED_REMINDER_IDS.has(String(item.id)))
-            .map(withReminderNotificationIds);
-        }
-      }
-    } catch {}
-    return [];
-  });
+  const [reminders, setReminders] = usePersistedState(
+    loadStoredReminders,
+    (value) => writeJson(REMINDERS_STORAGE_KEY, value),
+    STORAGE_DEBOUNCE_MS
+  );
   const remindersRef = useRef<StandaloneReminder[]>(reminders);
   remindersRef.current = reminders;
-
-  // Reminders persist via the debounced effect below (avoid duplicate sync writes).
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [viewResetKey, setViewResetKey] = useState(0);
@@ -731,20 +635,9 @@ export default function App() {
           }
         }
 
-        if (dayDiff === 1) {
-          setRolledOverHabits(newRolledOverHabits);
-          try {
-            localStorage.setItem(
-              'ascend_rolled_over_habits',
-              JSON.stringify({ date: freshDate, habitIds: newRolledOverHabits })
-            );
-          } catch {}
-        } else {
-          setRolledOverHabits([]);
-          try {
-            localStorage.removeItem('ascend_rolled_over_habits');
-          } catch {}
-        }
+        const nextRolledOver = dayDiff === 1 ? newRolledOverHabits : [];
+        setRolledOverHabits(nextRolledOver);
+        saveRolledOverHabits(freshDate, nextRolledOver);
 
         if (accumulatedMissed.length > 0) {
           setMomentumEvents((prev) => mergeMomentumEvents(prev, accumulatedMissed));
@@ -1069,34 +962,6 @@ export default function App() {
     };
   }, []);
 
-  // Sync state to localStorage (debounced so swipe-complete doesn't block the main thread)
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try {
-        localStorage.setItem('habit_tracker_habits', JSON.stringify(habits));
-      } catch {}
-    }, 320);
-    return () => window.clearTimeout(timer);
-  }, [habits]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try {
-        localStorage.setItem('habit_tracker_evidence', JSON.stringify(evidenceList));
-      } catch {}
-    }, 320);
-    return () => window.clearTimeout(timer);
-  }, [evidenceList]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try {
-        localStorage.setItem('habit_tracker_reminders', JSON.stringify(reminders));
-      } catch {}
-    }, 320);
-    return () => window.clearTimeout(timer);
-  }, [reminders]);
-
   useEffect(() => {
     try {
       localStorage.setItem('ascend_theme', theme);
@@ -1110,15 +975,6 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('ascend_friction_audits', JSON.stringify(frictionAudits));
-    } catch {}
-  }, [frictionAudits]);
-
-  useEffect(() => {
-    savePendingFrictionPrompts(pendingFriction);
-  }, [pendingFriction]);
 
   const weekIsoDates = useMemo(() => getWeekDates(calendarOrigin).map((date) => toISODate(date)), [calendarOrigin]);
   const todayDayIndex = getTodayDayIndex();
@@ -1326,8 +1182,6 @@ export default function App() {
   const momentumScoreRef = useRef(momentumScore);
   const hydratedUserIdRef = useRef<string | null>(null);
   const reminderSyncSeqRef = useRef(0);
-  habitsRef.current = habits;
-  momentumEventsRef.current = momentumEvents;
   completionEventsRef.current = completionEvents;
   selectedInterestsRef.current = selectedInterests;
   hasCompletedTutorialRef.current = hasCompletedTutorial;
@@ -1381,13 +1235,8 @@ setMomentumEvents((prev) =>
         applySyncStatus('error');
       }
     } else {
-      try {
-        const saved = localStorage.getItem('ascend_completion_events');
-        if (saved) {
-          const parsed = JSON.parse(saved) as HabitCompletionEvent[];
-          setCompletionEvents(omitDeletedHabitRefs(parsed.filter((event) => !isSeedHabitId(event.habitId))));
-        }
-      } catch {}
+      const stored = loadStoredCompletionEventsOrNull();
+      if (stored) setCompletionEvents(stored);
     }
   }, []);
 
@@ -1638,9 +1487,7 @@ setMomentumEvents((prev) =>
     });
 
     setRolledOverHabits([]);
-    try {
-      localStorage.removeItem('ascend_rolled_over_habits');
-    } catch {}
+    saveRolledOverHabits(getLocalDateString(), []);
     setPendingFriction((prev) =>
       prev.filter((p) => !(rolledOverHabits.includes(p.habitId) && p.loggedDate === yesterdayIso))
     );
@@ -1657,16 +1504,7 @@ setMomentumEvents((prev) =>
     setPendingFriction((prev) => prev.slice(1));
     setRolledOverHabits((prev) => {
       const next = prev.filter((id) => id !== prompt.habitId);
-      try {
-        if (next.length === 0) {
-          localStorage.removeItem('ascend_rolled_over_habits');
-        } else {
-          localStorage.setItem(
-            'ascend_rolled_over_habits',
-            JSON.stringify({ date: getLocalDateString(), habitIds: next })
-          );
-        }
-      } catch {}
+      saveRolledOverHabits(getLocalDateString(), next);
       return next;
     });
   }, [pendingFriction, habits, handleRolloverSingleHabit]);
@@ -1996,11 +1834,7 @@ setMomentumEvents((prev) =>
     );
     setDetailHabit(touchHabit(next));
     if (next.targetTime && !next.archived) {
-      const isCompletedToday = completionEvents.some(
-        (log) =>
-          (log.habitId === next.id || (log as any).habit_id === next.id) &&
-          (log.date === currentDateString || (log as any).logged_date === currentDateString)
-      );
+      const isCompletedToday = hasLogOn(completionEvents, next.id, currentDateString);
       if (!isCompletedToday) {
         void scheduleHabitTargetTimeNotification(next);
       } else {
@@ -2032,10 +1866,10 @@ setMomentumEvents((prev) =>
     setCompletionEvents([]);
     setMomentumEvents([]);
     setActiveFallbackIds([]);
-    localStorage.removeItem('habit_tracker_habits');
-    localStorage.removeItem('habit_tracker_evidence');
-    localStorage.removeItem('ascend_completion_events');
-    localStorage.removeItem('ascend_active_fallbacks');
+    removeStorage(HABITS_STORAGE_KEY);
+    removeStorage(EVIDENCE_STORAGE_KEY);
+    removeStorage(COMPLETION_EVENTS_STORAGE_KEY);
+    removeStorage(ACTIVE_FALLBACKS_STORAGE_KEY);
     localStorage.removeItem(MOMENTUM_EVENTS_STORAGE_KEY);
     localStorage.removeItem('ascend_identity_vote_floor');
   }, []);
@@ -2512,11 +2346,7 @@ setMomentumEvents((prev) =>
         return;
       }
       if (action.type !== 'habit') return;
-      const already = completionEventsRef.current.some(
-        (log) =>
-          (log.habitId === action.id || (log as any).habit_id === action.id) &&
-          (log.date === currentDateString || (log as any).logged_date === currentDateString)
-      );
+      const already = hasLogOn(completionEventsRef.current, action.id, currentDateString);
       if (completed && !already) handleCompleteTodayRef.current(action.id, false);
       if (!completed && already) handleResetTodayRef.current(action.id);
     };
@@ -3149,11 +2979,7 @@ setMomentumEvents((prev) =>
               habit={longPressedHabit}
               rect={longPressedRect}
               todayIndex={todayDayIndex}
-              isCompletedToday={completionEvents.some(
-                (log) =>
-                  (log.habitId === longPressedHabit.id || (log as any).habit_id === longPressedHabit.id) &&
-                  (log.date === currentDateString || (log as any).logged_date === currentDateString)
-              )}
+              isCompletedToday={hasLogOn(completionEvents, longPressedHabit.id, currentDateString)}
               isFallbackActive={isViewingToday && activeFallbackIds.includes(longPressedHabit.id)}
               onClose={() => {
                 setLongPressedHabitId(null);
