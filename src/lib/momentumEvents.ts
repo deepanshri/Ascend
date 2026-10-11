@@ -36,17 +36,6 @@ function isOnline(): boolean {
   }
 }
 
-export function loadLocalMomentumEvents(): MomentumEvent[] | null {
-  try {
-    const raw = localStorage.getItem(MOMENTUM_EVENTS_STORAGE_KEY);
-    if (raw == null) return null;
-    const parsed = JSON.parse(raw) as MomentumEvent[];
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
 export function saveLocalMomentumEvents(events: MomentumEvent[]): void {
   writeJson(MOMENTUM_EVENTS_STORAGE_KEY, events);
 }

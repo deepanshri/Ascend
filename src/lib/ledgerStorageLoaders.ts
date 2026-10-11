@@ -1,7 +1,8 @@
 /**
  * localStorage loaders for the habit ledger: read the raw payload, parse it
- * with the pure parsers in ledgerStorage.ts, then apply the impure steps
- * (deleted-habit filtering, notification ids, momentum backfill).
+ * with the pure parsers in ledgerStorage.ts, move anything unreadable to the
+ * dead-letter store, then apply the impure steps (deleted-habit filtering,
+ * notification ids, momentum backfill).
  */
 import type {
   FrictionAudit,
@@ -11,10 +12,10 @@ import type {
   MomentumEvent,
   StandaloneReminder,
 } from '../types';
-import { isSeedHabitId } from '../data/initialHabits';
 import { momentumEventsFromCompletionLog } from '../utils/momentum';
+import { recordDeadLetters } from './deadLetter';
 import { omitDeletedHabitRefs, omitDeletedHabits } from './habitsApi';
-import { loadLocalMomentumEvents } from './momentumEvents';
+import { MOMENTUM_EVENTS_STORAGE_KEY } from './momentumEvents';
 import { withReminderNotificationIds } from './notifications';
 import { readStorage, removeStorage, writeStorage } from './storage';
 import {
@@ -30,21 +31,31 @@ import {
   parseStoredEvidence,
   parseStoredFrictionAudits,
   parseStoredHabits,
+  parseStoredMomentumEvents,
   parseStoredReminders,
   parseStoredRolledOverHabits,
   parseStoredStringList,
   serializeRolledOverHabits,
+  type ParseResult,
+  type RejectedEntry,
 } from './ledgerStorage';
 
 const DEFAULT_INTERESTS = ['Movies', 'Books', 'Anime', 'Running'];
 
+/** Read and parse `key`, dead-lettering anything the parser rejected. */
+function load<T>(key: string, parse: (raw: string | null) => ParseResult<T>): T[] | null {
+  const { items, rejected } = parse(readStorage(key));
+  recordDeadLetters(key, rejected);
+  return items;
+}
+
 export function loadStoredHabits(): Habit[] {
-  return omitDeletedHabits(parseStoredHabits(readStorage(HABITS_STORAGE_KEY)) ?? []);
+  return omitDeletedHabits(load(HABITS_STORAGE_KEY, parseStoredHabits) ?? []);
 }
 
 /** `null` when nothing usable is stored, so callers can keep their current state. */
 export function loadStoredCompletionEventsOrNull(): HabitCompletionEvent[] | null {
-  const events = parseStoredCompletionEvents(readStorage(COMPLETION_EVENTS_STORAGE_KEY));
+  const events = load(COMPLETION_EVENTS_STORAGE_KEY, parseStoredCompletionEvents);
   return events ? omitDeletedHabitRefs(events) : null;
 }
 
@@ -54,10 +65,8 @@ export function loadStoredCompletionEvents(): HabitCompletionEvent[] {
 
 /** Stored momentum log, or one rebuilt from stored completion events and habits. */
 export function loadStoredMomentumEvents(): MomentumEvent[] {
-  const stored = loadLocalMomentumEvents();
-  if (stored) {
-    return omitDeletedHabitRefs(stored.filter((event) => !isSeedHabitId(event.habitId)));
-  }
+  const stored = load(MOMENTUM_EVENTS_STORAGE_KEY, parseStoredMomentumEvents);
+  if (stored) return omitDeletedHabitRefs(stored);
   try {
     return momentumEventsFromCompletionLog(loadStoredCompletionEvents(), loadStoredHabits());
   } catch {
@@ -66,31 +75,37 @@ export function loadStoredMomentumEvents(): MomentumEvent[] {
 }
 
 export function loadStoredEvidence(): IdentityEvidence[] {
-  return parseStoredEvidence(readStorage(EVIDENCE_STORAGE_KEY)) ?? [];
+  return load(EVIDENCE_STORAGE_KEY, parseStoredEvidence) ?? [];
 }
 
 export function loadStoredReminders(): StandaloneReminder[] {
-  try {
-    return (parseStoredReminders(readStorage(REMINDERS_STORAGE_KEY)) ?? []).map(withReminderNotificationIds);
-  } catch {
-    return [];
+  const reminders: StandaloneReminder[] = [];
+  const rejected: RejectedEntry[] = [];
+  for (const reminder of load(REMINDERS_STORAGE_KEY, parseStoredReminders) ?? []) {
+    try {
+      reminders.push(withReminderNotificationIds(reminder));
+    } catch {
+      rejected.push({ reason: 'invalid_entry', value: reminder });
+    }
   }
+  recordDeadLetters(REMINDERS_STORAGE_KEY, rejected);
+  return reminders;
 }
 
 export function loadStoredFrictionAudits(): FrictionAudit[] {
-  return omitDeletedHabitRefs(parseStoredFrictionAudits(readStorage(FRICTION_AUDITS_STORAGE_KEY)) ?? []);
+  return omitDeletedHabitRefs(load(FRICTION_AUDITS_STORAGE_KEY, parseStoredFrictionAudits) ?? []);
 }
 
 export function loadStoredActiveFallbackIds(): string[] {
-  return parseStoredStringList(readStorage(ACTIVE_FALLBACKS_STORAGE_KEY)) ?? [];
+  return load(ACTIVE_FALLBACKS_STORAGE_KEY, parseStoredStringList) ?? [];
 }
 
 export function loadStoredInterests(): string[] {
-  return parseStoredStringList(readStorage(INTERESTS_STORAGE_KEY)) ?? DEFAULT_INTERESTS;
+  return load(INTERESTS_STORAGE_KEY, parseStoredStringList) ?? DEFAULT_INTERESTS;
 }
 
 export function loadStoredRolledOverHabits(todayIso: string): string[] {
-  return parseStoredRolledOverHabits(readStorage(ROLLED_OVER_HABITS_STORAGE_KEY), todayIso) ?? [];
+  return load(ROLLED_OVER_HABITS_STORAGE_KEY, (raw) => parseStoredRolledOverHabits(raw, todayIso)) ?? [];
 }
 
 /** Persist today's rolled-over habit ids; an empty list clears the key. */

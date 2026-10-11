@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 import { applyNativeChrome } from './lib/nativeChrome';
 import { startOfflineSyncListener } from './lib/offlineSync';
+import { installBackgroundFlush } from './lib/backgroundFlush';
 
 let isDarkBoot = false;
 try {
@@ -14,6 +15,7 @@ try {
 } catch {}
 void applyNativeChrome(isDarkBoot).catch(() => {});
 startOfflineSyncListener();
+installBackgroundFlush();
 
 function Root() {
   const [appKey, setAppKey] = useState(0);
