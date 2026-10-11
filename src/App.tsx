@@ -374,11 +374,8 @@ export default function App() {
   } = useCalendar();
   const { selectDate: setCurrentSelectedDate } = useCalendarActions();
   const refetchHabitsAndLogsRef = useRef<() => Promise<void> | void>(() => {});
-  /**
-   * Missed-day processing gate, kept exactly as written before Step 6. Note it
-   * is false for returning (onboarded) users, unlike every other sync gate.
-   */
-  const processMissedDays = !isOnboarded || onboardingStep >= 3;
+  /** Missed days are processed once onboarding is done or at its last step, like every other sync gate. */
+  const processMissedDays = isOnboarded || onboardingStep >= 3;
 
   // Day rollover: decided by the pure computeDayRollover, applied here.
   useEffect(() => {
