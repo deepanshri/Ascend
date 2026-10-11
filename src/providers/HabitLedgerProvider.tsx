@@ -49,6 +49,7 @@ import { touchHabit } from '../lib/habitMerge';
 import { hasLogOn } from '../lib/habitLogs';
 import { cancelHabitTargetTimeNotification, scheduleHabitTargetTimeNotification } from '../lib/notifications';
 import { deleteHabit as deleteHabitRemote } from '../services/habitService';
+import { displayedIdentityVoteCount } from '../services/ledgerService';
 import {
   ledgerReducer,
   EMPTY_LEDGER,
@@ -87,6 +88,8 @@ export interface LedgerContextState extends LedgerState {
   /** The momentum log merged with votes implied by the completion log. */
   todayMomentumEvents: MomentumEvent[];
   todayMomentumScore: number;
+  /** Identity Ledger tally: one vote per habit per day, plus manual entries. */
+  identityVoteCount: number;
 }
 
 export interface CompletionResult {
@@ -492,9 +495,14 @@ export function HabitLedgerProvider({ children }: { children: React.ReactNode })
     [todayMomentumEvents, state.habits, protectionWindows]
   );
 
+  const identityVoteCount = useMemo(
+    () => displayedIdentityVoteCount(state.momentumEvents, state.evidenceList),
+    [state.momentumEvents, state.evidenceList]
+  );
+
   const value = useMemo<LedgerContextState>(
-    () => ({ ...state, derivedHabits, activeHabits, todayMomentumEvents, todayMomentumScore }),
-    [state, derivedHabits, activeHabits, todayMomentumEvents, todayMomentumScore]
+    () => ({ ...state, derivedHabits, activeHabits, todayMomentumEvents, todayMomentumScore, identityVoteCount }),
+    [state, derivedHabits, activeHabits, todayMomentumEvents, todayMomentumScore, identityVoteCount]
   );
 
   return (

@@ -89,7 +89,11 @@ describe('widget flags and reset', () => {
       { type: 'FOCUS_REMINDER', id: 'r1' },
       { type: 'RESET_VIEW' }
     );
-    expect(uiReducer(busy, { type: 'RESET_ALL' })).toEqual({ ...initialUIState, viewResetKey: 1 });
+    expect(uiReducer(busy, { type: 'RESET_ALL' })).toEqual({ ...initialUIState, viewResetKey: 1, chronicleVersion: 1 });
+  });
+
+  it('CHRONICLE_SAVED bumps the chronicle version', () => {
+    expect(uiReducer(initialUIState, { type: 'CHRONICLE_SAVED' }).chronicleVersion).toBe(1);
   });
 });
 

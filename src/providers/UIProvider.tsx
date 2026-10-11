@@ -17,6 +17,8 @@ interface UIActions {
   resetView: () => void;
   focusReminder: (id: string | null) => void;
   setOpenCreateTask: (open: boolean) => void;
+  /** The evening chronicle was saved: views showing it re-read it. */
+  markChronicleSaved: () => void;
   /** Back to Home with no modals or widget flags, e.g. on sign-out. */
   resetAll: () => void;
 }
@@ -67,6 +69,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       resetView: () => dispatch({ type: 'RESET_VIEW' }),
       focusReminder: (id) => dispatch({ type: 'FOCUS_REMINDER', id }),
       setOpenCreateTask: (open) => dispatch({ type: 'SET_OPEN_CREATE_TASK', open }),
+      markChronicleSaved: () => dispatch({ type: 'CHRONICLE_SAVED' }),
       resetAll: () => dispatch({ type: 'RESET_ALL' }),
     }),
     []

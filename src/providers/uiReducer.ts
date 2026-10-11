@@ -34,6 +34,8 @@ export interface UIState {
   modalStack: readonly AppModal[];
   widgetFocusReminderId: string | null;
   widgetOpenCreateTask: boolean;
+  /** Bumped when the evening chronicle is saved, so views showing it re-read it. */
+  chronicleVersion: number;
 }
 
 export type UIAction =
@@ -45,6 +47,7 @@ export type UIAction =
   | { type: 'RESET_VIEW' }
   | { type: 'FOCUS_REMINDER'; id: string | null }
   | { type: 'SET_OPEN_CREATE_TASK'; open: boolean }
+  | { type: 'CHRONICLE_SAVED' }
   | { type: 'RESET_ALL' };
 
 export const initialUIState: UIState = {
@@ -54,6 +57,7 @@ export const initialUIState: UIState = {
   modalStack: [],
   widgetFocusReminderId: null,
   widgetOpenCreateTask: false,
+  chronicleVersion: 0,
 };
 
 function modalHabitId(modal: AppModal): string | undefined {
@@ -99,8 +103,11 @@ export function uiReducer(state: UIState, action: UIAction): UIState {
       return state.widgetFocusReminderId === action.id ? state : { ...state, widgetFocusReminderId: action.id };
     case 'SET_OPEN_CREATE_TASK':
       return state.widgetOpenCreateTask === action.open ? state : { ...state, widgetOpenCreateTask: action.open };
+    case 'CHRONICLE_SAVED':
+      return { ...state, chronicleVersion: state.chronicleVersion + 1 };
     case 'RESET_ALL':
-      return { ...initialUIState, viewResetKey: state.viewResetKey };
+      // Counters keep growing so views keyed on them always see a change.
+      return { ...initialUIState, viewResetKey: state.viewResetKey, chronicleVersion: state.chronicleVersion + 1 };
     default:
       return state;
   }
