@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
-const projectRef = process.env.SUPABASE_PROJECT_REF || 'dpgupbcbhkmjtyqkljpr';
+const projectRef = process.env.SUPABASE_PROJECT_REF;
 const files = [
   'supabase/migrations/011_schema_reconciliation.sql',
   'supabase/migrations/012_purge_integrity_test_accounts.sql',
@@ -11,6 +11,11 @@ if (!process.env.SUPABASE_ACCESS_TOKEN && !process.env.DATABASE_URL && !process.
   console.error(
     'Set SUPABASE_ACCESS_TOKEN (supabase login) or DATABASE_URL to apply live SQL.'
   );
+  process.exit(2);
+}
+
+if (!process.env.DATABASE_URL && !process.env.SUPABASE_DB_URL && !projectRef) {
+  console.error('Set SUPABASE_PROJECT_REF to apply live SQL to the linked project.');
   process.exit(2);
 }
 

@@ -12,9 +12,8 @@ import {
 } from './notifications';
 import { DEFAULT_AVATAR_ID, resolveAvatarId } from '../data/avatars';
 
-const env = (import.meta as any).env || {};
-const supabaseUrl = env.VITE_SUPABASE_URL || 'https://dpgupbcbhkmjtyqkljpr.supabase.co';
-const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_dQDYyETfjDGRHXqqCtXznA_SJHHuxJ8';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
@@ -145,27 +144,6 @@ export async function fetchSequentialMomentumEvents(
   } catch (err) {
     if (import.meta.env.DEV) console.warn('momentum_events fetch offline:', err);
     return [];
-  }
-}
-
-/** COUNT(*) of completed actions: event_type IN ('full', 'fallback'). */
-export async function countMomentumCompletedActions(userId?: string | null): Promise<number | null> {
-  if (!canWriteUserRows(userId) || !supabase || !userId) return null;
-  try {
-    const { count, error } = await supabase
-      .from('momentum_events')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .in('event_type', ['full', 'fallback']);
-
-    if (error) {
-      if (import.meta.env.DEV) console.warn('momentum_events count failed:', error.message);
-      return null;
-    }
-    return count ?? 0;
-  } catch (err) {
-    if (import.meta.env.DEV) console.warn('momentum_events count offline:', err);
-    return null;
   }
 }
 
