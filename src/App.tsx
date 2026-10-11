@@ -69,8 +69,7 @@ const PersonalView = React.lazy(() => import('./components/PersonalView').then((
 const SettingsView = React.lazy(() => import('./components/SettingsView').then((m) => ({ default: m.SettingsView })));
 import { getUserVisionStatement } from './lib/vision';
 import { ErrorBoundary } from './components/ErrorBoundary';
-// three.js loads only once a marble is thrown (and with the bowl itself, inside HomeView).
-const FlyingPieceOverlay = React.lazy(() => import('./components/FlyingPieceOverlay'));
+import { FlightLayer } from './app/FlightLayer';
 import { ScrolledBowlOverlay } from './components/ScrolledBowlOverlay';
 import { pulseCompletionHaptic } from './lib/completionFeedback';
 
@@ -173,7 +172,7 @@ export default function App() {
   const { syncNow: handlePersonalSyncNow } = useAccountSync();
 
   const bowl = useBowl();
-  const { onFlightComplete, onCelebrationDone, setBowlOffscreen } = useBowlActions();
+  const { onCelebrationDone, setBowlOffscreen } = useBowlActions();
   const isBowlOffscreen = bowl.isBowlOffscreen;
   const handleCompleteToday = useCompleteHabit();
   useWidgetBridge(handleCompleteToday);
@@ -894,11 +893,7 @@ export default function App() {
         )}
         </div>
 
-        {bowl.pieceFlights.length > 0 && (
-          <Suspense fallback={null}>
-            <FlyingPieceOverlay flights={bowl.pieceFlights} onFlightComplete={onFlightComplete} />
-          </Suspense>
-        )}
+        <FlightLayer />
         <ScrolledBowlOverlay
           isVisible={isTabActive('home') && isBowlOffscreen && !longPressedHabitId && !isAnyModalOpen}
           votes={bowl.bowlFill.votes}
