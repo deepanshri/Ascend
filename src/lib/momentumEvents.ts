@@ -5,6 +5,7 @@ import { parseToIsoDate, toISODate } from '../utils/dates';
 import { isUuid } from '../utils/momentum';
 import { isTimeOfDay } from '../utils/timeOfDay';
 import { readJson, writeJson } from './storage';
+import { syncGeneration, trackInFlight } from './syncState';
 import { remapLegacyMomentumIds, remapLegacyMomentumIdsBy } from '../utils/momentumIds';
 
 export const MOMENTUM_EVENTS_STORAGE_KEY = 'ascend_momentum_events';
@@ -49,9 +50,15 @@ function writeQueue(items: MomentumQueueItem[]): void {
   writeJson(MOMENTUM_QUEUE_KEY, items);
 }
 
-function enqueue(item: MomentumQueueItem): void {
-  const next = readQueue().filter((entry) => entry.event.id !== item.event.id);
-  writeQueue([...next, item]);
+/** Queue events unless local user data was purged since generation `gen` (sign-out, account switch). */
+function enqueueSince(gen: number, userId: string, events: MomentumEvent[]): void {
+  if (gen !== syncGeneration() || events.length === 0) return;
+  const ids = new Set(events.map((event) => event.id));
+  writeQueue([...readQueue().filter((entry) => !ids.has(entry.event.id)), ...events.map((event) => ({ userId, event }))]);
+}
+
+export function queuedMomentumEventCount(): number {
+  return readQueue().length;
 }
 
 function parseEventType(raw: string | undefined): MomentumEventType | null {
@@ -150,12 +157,13 @@ export async function appendMomentumEventRemote(
   event: MomentumEvent
 ): Promise<void> {
   if (!canSync(userId) || !userId || isSeedHabitId(event.habitId)) return;
+  const gen = syncGeneration();
   if (!isOnline()) {
-    enqueue({ userId, event });
+    enqueueSince(gen, userId, [event]);
     return;
   }
-  const ok = await insertMomentumEventRemote(userId, event);
-  if (!ok) enqueue({ userId, event });
+  const ok = await trackInFlight(1, () => insertMomentumEventRemote(userId, event));
+  if (!ok) enqueueSince(gen, userId, [event]);
 }
 
 let supportsTimeOfDayColumn = true;
@@ -169,12 +177,20 @@ export async function pushMomentumEventsRemote(
   const filtered = events.filter((event) => !isSeedHabitId(event.habitId) && isUuid(event.id));
   if (filtered.length === 0) return true;
 
+  const gen = syncGeneration();
   if (!isOnline()) {
-    for (const event of filtered) enqueue({ userId, event });
+    enqueueSince(gen, userId, filtered);
     return false;
   }
 
-  const rawRows = filtered.map((e) => toMomentumEventRow(userId, e));
+  const ok = await trackInFlight(filtered.length, () => insertMomentumRows(userId, filtered));
+  if (!ok) enqueueSince(gen, userId, filtered);
+  return ok;
+}
+
+async function insertMomentumRows(userId: string, events: MomentumEvent[]): Promise<boolean> {
+  if (!supabase) return false;
+  const rawRows = events.map((e) => toMomentumEventRow(userId, e));
   const rows = supportsTimeOfDayColumn
     ? rawRows
     : rawRows.map(({ time_of_day: _t, ...core }) => core);
@@ -189,12 +205,10 @@ export async function pushMomentumEventsRemote(
     }
     if (error) {
       console.warn('Batch momentum events push note:', error.message);
-      for (const event of filtered) enqueue({ userId, event });
       return false;
     }
     return true;
   } catch {
-    for (const event of filtered) enqueue({ userId, event });
     return false;
   }
 }
@@ -210,9 +224,8 @@ export async function flushMomentumEventQueue(): Promise<void> {
     if (isSeedHabitId(item.event.habitId)) continue;
     byUser.set(item.userId, [...(byUser.get(item.userId) ?? []), item.event]);
   }
-  for (const [userId, events] of byUser) {
-    await pushMomentumEventsRemote(userId, events);
-  }
+  // Started together, so every emptied-out event is counted in flight at once.
+  await Promise.all([...byUser].map(([userId, events]) => pushMomentumEventsRemote(userId, events)));
 }
 
 const isStoredEvent = (value: unknown): value is MomentumEvent =>

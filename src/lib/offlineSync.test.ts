@@ -40,9 +40,26 @@ vi.mock('./supabase', () => ({
     }),
   },
 }));
-vi.mock('./momentumEvents', () => ({ flushMomentumEventQueue: async () => {} }));
+vi.mock('./momentumEvents', () => ({ flushMomentumEventQueue: async () => {}, queuedMomentumEventCount: () => 0 }));
 
-const { pushHabitLogDeleteRemote, pushHabitLogRemote } = await import('./offlineSync');
+// In-memory localStorage and an online navigator (the node test environment has neither).
+const store = new Map<string, string>();
+vi.stubGlobal('localStorage', {
+  getItem: (key: string) => store.get(key) ?? null,
+  setItem: (key: string, value: string) => void store.set(key, value),
+  removeItem: (key: string) => void store.delete(key),
+});
+vi.stubGlobal('navigator', { onLine: true });
+
+const {
+  flushOfflineQueue,
+  pushHabitLogDeleteRemote,
+  pushHabitLogRemote,
+  readLogQueue,
+  syncHabitLogUpsert,
+  unsyncedItemCount,
+} = await import('./offlineSync');
+const { invalidateSyncGeneration } = await import('./syncState');
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const fail = { error: { message: 'rejected' } };
@@ -60,8 +77,18 @@ const filterMap = (call: RecordedCall) => Object.fromEntries(call.filters);
 
 beforeEach(() => {
   calls.length = 0;
+  store.clear();
   respond = () => ({ error: null });
 });
+
+/** A response held open until `release` is called, to observe a write while it is in flight. */
+function heldResponse() {
+  let release!: (value: Response) => void;
+  const held = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  return { held, release };
+}
 
 describe('habit_logs deletes are always pinned to one day', () => {
   it('upsert fallback: every delete carries a date filter, never day_index alone', async () => {
@@ -121,5 +148,65 @@ describe('habit_logs deletes are always pinned to one day', () => {
   it('a successful upsert sends no deletes at all', async () => {
     await pushHabitLogRemote(USER, event);
     expect(deletes()).toHaveLength(0);
+  });
+});
+
+describe('unsynced writes survive until confirmed (sign-out guard)', () => {
+  it('a failed live write is queued and counted', async () => {
+    respond = () => fail;
+    await syncHabitLogUpsert(USER, event);
+    expect(readLogQueue()).toHaveLength(1);
+    expect(unsyncedItemCount()).toBe(1);
+  });
+
+  it('a write still in flight is counted, and released once confirmed', async () => {
+    const { held, release } = heldResponse();
+    respond = () => held;
+    const pending = syncHabitLogUpsert(USER, event);
+    expect(unsyncedItemCount()).toBe(1);
+    release({ error: null });
+    await pending;
+    expect(unsyncedItemCount()).toBe(0);
+    expect(readLogQueue()).toHaveLength(0);
+  });
+
+  it('a queue flush counts its items while the queue itself is empty', async () => {
+    respond = () => fail;
+    await syncHabitLogUpsert(USER, event);
+
+    const { held, release } = heldResponse();
+    respond = () => held;
+    const flushing = flushOfflineQueue();
+    expect(readLogQueue()).toHaveLength(0);
+    expect(unsyncedItemCount()).toBeGreaterThan(0);
+    release({ error: null });
+    await flushing;
+    expect(unsyncedItemCount()).toBe(0);
+  });
+
+  it('a write that fails after the user data was purged is not re-queued for the next user', async () => {
+    const { held, release } = heldResponse();
+    respond = () => held;
+    const pending = syncHabitLogUpsert(USER, event);
+    invalidateSyncGeneration();
+    store.clear();
+    release(fail);
+    await pending;
+    expect(readLogQueue()).toHaveLength(0);
+  });
+
+  it('a flush interrupted by a purge drops the previous user leftovers', async () => {
+    respond = () => fail;
+    await syncHabitLogUpsert(USER, event);
+
+    const { held, release } = heldResponse();
+    respond = () => held;
+    const flushing = flushOfflineQueue();
+    invalidateSyncGeneration();
+    store.clear();
+    release(fail);
+    respond = () => fail;
+    await flushing;
+    expect(readLogQueue()).toHaveLength(0);
   });
 });

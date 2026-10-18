@@ -2,7 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type { UserSession } from '../types';
 import { readStoredAvatarId } from '../data/avatars';
 import { requestNotificationPermissions } from '../lib/notifications';
-import { flushOfflineQueue } from '../lib/offlineSync';
+import { flushOfflineQueue, unsyncedItemCount } from '../lib/offlineSync';
+import { runBeforeSignOutHooks } from '../lib/syncState';
 import {
   authService,
   generateAvatarUrl,
@@ -17,6 +18,13 @@ import { claimLocalUserData, purgeLocalUserData } from '../lib/userData';
 /** How long sign-out waits for queued offline writes to reach Supabase. */
 const SIGN_OUT_FLUSH_TIMEOUT_MS = 4000;
 
+/**
+ * Signing out purges local user data. While writes are still unsynced that
+ * purge would destroy them, so sign-out stops and reports how many are left;
+ * only an explicit `discardUnsynced` goes ahead anyway.
+ */
+export type SignOutResult = { signedOut: true } | { signedOut: false; unsynced: number };
+
 interface SessionState {
   session: UserSession | null;
   authLoading: boolean;
@@ -25,8 +33,12 @@ interface SessionState {
 interface SessionActions {
   /** Make `session` the signed-in user (after the sign-in / sign-up form). */
   signIn: (session: UserSession) => void;
-  /** Push queued writes, sign out, purge local user data and reset every user-scoped provider. */
-  signOut: () => Promise<void>;
+  /**
+   * Push queued writes, then sign out, purge local user data and reset every
+   * user-scoped provider. Stops without signing out while writes are still
+   * unsynced, unless `discardUnsynced` is set.
+   */
+  signOut: (options?: { discardUnsynced?: boolean }) => Promise<SignOutResult>;
   /** Delete the account remotely, then purge and reset as on sign-out. Returns an error message on failure. */
   deleteAccount: () => Promise<string | null>;
   setSyncStatus: (status: UserSession['syncStatus']) => void;
@@ -181,15 +193,27 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
   }, [establish]);
 
-  const signOut = useCallback(async () => {
-    // Give queued offline writes a chance to reach Supabase while still authenticated.
-    await Promise.race([
-      flushOfflineQueue().catch(() => {}),
-      new Promise((resolve) => setTimeout(resolve, SIGN_OUT_FLUSH_TIMEOUT_MS)),
-    ]);
-    await authService.signOut();
-    clearSession();
-  }, [clearSession]);
+  const signOut = useCallback(
+    async ({ discardUnsynced = false }: { discardUnsynced?: boolean } = {}): Promise<SignOutResult> => {
+      // Guests never sync: their data is local by design and goes with them.
+      if (sessionRef.current && !sessionRef.current.isGuest) {
+        // Give held-back and queued writes a chance to reach Supabase while still authenticated.
+        await Promise.race([
+          (async () => {
+            await runBeforeSignOutHooks();
+            await flushOfflineQueue();
+          })().catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, SIGN_OUT_FLUSH_TIMEOUT_MS)),
+        ]);
+        const unsynced = unsyncedItemCount();
+        if (unsynced > 0 && !discardUnsynced) return { signedOut: false, unsynced };
+      }
+      await authService.signOut();
+      clearSession();
+      return { signedOut: true };
+    },
+    [clearSession]
+  );
 
   const deleteAccount = useCallback(async () => {
     const current = sessionRef.current;

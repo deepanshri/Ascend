@@ -9,6 +9,7 @@
  */
 import { decideClaim } from './dataOwner';
 import { discardPendingWrites } from './pendingWrites';
+import { invalidateSyncGeneration } from './syncState';
 import { readStorage, removeStorage, writeStorage } from './storage';
 
 export const DATA_OWNER_STORAGE_KEY = 'ascend_data_owner';
@@ -107,6 +108,8 @@ export function readDataOwner(): string | null {
  */
 export function purgeLocalUserData(): void {
   discardPendingWrites();
+  // Writes still in flight for this user must not re-queue into the next user's data.
+  invalidateSyncGeneration();
   for (const key of [...USER_LEDGER_KEYS, ...USER_PROFILE_KEYS, DATA_OWNER_STORAGE_KEY]) removeStorage(key);
   for (const key of storageKeys()) {
     if (USER_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))) removeStorage(key);

@@ -43,6 +43,7 @@ import {
 import { deletedHabitIdSet, persistHabitLogFrictionReason } from '../lib/habitsApi';
 import { touchHabit } from '../lib/habitMerge';
 import { hasLogOn } from '../lib/habitLogs';
+import { registerBeforeSignOut } from '../lib/syncState';
 import { cancelHabitTargetTimeNotification, scheduleHabitTargetTimeNotification } from '../lib/notifications';
 import { deleteHabit as deleteHabitRemote } from '../services/habitService';
 import { displayedIdentityVoteCount } from '../services/ledgerService';
@@ -243,6 +244,20 @@ export function HabitLedgerProvider({ children }: { children: React.ReactNode })
     }, GRACE_UPLOAD_DELAY_MS);
     pending.set(habitId, { event, timer });
   }, []);
+
+  // Sign-out: send votes still inside the undo window now (queued if offline) instead of dropping them.
+  useEffect(
+    () =>
+      registerBeforeSignOut(async () => {
+        const held = [...pendingGraceRef.current.values()];
+        pendingGraceRef.current.clear();
+        for (const { timer } of held) window.clearTimeout(timer);
+        await Promise.all(
+          held.map(({ event }) => appendMomentumEventRemote(sessionIdRef.current, event).catch(() => {}))
+        );
+      }),
+    []
+  );
 
   useUserDataReset(() => {
     for (const pending of pendingGraceRef.current.values()) window.clearTimeout(pending.timer);

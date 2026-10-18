@@ -1,8 +1,9 @@
 import { HabitCompletionEvent, UserProfile } from '../types';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { isoDateForDayIndex, isIsoDate } from '../utils/dates';
-import { flushMomentumEventQueue } from './momentumEvents';
+import { flushMomentumEventQueue, queuedMomentumEventCount } from './momentumEvents';
 import { readJson, writeJson } from './storage';
+import { inFlightSyncCount, syncGeneration, trackInFlight } from './syncState';
 
 const LOG_QUEUE_KEY = 'ascend_offline_habit_log_queue';
 const PROFILE_QUEUE_KEY = 'ascend_offline_profile_queue';
@@ -125,6 +126,11 @@ function enqueueLog(item: HabitLogQueueItem): void {
   }
 
   writeLogQueue([...filtered, item]);
+}
+
+/** Queue `item` unless local user data was purged since generation `gen` (sign-out, account switch). */
+function enqueueLogSince(gen: number, item: HabitLogQueueItem): void {
+  if (gen === syncGeneration()) enqueueLog(item);
 }
 
 function enqueueProfile(item: ProfileQueueItem): void {
@@ -279,12 +285,14 @@ export async function syncHabitLogUpserts(
     byKey.set(`${habitId}|${loggedDate}`, event);
   }
   const unique = [...byKey.values()];
-  const queueAll = () => unique.forEach((event) => enqueueLog({ kind: 'upsert', userId, event }));
+  const gen = syncGeneration();
+  const queueAll = () => unique.forEach((event) => enqueueLogSince(gen, { kind: 'upsert', userId, event }));
   if (!isOnline() || !supabase) {
     queueAll();
     return;
   }
-  if (!(await pushHabitLogsRemote(userId, unique))) queueAll();
+  const ok = await trackInFlight(unique.length, () => pushHabitLogsRemote(userId, unique));
+  if (!ok) queueAll();
 }
 
 /** Rows per request: keeps a full-history push well inside request size limits. */
@@ -330,12 +338,13 @@ export async function syncHabitLogUpsert(
   event: HabitCompletionEvent
 ): Promise<void> {
   if (!canSync(userId) || !userId) return;
+  const gen = syncGeneration();
   if (!isOnline()) {
-    enqueueLog({ kind: 'upsert', userId, event });
+    enqueueLogSince(gen, { kind: 'upsert', userId, event });
     return;
   }
-  const ok = await pushHabitLogRemote(userId, event);
-  if (!ok) enqueueLog({ kind: 'upsert', userId, event });
+  const ok = await trackInFlight(1, () => pushHabitLogRemote(userId, event));
+  if (!ok) enqueueLogSince(gen, { kind: 'upsert', userId, event });
 }
 
 export async function syncHabitLogDelete(
@@ -345,22 +354,24 @@ export async function syncHabitLogDelete(
   dayIndex?: number
 ): Promise<void> {
   if (!canSync(userId) || !userId) return;
+  const gen = syncGeneration();
   if (!isOnline()) {
-    enqueueLog({ kind: 'delete', userId, habitId, loggedDate, dayIndex });
+    enqueueLogSince(gen, { kind: 'delete', userId, habitId, loggedDate, dayIndex });
     return;
   }
-  const ok = await pushHabitLogDeleteRemote(userId, habitId, loggedDate, dayIndex);
-  if (!ok) enqueueLog({ kind: 'delete', userId, habitId, loggedDate, dayIndex });
+  const ok = await trackInFlight(1, () => pushHabitLogDeleteRemote(userId, habitId, loggedDate, dayIndex));
+  if (!ok) enqueueLogSince(gen, { kind: 'delete', userId, habitId, loggedDate, dayIndex });
 }
 
 export async function syncProfilePatch(userId: string, patch: ProfilePatch): Promise<boolean> {
   if (!canSync(userId)) return false;
+  const gen = syncGeneration();
   if (!isOnline()) {
     enqueueProfile({ userId, patch });
     return false;
   }
-  const ok = await pushProfileRemote(userId, patch);
-  if (!ok) enqueueProfile({ userId, patch });
+  const ok = await trackInFlight(1, () => pushProfileRemote(userId, patch));
+  if (!ok && gen === syncGeneration()) enqueueProfile({ userId, patch });
   return ok;
 }
 
@@ -422,20 +433,27 @@ async function flushHabitLogs(items: HabitLogQueueItem[]): Promise<HabitLogQueue
 export async function flushOfflineQueue(): Promise<void> {
   if (!isOnline() || !isSupabaseConfigured || !supabase) return;
 
+  const gen = syncGeneration();
   const queuedLogs = readLogQueue();
   if (queuedLogs.length > 0) {
     writeLogQueue([]);
-    const remainingLogs = await flushHabitLogs(queuedLogs);
-    // Keep anything queued while this flush was running.
-    writeLogQueue([...remainingLogs, ...readLogQueue()]);
+    // The queue is empty while these are sent: count them as in flight for sign-out.
+    const remainingLogs = await trackInFlight(queuedLogs.length, () => flushHabitLogs(queuedLogs));
+    // Keep anything queued while this flush was running. After a purge, drop the old user's leftovers.
+    if (gen === syncGeneration()) writeLogQueue([...remainingLogs, ...readLogQueue()]);
   }
 
-  const remainingProfiles: ProfileQueueItem[] = [];
-  for (const item of readJson<ProfileQueueItem[]>(PROFILE_QUEUE_KEY, [])) {
-    const ok = await pushProfileRemote(item.userId, item.patch);
-    if (!ok) remainingProfiles.push(item);
+  const queuedProfiles = readJson<ProfileQueueItem[]>(PROFILE_QUEUE_KEY, []);
+  if (queuedProfiles.length > 0) {
+    const remainingProfiles = await trackInFlight(queuedProfiles.length, async () => {
+      const remaining: ProfileQueueItem[] = [];
+      for (const item of queuedProfiles) {
+        if (!(await pushProfileRemote(item.userId, item.patch))) remaining.push(item);
+      }
+      return remaining;
+    });
+    if (gen === syncGeneration()) writeJson(PROFILE_QUEUE_KEY, remainingProfiles);
   }
-  writeJson(PROFILE_QUEUE_KEY, remainingProfiles);
 
   try {
     await flushMomentumEventQueue();
@@ -446,6 +464,19 @@ export async function flushOfflineQueue(): Promise<void> {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('ascend_offline_sync_completed'));
   }
+}
+
+/**
+ * Writes not yet confirmed by Supabase: every offline queue plus requests in
+ * flight. Sign-out keeps local data while this is above zero.
+ */
+export function unsyncedItemCount(): number {
+  return (
+    readLogQueue().length +
+    readJson<ProfileQueueItem[]>(PROFILE_QUEUE_KEY, []).length +
+    queuedMomentumEventCount() +
+    inFlightSyncCount()
+  );
 }
 
 let offlineSyncStarted = false;
