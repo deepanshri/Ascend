@@ -3,6 +3,7 @@ import { useBowl } from '../providers/BowlProvider';
 import { useCalendar, useCalendarActions } from '../providers/CalendarProvider';
 import { useLedger } from '../providers/HabitLedgerProvider';
 import { usePreferences } from '../providers/PreferencesProvider';
+import { useProtection } from '../providers/ProtectionProvider';
 import { useSession } from '../providers/SessionProvider';
 import { useTheme } from '../providers/ThemeProvider';
 import { useUIActions } from '../providers/UIProvider';
@@ -19,6 +20,7 @@ export function ReportRoute({ isActive, onScroll }: { isActive: boolean; onScrol
   const { derivedHabits, evidenceList, identityVoteCount, frictionAudits, todayMomentumScore, momentumEvents, completionEvents } =
     useLedger();
   const { cycleStartIso } = useBowl();
+  const { protectionWindows } = useProtection();
   const { setTab, openModal } = useUIActions();
   const openSettings = useCallback(() => setTab('settings'), [setTab]);
   const openLedger = useCallback(() => openModal({ kind: 'identityLedger' }), [openModal]);
@@ -43,6 +45,7 @@ export function ReportRoute({ isActive, onScroll }: { isActive: boolean; onScrol
       momentumHistory={momentumEvents}
       completionEvents={completionEvents}
       logs={completionEvents}
+      protectionWindows={protectionWindows}
       selectedDayIso={selectedIso}
       onSelectDayIso={selectDate}
       cycleDays={cycleDays}

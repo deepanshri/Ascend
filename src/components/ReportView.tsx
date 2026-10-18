@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Habit, HabitCategory, HabitCompletionEvent, IdentityEvidence, FrictionAudit, MomentumEvent } from '../types';
+import { Habit, HabitCategory, HabitCompletionEvent, IdentityEvidence, FrictionAudit, MomentumEvent, ProtectionWindow } from '../types';
 import {
   addDaysIso,
   endOfIsoDate,
@@ -44,6 +44,8 @@ interface ReportViewProps {
   momentumHistory?: MomentumEvent[];
   completionEvents?: HabitCompletionEvent[];
   logs?: HabitCompletionEvent[];
+  /** Exam Shield / Vacation intervals; momentum does not decay on these days. */
+  protectionWindows?: ProtectionWindow[];
   selectedDayIso?: string;
   onSelectDayIso?: (iso: string) => void;
   cycleDays?: number;
@@ -386,6 +388,7 @@ const ReportViewContent: React.FC<ReportViewProps> = ({
   momentumHistory: momentumHistoryProp,
   completionEvents: completionProp,
   logs: logsProp,
+  protectionWindows,
   selectedDayIso: selectedDayIsoProp,
   onSelectDayIso,
   cycleDays = 7,
@@ -576,7 +579,7 @@ const ReportViewContent: React.FC<ReportViewProps> = ({
           : ''
       );
       momentumRates = seriesIsos.map(
-        (iso) => calculateMomentumScore(momentumEvents, { asOf: endOfIsoDate(iso), habits }) / 100
+        (iso) => calculateMomentumScore(momentumEvents, { asOf: endOfIsoDate(iso), habits, protectionWindows }) / 100
       );
       workRates = seriesIsos.map((iso) =>
         categoryRateFromLogs(habits, 'work', iso, iso, momentumEvents, completionEvents)
@@ -634,6 +637,7 @@ const ReportViewContent: React.FC<ReportViewProps> = ({
     momentumEvents,
     completionEvents,
     windowRange,
+    protectionWindows,
   ]);
 
   const rollingWeekIsos = useMemo(() => isoRangeInclusive(addDaysIso(todayIso, -6), todayIso), [todayIso]);
