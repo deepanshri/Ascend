@@ -177,12 +177,10 @@ export async function pushHabitLogRemote(
     const inserted = await supabase.from('habit_logs').insert(row);
     if (!inserted.error) return true;
 
-    await supabase
-      .from('habit_logs')
-      .delete()
-      .eq('user_id', userId)
-      .eq('habit_id', event.habitId)
-      .eq('day_index', event.dayIndex);
+    // Older schemas without logged_date: match the legacy text `date` column.
+    // day_index is a weekday slot (0–6) shared by every week, so it must never
+    // be the only date filter on a delete.
+    await deleteLegacyDayRow(userId, event.habitId, loggedDate, event.dayIndex);
 
     const retry = await supabase.from('habit_logs').insert(row);
     return !retry.error;
@@ -209,16 +207,32 @@ export async function pushHabitLogDeleteRemote(
 
     if (dayIndex == null) return false;
 
-    const byIndex = await supabase
-      .from('habit_logs')
-      .delete()
-      .eq('user_id', userId)
-      .eq('habit_id', habitId)
-      .eq('day_index', dayIndex);
-    return !byIndex.error;
+    return await deleteLegacyDayRow(userId, habitId, loggedDate, dayIndex);
   } catch {
     return false;
   }
+}
+
+/**
+ * Fallback delete for one (habit, day) row on schemas without `logged_date`.
+ * Always pinned to the day through the legacy text `date` column: day_index
+ * alone matches that weekday in every week of the habit's history.
+ */
+async function deleteLegacyDayRow(
+  userId: string,
+  habitId: string,
+  loggedDate: string,
+  dayIndex: number
+): Promise<boolean> {
+  if (!supabase || !isIsoDate(loggedDate)) return false;
+  const { error } = await supabase
+    .from('habit_logs')
+    .delete()
+    .eq('user_id', userId)
+    .eq('habit_id', habitId)
+    .eq('date', loggedDate)
+    .eq('day_index', dayIndex);
+  return !error;
 }
 
 export async function pushProfileRemote(
