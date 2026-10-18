@@ -104,8 +104,8 @@ export function NativeSyncController({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     if (!isOnboarded && onboardingStep < 3) return;
-    void syncAllHabitTargetNotifications(habits, todayDayIndex, calendarOrigin);
-  }, [habits, todayDayIndex, calendarOrigin, completionEvents, isOnboarded, onboardingStep]);
+    void syncAllHabitTargetNotifications(habits, todayDayIndex);
+  }, [habits, todayDayIndex, completionEvents, isOnboarded, onboardingStep]);
 
   return <>{children}</>;
 }

@@ -2,7 +2,6 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications, type LocalNotificationSchema } from '@capacitor/local-notifications';
 import { Preferences } from '@capacitor/preferences';
 import { Habit, StandaloneReminder } from '../types';
-import { isHabitScheduledOnDayIndex } from '../utils/schedule';
 import {
   chronicleReminderCopy,
   HABIT_TARGET_COPY_TEMPLATES,
@@ -11,11 +10,15 @@ import {
   reminderExactCopy,
   reminderPriorCopy,
 } from '../services/notificationService';
-import { parseTargetTimeHHmm } from '../utils/timeFormat';
 import { normalizeTimeHHmm, reminderNotificationIds, weekdayFromIsoDate, withReminderNotificationIds } from './reminderIds';
 import type { EveningChronicleSettings } from './chronicle';
 import { CHRONICLE_REMINDER_DAYS, chronicleReminderTimes } from './chronicleReminder';
 import { planPsychologyNotifications, psychologyNotificationIds } from './psychologySchedule';
+import {
+  habitTargetNotificationIds,
+  legacyHabitTargetNotificationId,
+  planHabitTargetNotifications,
+} from './habitTargetSchedule';
 
 export { reminderNotificationIds, weekdayFromIsoDate, withReminderNotificationIds };
 
@@ -433,112 +436,94 @@ export async function rescheduleAllReminderDualAlerts(reminders: StandaloneRemin
   return scheduled;
 }
 
-export function habitTargetNotificationId(habitId: string): number {
-  let hash = 0x45d9f3b >>> 0;
-  const key = `habit-target-${habitId}`;
-  for (let i = 0; i < key.length; i++) {
-    hash = Math.imul(hash ^ key.charCodeAt(i), 16777619) >>> 0;
-  }
-  // Range: 100000–199999 (completely disjoint from psychology ids 20300/81000/81300 and reminder ids 210000–909999)
-  return (100000 + (hash % 100000)) | 0;
+/**
+ * Habit heads-up work runs one call at a time per habit: a cancel-all followed
+ * by a reschedule must never interleave with another call's (for example a
+ * completion landing while a sync reschedules), or a stale alarm could survive.
+ */
+const habitTargetChains = new Map<string, Promise<void>>();
+
+function serializeForHabit(habitId: string, work: () => Promise<void>): Promise<void> {
+  const next = (habitTargetChains.get(habitId) ?? Promise.resolve()).then(work, work);
+  habitTargetChains.set(habitId, next);
+  void next.finally(() => {
+    if (habitTargetChains.get(habitId) === next) habitTargetChains.delete(habitId);
+  });
+  return next;
 }
 
-export async function cancelHabitTargetTimeNotification(habitId: string): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  const notificationId = habitTargetNotificationId(habitId);
+async function cancelHabitTargetIds(habitId: string): Promise<void> {
   try {
     await LocalNotifications.cancel({
-      notifications: [{ id: notificationId }],
+      notifications: [...habitTargetNotificationIds(habitId), legacyHabitTargetNotificationId(habitId)].map((id) => ({
+        id,
+      })),
     });
   } catch {
     // Nothing pending, or plugin unavailable on web.
   }
 }
 
-export { HABIT_TARGET_COPY_TEMPLATES };
-
-export async function scheduleHabitTargetTimeNotification(habit: Habit): Promise<void> {
+/** Cancel every queued heads-up of this habit (archived, deleted, signed out). */
+export async function cancelHabitTargetTimeNotification(habitId: string): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
-  if (!habit.targetTime || habit.archived) return;
-
-  const parsed = parseTargetTimeHHmm(habit.targetTime);
-  if (!parsed) return;
-
-  const notificationId = habitTargetNotificationId(habit.id);
-  // Cancel previous first to prevent stacking
-  await cancelHabitTargetTimeNotification(habit.id);
-
-  const now = new Date();
-  const targetTime = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    parsed.hour,
-    parsed.minute,
-    0,
-    0
-  );
-
-  let triggerDate = new Date(targetTime.getTime() - 15 * 60 * 1000);
-  const nowMs = Date.now();
-
-  if (triggerDate.getTime() <= nowMs && targetTime.getTime() > nowMs) {
-    triggerDate = new Date(nowMs + 5000);
-  } else if (triggerDate.getTime() <= nowMs) {
-    return;
-  }
-
-  try {
-    const granted = await requestNotificationPermissions();
-    if (!granted) return;
-
-    await ensureChannel();
-
-    const targetPayload = habitTargetCopy(habit);
-    const body = habitTargetBody(habit);
-    const exact = await exactAlarmsAllowed();
-
-    await LocalNotifications.schedule({
-      notifications: [
-        {
-          id: notificationId,
-          title: targetPayload.title,
-          body,
-          // Android collapses to one line; the expanded view shows the full purpose.
-          largeBody: body,
-          channelId: CHANNEL_ID,
-          smallIcon: NOTIFICATION_SMALL_ICON,
-          extra: { habitId: habit.id, kind: 'habit_target' },
-          isExactNotification: exact,
-          schedule: {
-            at: triggerDate,
-            allowWhileIdle: true,
-          },
-        },
-      ],
-    });
-  } catch (err) {
-    console.warn('LocalNotifications.schedule habit target failed:', err);
-  }
+  await serializeForHabit(habitId, () => cancelHabitTargetIds(habitId));
 }
 
-export async function syncAllHabitTargetNotifications(
-  habits: Habit[],
-  todayDayIndex: number,
-  calendarOrigin: Date = new Date()
-): Promise<void> {
+export { HABIT_TARGET_COPY_TEMPLATES };
+
+/**
+ * Queue this habit's heads-ups for the coming days (see planHabitTargetNotifications),
+ * replacing whatever was queued. With `completedToday`, today's is dropped and the
+ * following days stay queued, so the reminder keeps firing on days the app isn't opened.
+ */
+export async function scheduleHabitTargetTimeNotification(habit: Habit, completedToday = false): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  await serializeForHabit(habit.id, async () => {
+    await cancelHabitTargetIds(habit.id);
+    const planned = planHabitTargetNotifications(habit, completedToday);
+    if (planned.length === 0) return;
+
+    try {
+      const granted = await requestNotificationPermissions();
+      if (!granted) return;
+
+      await ensureChannel();
+
+      const targetPayload = habitTargetCopy(habit);
+      const exact = await exactAlarmsAllowed();
+
+      await LocalNotifications.schedule({
+        notifications: planned.map(({ id, at }) => {
+          const body = habitTargetBody(habit);
+          return {
+            id,
+            title: targetPayload.title,
+            body,
+            // Android collapses to one line; the expanded view shows the full purpose.
+            largeBody: body,
+            channelId: CHANNEL_ID,
+            smallIcon: NOTIFICATION_SMALL_ICON,
+            extra: { habitId: habit.id, kind: 'habit_target' },
+            isExactNotification: exact,
+            schedule: { at, allowWhileIdle: true },
+          };
+        }),
+      });
+    } catch (err) {
+      console.warn('LocalNotifications.schedule habit target failed:', err);
+    }
+  });
+}
+
+export async function syncAllHabitTargetNotifications(habits: Habit[], todayDayIndex: number): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   for (const habit of habits) {
     if (!habit.targetTime || habit.archived) {
       await cancelHabitTargetTimeNotification(habit.id);
       continue;
     }
-    const isScheduled = isHabitScheduledOnDayIndex(habit, todayDayIndex, calendarOrigin);
-    const isCompleted = Boolean(habit.days?.[todayDayIndex]);
-    if (isScheduled && !isCompleted) {
-      await scheduleHabitTargetTimeNotification(habit);
-    } else {
-      await cancelHabitTargetTimeNotification(habit.id);
-    }
+    // Each queued day checks the habit's own schedule; today also checks completion.
+    await scheduleHabitTargetTimeNotification(habit, Boolean(habit.days?.[todayDayIndex]));
   }
 }

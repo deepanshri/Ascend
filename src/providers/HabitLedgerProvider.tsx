@@ -290,8 +290,9 @@ export function HabitLedgerProvider({ children }: { children: React.ReactNode })
         const plan = planCompletion(stateRef.current, habitId, isFallback, c);
         if (!plan) return null;
         commit({ type: 'COMPLETED', plan, origin: c.origin }, true);
-        // Dynamic cancellation: today's reminder is moot once completed.
-        void cancelHabitTargetTimeNotification(habitId);
+        // Today's reminder is moot once completed; the coming days stay queued.
+        const completed = stateRef.current.habits.find((h) => h.id === habitId);
+        if (completed?.targetTime && !completed.archived) void scheduleHabitTargetTimeNotification(completed, true);
         if (plan.momentumEvent) holdGraceUpload(habitId, plan.momentumEvent);
         void upsertHabitLog(sessionIdRef.current, plan.completionEvent).catch(() => {});
         return { newlyCompleted: plan.newlyCompleted, isMicro: plan.isMicro, loggedDate: plan.loggedDate };
@@ -431,11 +432,8 @@ export function HabitLedgerProvider({ children }: { children: React.ReactNode })
         const now = Date.now();
         commit({ type: 'HABIT_UPDATED', habit, now });
         if (habit.targetTime && !habit.archived) {
-          if (hasLogOn(stateRef.current.completionEvents, habit.id, calendarRef.current.todayIso)) {
-            void cancelHabitTargetTimeNotification(habit.id);
-          } else {
-            void scheduleHabitTargetTimeNotification(habit);
-          }
+          const doneToday = hasLogOn(stateRef.current.completionEvents, habit.id, calendarRef.current.todayIso);
+          void scheduleHabitTargetTimeNotification(habit, doneToday);
         } else {
           void cancelHabitTargetTimeNotification(habit.id);
         }
