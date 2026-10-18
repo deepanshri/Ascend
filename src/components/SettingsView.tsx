@@ -334,7 +334,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col">
               <span className="text-[12.5px] font-medium text-slate-900 dark:text-white">Evening Chronicle</span>
-              <span className="text-[10.5px] text-slate-400">Turn the Home quote card into a short nightly reflection</span>
+              <span className="text-[10.5px] text-slate-400">A nightly reminder and Home card for a short reflection</span>
             </div>
             <button
               type="button"
@@ -352,7 +352,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
             <label className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 px-3 py-2">
               <span>
                 <span className="block text-[11.5px] font-semibold text-slate-700 dark:text-slate-200">Chronicle ready time</span>
-                <span className="block text-[9.5px] text-slate-400">The card stays ready until you complete it</span>
+                <span className="block text-[9.5px] text-slate-400">Reminder goes out then; the card stays ready until you complete it</span>
               </span>
               <input
                 type="time"

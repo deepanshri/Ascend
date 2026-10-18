@@ -24,3 +24,16 @@ export function collectCreateHabitHiddenErrors(input: {
     hasError: Boolean(purpose || fallback),
   };
 }
+
+const DEFAULT_PURPOSE_PREFIX = 'To reinforce my continuous momentum in ';
+
+/** The purpose saved when the user leaves the Purpose field blank. */
+export function defaultPurposeAnchor(habitName: string): string {
+  return `${DEFAULT_PURPOSE_PREFIX}${habitName}.`;
+}
+
+/** True for the auto-generated purpose, even if the habit was renamed since. */
+export function isDefaultPurposeAnchor(purpose: string): boolean {
+  const trimmed = purpose.trim();
+  return trimmed.startsWith(DEFAULT_PURPOSE_PREFIX) && trimmed.endsWith('.');
+}

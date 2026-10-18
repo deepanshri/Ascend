@@ -4,15 +4,18 @@ import { Preferences } from '@capacitor/preferences';
 import { Habit, StandaloneReminder } from '../types';
 import { isHabitScheduledOnDayIndex } from '../utils/schedule';
 import {
-  afternoonFocusCopy,
+  chronicleReminderCopy,
+  HABIT_TARGET_COPY_TEMPLATES,
+  habitTargetBody,
   habitTargetCopy,
-  morningMomentumCopy,
-  nightWrapUpCopy,
   reminderExactCopy,
   reminderPriorCopy,
 } from '../services/notificationService';
 import { parseTargetTimeHHmm } from '../utils/timeFormat';
 import { normalizeTimeHHmm, reminderNotificationIds, weekdayFromIsoDate, withReminderNotificationIds } from './reminderIds';
+import type { EveningChronicleSettings } from './chronicle';
+import { CHRONICLE_REMINDER_DAYS, chronicleReminderTimes } from './chronicleReminder';
+import { planPsychologyNotifications, psychologyNotificationIds } from './psychologySchedule';
 
 export { reminderNotificationIds, weekdayFromIsoDate, withReminderNotificationIds };
 
@@ -35,11 +38,6 @@ export const NOTIFICATION_WINDOWS_KEY = 'ascend_psychology_notifications';
 const CHANNEL_ID = 'ascend-momentum';
 export const REMINDER_CHANNEL_ID = 'ascend_reminders';
 export const NOTIFICATION_SMALL_ICON = 'ic_stat_notification';
-const NOTIFICATION_IDS = {
-  morning: 81000,
-  afternoon: 81300,
-  night: 20300,
-} as const;
 
 export interface PsychologyScheduleInput {
   windows: PsychologyNotificationWindows;
@@ -111,43 +109,21 @@ export async function persistNotificationWindows(
   }
 }
 
-function activeHabits(habits: Habit[]): Habit[] {
-  return habits.filter((habit) => !habit.archived);
-}
-
-function remainingToday(habits: Habit[], todayIndex: number): { remaining: number; total: number } {
-  const scheduled = activeHabits(habits).filter((habit) => isHabitScheduledOnDayIndex(habit, todayIndex));
-  const remaining = scheduled.filter((habit) => !habit.days?.[todayIndex]).length;
-  return { remaining, total: scheduled.length };
-}
-
-function featuredHabitName(habits: Habit[], todayIndex: number): string {
-  const dueToday = activeHabits(habits).filter((habit) => isHabitScheduledOnDayIndex(habit, todayIndex));
-  const featured =
-    dueToday.find((habit) => habit.priority === 'high') || dueToday[0] || activeHabits(habits)[0];
-  return featured?.name?.trim() || 'your habit';
-}
-
-function morningCopy(habits: Habit[], todayIndex: number): { title: string; body: string } {
-  return morningMomentumCopy(featuredHabitName(habits, todayIndex));
-}
-
-function afternoonCopy(
-  habits: Habit[],
-  todayIndex: number,
-  remaining: number
-): { title: string; body: string } {
-  const open = activeHabits(habits).find(
-    (habit) => isHabitScheduledOnDayIndex(habit, todayIndex) && !habit.days?.[todayIndex]
-  );
-  return afternoonFocusCopy(open?.name?.trim() || featuredHabitName(habits, todayIndex), remaining);
-}
-
-function nightCopy(habits: Habit[], todayIndex: number, remaining: number): { title: string; body: string } {
-  const open = activeHabits(habits).find(
-    (habit) => isHabitScheduledOnDayIndex(habit, todayIndex) && !habit.days?.[todayIndex]
-  );
-  return nightWrapUpCopy(open?.name?.trim() || featuredHabitName(habits, todayIndex), remaining);
+/**
+ * Whether this batch may ask for exact alarms. Only when the app already holds
+ * exact-alarm access: a `schedule()` call that wants an exact alarm without it
+ * makes the plugin (8.3+) open the "Alarms & reminders" settings screen on
+ * Android 12+, and the app reschedules on nearly every habit change. Without
+ * access, notifications go out inexact with allowWhileIdle.
+ */
+async function exactAlarmsAllowed(): Promise<boolean> {
+  if (Capacitor.getPlatform() !== 'android') return false;
+  try {
+    const status = await LocalNotifications.checkExactNotificationSetting();
+    return status.exact_alarm === 'granted';
+  } catch {
+    return false;
+  }
 }
 
 async function ensureChannel(): Promise<void> {
@@ -170,12 +146,9 @@ async function ensureChannel(): Promise<void> {
 
 async function cancelPsychologyNotifications(): Promise<void> {
   try {
+    // Also clears the single daily-repeat notification older builds left at each base id.
     await LocalNotifications.cancel({
-      notifications: [
-        { id: NOTIFICATION_IDS.morning },
-        { id: NOTIFICATION_IDS.afternoon },
-        { id: NOTIFICATION_IDS.night },
-      ],
+      notifications: psychologyNotificationIds().map((id) => ({ id })),
     });
   } catch {
     // Nothing pending, or plugin unavailable on web.
@@ -223,13 +196,6 @@ export async function requestPsychologyNotificationAccess(): Promise<boolean> {
   return requestNotificationPermissions();
 }
 
-function dailyWindow(hour: number, minute: number): LocalNotificationSchema['schedule'] {
-  return {
-    on: { hour, minute },
-    allowWhileIdle: true,
-  };
-}
-
 export async function schedulePsychologyNotifications(input: PsychologyScheduleInput): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
 
@@ -242,52 +208,81 @@ export async function schedulePsychologyNotifications(input: PsychologyScheduleI
 
   await ensureChannel();
 
-  const { remaining } = remainingToday(input.habits, input.todayIndex);
-  const morning = morningCopy(input.habits, input.todayIndex);
-  const afternoon = afternoonCopy(input.habits, input.todayIndex, remaining);
-  const night = nightCopy(input.habits, input.todayIndex, remaining);
+  // One-shots for the coming days rather than a daily repeat: see DAYS_QUEUED.
+  const planned = planPsychologyNotifications(input.windows, input.habits, input.todayIndex);
+  if (planned.length === 0) return;
 
-  const notifications: LocalNotificationSchema[] = [];
-
-  if (input.windows.morning) {
-    notifications.push({
-      id: NOTIFICATION_IDS.morning,
-      title: morning.title,
-      body: morning.body,
-      channelId: CHANNEL_ID,
-      smallIcon: NOTIFICATION_SMALL_ICON,
-      schedule: dailyWindow(6, 0),
-    });
-  }
-
-  if (input.windows.afternoon) {
-    notifications.push({
-      id: NOTIFICATION_IDS.afternoon,
-      title: afternoon.title,
-      body: afternoon.body,
-      channelId: CHANNEL_ID,
-      smallIcon: NOTIFICATION_SMALL_ICON,
-      schedule: dailyWindow(13, 30),
-    });
-  }
-
-  if (input.windows.night) {
-    notifications.push({
-      id: NOTIFICATION_IDS.night,
-      title: night.title,
-      body: night.body,
-      channelId: CHANNEL_ID,
-      smallIcon: NOTIFICATION_SMALL_ICON,
-      schedule: dailyWindow(20, 30),
-    });
-  }
-
-  if (notifications.length === 0) return;
-
+  const exact = await exactAlarmsAllowed();
   try {
-    await LocalNotifications.schedule({ notifications });
+    await LocalNotifications.schedule({
+      notifications: planned.map(({ id, title, body, at }) => ({
+        id,
+        title,
+        body,
+        channelId: CHANNEL_ID,
+        smallIcon: NOTIFICATION_SMALL_ICON,
+        isExactNotification: exact,
+        schedule: { at, allowWhileIdle: true },
+      })),
+    });
   } catch {
-    // Native scheduling can fail without notification permission or exact-alarm access.
+    // Native scheduling can fail without notification permission.
+  }
+}
+
+// One id per queued evening: 82000–82006 (clear of psychology 20300–20306 / 81000–81006 /
+// 81300–81306, habit targets 100000–199999 and reminders 210000–909999).
+const CHRONICLE_NOTIFICATION_BASE_ID = 82000;
+
+async function cancelChronicleReminders(): Promise<void> {
+  try {
+    await LocalNotifications.cancel({
+      notifications: Array.from({ length: CHRONICLE_REMINDER_DAYS }, (_, i) => ({
+        id: CHRONICLE_NOTIFICATION_BASE_ID + i,
+      })),
+    });
+  } catch {
+    // Nothing pending, or plugin unavailable on web.
+  }
+}
+
+/**
+ * Queues the Evening Chronicle reminder for the coming evenings at the configured
+ * time, replacing whatever was queued before. Tonight's is dropped once today's
+ * entry is saved; everything is cancelled when the feature is off.
+ */
+export async function scheduleChronicleReminders(
+  settings: EveningChronicleSettings,
+  completedToday: boolean
+): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+
+  await cancelChronicleReminders();
+  const times = chronicleReminderTimes(settings, completedToday);
+  if (times.length === 0) return;
+
+  const granted = await requestNotificationPermissions();
+  if (!granted) return;
+
+  await ensureChannel();
+
+  const copy = chronicleReminderCopy();
+  const exact = await exactAlarmsAllowed();
+  try {
+    await LocalNotifications.schedule({
+      notifications: times.map((at, i) => ({
+        id: CHRONICLE_NOTIFICATION_BASE_ID + i,
+        title: copy.title,
+        body: copy.body,
+        channelId: CHANNEL_ID,
+        smallIcon: NOTIFICATION_SMALL_ICON,
+        extra: { kind: 'chronicle' },
+        isExactNotification: exact,
+        schedule: { at, allowWhileIdle: true },
+      })),
+    });
+  } catch (err) {
+    console.warn('LocalNotifications.schedule chronicle failed:', err);
   }
 }
 
@@ -381,6 +376,7 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
 
   await ensureReminderChannel();
 
+  const exactAlarms = await exactAlarmsAllowed();
   const now = Date.now();
   const tenMinBefore = new Date(target.getTime() - 10 * 60 * 1000);
   const notifications: LocalNotificationSchema[] = [];
@@ -394,6 +390,7 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
       channelId: REMINDER_CHANNEL_ID,
       smallIcon: NOTIFICATION_SMALL_ICON,
       extra: { reminderId: hydrated.id, kind: 'prior' },
+      isExactNotification: exactAlarms,
       schedule: { at: tenMinBefore, allowWhileIdle: true },
     });
   }
@@ -407,6 +404,7 @@ export async function scheduleReminderDualAlerts(reminder: StandaloneReminder): 
       channelId: REMINDER_CHANNEL_ID,
       smallIcon: NOTIFICATION_SMALL_ICON,
       extra: { reminderId: hydrated.id, kind: 'exact' },
+      isExactNotification: exactAlarms,
       schedule: { at: target, allowWhileIdle: true },
     });
   }
@@ -457,14 +455,7 @@ export async function cancelHabitTargetTimeNotification(habitId: string): Promis
   }
 }
 
-export const HABIT_TARGET_COPY_TEMPLATES = [
-  'Imperfect consistency compounds: {habit_name} in 15 mins.',
-  'No need for perfection, just presence: {habit_name} coming up.',
-  'Showing up counts—no matter how small: {habit_name} starts soon.',
-  "Cast today's vote: {habit_name} in 15 minutes.",
-  '15-minute heads-up: Time to show up for {habit_name}.',
-  "Remember what you're building towards: ready for {habit_name}?",
-] as const;
+export { HABIT_TARGET_COPY_TEMPLATES };
 
 export async function scheduleHabitTargetTimeNotification(habit: Habit): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
@@ -504,10 +495,8 @@ export async function scheduleHabitTargetTimeNotification(habit: Habit): Promise
     await ensureChannel();
 
     const targetPayload = habitTargetCopy(habit);
-    const habitName = habit.name?.trim() || 'your habit';
-    const template =
-      HABIT_TARGET_COPY_TEMPLATES[Math.floor(Math.random() * HABIT_TARGET_COPY_TEMPLATES.length)];
-    const body = template.replace('{habit_name}', habitName);
+    const body = habitTargetBody(habit);
+    const exact = await exactAlarmsAllowed();
 
     await LocalNotifications.schedule({
       notifications: [
@@ -515,9 +504,12 @@ export async function scheduleHabitTargetTimeNotification(habit: Habit): Promise
           id: notificationId,
           title: targetPayload.title,
           body,
+          // Android collapses to one line; the expanded view shows the full purpose.
+          largeBody: body,
           channelId: CHANNEL_ID,
           smallIcon: NOTIFICATION_SMALL_ICON,
           extra: { habitId: habit.id, kind: 'habit_target' },
+          isExactNotification: exact,
           schedule: {
             at: triggerDate,
             allowWhileIdle: true,

@@ -1,6 +1,7 @@
 /** Structured headline copy and natural, action-oriented notification phrasing. */
 
 import { Habit } from '../types';
+import { isDefaultPurposeAnchor } from '../lib/createHabitValidation';
 
 /** Formats a habit or task title with a clean bullet or action prefix. */
 export function formatActionTitle(prefix: string, rawTitle: string): string {
@@ -43,11 +44,46 @@ export function habitTargetCopy(
   };
 }
 
+export const HABIT_TARGET_COPY_TEMPLATES = [
+  'Imperfect consistency compounds: {habit_name} in 15 mins.',
+  'No need for perfection, just presence: {habit_name} coming up.',
+  'Showing up counts—no matter how small: {habit_name} starts soon.',
+  "Cast today's vote: {habit_name} in 15 minutes.",
+  '15-minute heads-up: Time to show up for {habit_name}.',
+  "Remember what you're building towards: ready for {habit_name}?",
+] as const;
+
+/**
+ * Body for the 15-minute habit heads-up. Leads with the habit's own Purpose Anchor
+ * when the user wrote one; otherwise a rotating generic line.
+ */
+export function habitTargetBody(
+  habit: Pick<Habit, 'name'> & Partial<Pick<Habit, 'purposeAnchor'>>,
+  random: () => number = Math.random
+): string {
+  const habitName = habit.name?.trim() || 'your habit';
+  const purpose = habit.purposeAnchor?.trim() ?? '';
+  if (purpose && !isDefaultPurposeAnchor(purpose)) {
+    return `${habitName} in 15 min — ${purpose}`;
+  }
+  const template =
+    HABIT_TARGET_COPY_TEMPLATES[Math.floor(random() * HABIT_TARGET_COPY_TEMPLATES.length)];
+  return template.replace('{habit_name}', habitName);
+}
+
 /** Morning psychology notification */
 export function morningMomentumCopy(_featuredName?: string): { title: string; body: string } {
   return {
     title: 'Morning Focus',
-    body: "Let's execute today's plan : Open chronicle",
+    body: "Let's execute today's plan.",
+  };
+}
+
+/** Evening Chronicle reminder, fired at the user's configured Chronicle time. */
+export function chronicleReminderCopy(): { title: string; body: string } {
+  return {
+    title: 'Evening Chronicle',
+    body: 'Two minutes to reflect on today and set up tomorrow.',
   };
 }
 
@@ -82,7 +118,7 @@ export function nightWrapUpCopy(
   }
   const name = featuredName.trim() || 'Habit';
   return {
-    title: `Evening Wrap-up • ${name}`,
+    title: `Still Open Today • ${name}`,
     body: 'Lock in your daily momentum vote before midnight.',
   };
 }

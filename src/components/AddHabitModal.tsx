@@ -9,7 +9,7 @@ import { normalizeScheduledDays, scheduleTypeFromDays } from '../utils/schedule'
 import { WeekdayScheduleChips } from './WeekdayScheduleChips';
 import { inferBowlModeFromClock } from '../utils/timeOfDay';
 import { formatTargetTimeDisplay } from '../utils/timeFormat';
-import { collectCreateHabitHiddenErrors } from '../lib/createHabitValidation';
+import { collectCreateHabitHiddenErrors, defaultPurposeAnchor } from '../lib/createHabitValidation';
 
 interface AddHabitModalProps {
   isOpen: boolean;
@@ -82,7 +82,7 @@ export const AddHabitModal: React.FC<AddHabitModalProps> = ({
       category,
       timestamp: 'Daily',
       priority,
-      purposeAnchor: purposeAnchor.trim() || `To reinforce my continuous momentum in ${name.trim()}.`,
+      purposeAnchor: purposeAnchor.trim() || defaultPurposeAnchor(name.trim()),
       fallbackMicroHabit: fallbackMicro.trim(),
       targetDaysPerWeek: days.length,
       scheduleType: scheduleTypeFromDays(days),
