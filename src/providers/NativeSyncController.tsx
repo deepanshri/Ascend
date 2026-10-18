@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { flushWrite, scheduleWrite } from '../lib/pendingWrites';
 import { hideNativeSplash } from '../lib/nativeChrome';
+import { useRescheduleSignal } from '../hooks/useRescheduleSignal';
 import { schedulePsychologyNotifications, syncAllHabitTargetNotifications } from '../lib/notifications';
 import { publishWidgetSnapshot } from '../lib/widgetSync';
 import { useCalendar } from './CalendarProvider';
@@ -88,6 +89,9 @@ export function NativeSyncController({ children }: { children: React.ReactNode }
   ]);
   useEffect(() => () => flushWrite(WIDGET_REFRESH_KEY), []);
 
+  // Resume and timezone changes re-queue the notifications below at the current zone's times.
+  const rescheduleSignal = useRescheduleSignal();
+
   const hasSession = Boolean(session);
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -100,12 +104,12 @@ export function NativeSyncController({ children }: { children: React.ReactNode }
       });
     }, NOTIFICATION_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [hasSession, notificationWindows, activeHabits, todayDayIndex, todayMomentumScore, completionEvents]);
+  }, [hasSession, notificationWindows, activeHabits, todayDayIndex, todayMomentumScore, completionEvents, rescheduleSignal]);
 
   useEffect(() => {
     if (!isOnboarded && onboardingStep < 3) return;
     void syncAllHabitTargetNotifications(habits, todayDayIndex);
-  }, [habits, todayDayIndex, completionEvents, isOnboarded, onboardingStep]);
+  }, [habits, todayDayIndex, completionEvents, isOnboarded, onboardingStep, rescheduleSignal]);
 
   return <>{children}</>;
 }

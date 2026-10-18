@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addDaysIso, diffDaysIso, getLocalDateString, localMidnightOf, msUntilNextLocalDay } from './dates';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { addDaysIso, diffDaysIso, getLocalDateString, localMidnightOf, msUntilNextLocalDay, timeZoneKey } from './dates';
 
 const ZONES = [
   'America/New_York', // DST at 02:00
@@ -81,5 +81,38 @@ describe('localMidnightOf', () => {
 describe('getLocalDateString', () => {
   it('falls back to now for an invalid Date', () => {
     expect(getLocalDateString(new Date('nope'))).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('timeZoneKey', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('combines the IANA zone and the UTC offset', () => {
+    vi.spyOn(Intl, 'DateTimeFormat').mockReturnValue({
+      resolvedOptions: () => ({ timeZone: 'Asia/Kolkata' }),
+    } as Intl.DateTimeFormat);
+    const date = new Date();
+    vi.spyOn(date, 'getTimezoneOffset').mockReturnValue(-330);
+    expect(timeZoneKey(date)).toBe('Asia/Kolkata|-330');
+  });
+
+  it('changes when the zone changes', () => {
+    const date = new Date();
+    const zone = vi.spyOn(Intl, 'DateTimeFormat');
+    zone.mockReturnValue({ resolvedOptions: () => ({ timeZone: 'Asia/Kolkata' }) } as Intl.DateTimeFormat);
+    const before = timeZoneKey(date);
+    zone.mockReturnValue({ resolvedOptions: () => ({ timeZone: 'Europe/London' }) } as Intl.DateTimeFormat);
+    expect(timeZoneKey(date)).not.toBe(before);
+  });
+
+  it('still reports the offset when Intl is unavailable', () => {
+    vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(() => {
+      throw new Error('no Intl');
+    });
+    const date = new Date();
+    vi.spyOn(date, 'getTimezoneOffset').mockReturnValue(60);
+    expect(timeZoneKey(date)).toBe('|60');
   });
 });

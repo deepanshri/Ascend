@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useRescheduleSignal } from '../hooks/useRescheduleSignal';
 import { getChronicleEntry } from '../lib/chronicle';
 import { scheduleChronicleReminders } from '../lib/notifications';
 import { useCalendar } from './CalendarProvider';
@@ -19,6 +20,8 @@ export function ChronicleReminderSync() {
   const { eveningChronicle } = usePreferences();
   const { todayIso } = useCalendar();
   const { chronicleVersion } = useUI();
+  // Resume and timezone changes re-queue the reminder at the current zone's time.
+  const rescheduleSignal = useRescheduleSignal();
 
   const hasSession = Boolean(session);
   useEffect(() => {
@@ -30,7 +33,7 @@ export function ChronicleReminderSync() {
       );
     }, NOTIFICATION_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [hasSession, eveningChronicle, todayIso, chronicleVersion]);
+  }, [hasSession, eveningChronicle, todayIso, chronicleVersion, rescheduleSignal]);
 
   return null;
 }

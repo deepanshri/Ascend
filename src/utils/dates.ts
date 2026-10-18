@@ -146,3 +146,17 @@ export function seedCompletedDays(completedPastDays = 3, date: Date = new Date()
   const first = Math.max(0, today - completedPastDays);
   return Array.from({ length: 7 }, (_, i) => i >= first && i < today);
 }
+
+/**
+ * The device's timezone as one comparable string: IANA zone plus the current
+ * UTC offset. Changes when the user travels or switches zones (and at DST).
+ */
+export function timeZoneKey(date: Date = new Date()): string {
+  let zone = '';
+  try {
+    zone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+  } catch {
+    // Intl unavailable: the offset alone still detects most changes.
+  }
+  return `${zone}|${date.getTimezoneOffset()}`;
+}
