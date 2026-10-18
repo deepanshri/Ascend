@@ -445,8 +445,7 @@ export const authService = {
    */
   async deleteAccount(_userId?: string): Promise<string | null> {
     if (!isSupabaseConfigured || !supabase) {
-      setStoredSession(null);
-      return null;
+      return 'Cloud is not configured — account deletion unavailable.';
     }
     try {
       const { error } = await supabase.rpc('delete_own_account');

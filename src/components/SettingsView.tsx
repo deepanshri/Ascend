@@ -37,7 +37,8 @@ interface SettingsViewProps {
     importedEvents?: HabitCompletionEvent[],
     importedMomentum?: MomentumEvent[]
   ) => void;
-  onDeleteAccount: () => void;
+  /** Resolves to null on success, or an error message on failure. */
+  onDeleteAccount: () => Promise<string | null>;
   onClearCache: () => void;
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
   onOpenSettings?: () => void;
@@ -82,6 +83,8 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
   // Account deletion modal state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [deleteInProgress, setDeleteInProgress] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const feedbackTimerRef = useRef<number | null>(null);
@@ -206,11 +209,32 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
     feedbackTimerRef.current = window.setTimeout(() => setCacheFeedback(false), 2000);
   };
 
-  const handleDeleteAccountSubmit = (e: React.FormEvent) => {
+  const closeDeleteModal = () => {
+    if (deleteInProgress) return;
+    setShowDeleteModal(false);
+    setDeleteConfirmationText('');
+    setDeleteError(null);
+  };
+
+  // The dialog stays open until the delete returns, so a failure is shown
+  // here instead of silently leaving the user signed in.
+  const handleDeleteAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (deleteConfirmationText.trim().toUpperCase() === 'DELETE') {
+    if (deleteInProgress || deleteConfirmationText.trim().toUpperCase() !== 'DELETE') return;
+    setDeleteError(null);
+    setDeleteInProgress(true);
+    try {
+      const err = await onDeleteAccount();
+      if (err) {
+        setDeleteError(err);
+        return;
+      }
       setShowDeleteModal(false);
-      onDeleteAccount();
+      setDeleteConfirmationText('');
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Account deletion failed.');
+    } finally {
+      setDeleteInProgress(false);
     }
   };
 
@@ -574,10 +598,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
       {/* Double Confirmation Modal for Account Deletion */}
       <MotionModal
         isOpen={showDeleteModal}
-        onClose={() => {
-          setShowDeleteModal(false);
-          setDeleteConfirmationText('');
-        }}
+        onClose={closeDeleteModal}
         overlayClassName="bg-slate-900/60 backdrop-blur-xs"
         cardClassName="p-5 max-w-sm space-y-3 text-left border-rose-200 dark:border-rose-900"
       >
@@ -589,6 +610,12 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
               This action <strong>cannot be undone</strong>. All your habits, momentum records, and identity evidence ledger entries will be permanently erased.
             </p>
 
+            {deleteError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-[11.5px]">
+                {deleteError}
+              </div>
+            )}
+
             <form onSubmit={handleDeleteAccountSubmit} className="space-y-3 pt-1">
               <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 Type &quot;DELETE&quot; to confirm:
@@ -596,6 +623,7 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
               <input
                 type="text"
                 required
+                disabled={deleteInProgress}
                 value={deleteConfirmationText}
                 onChange={(e) => setDeleteConfirmationText(e.target.value)}
                 placeholder="DELETE"
@@ -605,22 +633,27 @@ const SettingsViewInner: React.FC<SettingsViewProps> = ({
               <div className="flex space-x-2 pt-1">
                 <motion.button
                   type="button"
-                  whileTap={tapPress}
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setDeleteConfirmationText('');
-                  }}
-                  className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-[11.5px] hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                  whileTap={deleteInProgress ? undefined : tapPress}
+                  disabled={deleteInProgress}
+                  onClick={closeDeleteModal}
+                  className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-[11.5px] hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </motion.button>
                 <motion.button
                   type="submit"
-                  whileTap={deleteConfirmationText.trim().toUpperCase() !== 'DELETE' ? undefined : tapPress}
-                  disabled={deleteConfirmationText.trim().toUpperCase() !== 'DELETE'}
-                  className="flex-1 py-2 rounded-xl bg-rose-600 text-white font-bold text-[11.5px] hover:bg-rose-700 cursor-pointer disabled:opacity-40"
+                  whileTap={deleteInProgress || deleteConfirmationText.trim().toUpperCase() !== 'DELETE' ? undefined : tapPress}
+                  disabled={deleteInProgress || deleteConfirmationText.trim().toUpperCase() !== 'DELETE'}
+                  className="flex-1 py-2 rounded-xl bg-rose-600 text-white font-bold text-[11.5px] hover:bg-rose-700 cursor-pointer disabled:opacity-40 flex items-center justify-center space-x-1.5"
                 >
-                  Wipe & Delete
+                  {deleteInProgress ? (
+                    <>
+                      <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <span>Wipe & Delete</span>
+                  )}
                 </motion.button>
               </div>
             </form>

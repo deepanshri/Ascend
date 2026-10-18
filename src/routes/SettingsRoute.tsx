@@ -38,10 +38,6 @@ export function SettingsRoute({ onScroll }: { onScroll: (event: React.UIEvent<HT
       }),
     [importBackup]
   );
-  const onDeleteAccount = useCallback(async () => {
-    await deleteAccount();
-  }, [deleteAccount]);
-
   return (
     <SettingsView
       habits={habits}
@@ -62,7 +58,7 @@ export function SettingsRoute({ onScroll }: { onScroll: (event: React.UIEvent<HT
       onRestoreHabit={restoreHabit}
       onDeleteHabit={deleteHabit}
       onImportJSON={onImportJSON}
-      onDeleteAccount={onDeleteAccount}
+      onDeleteAccount={deleteAccount}
       onClearCache={clearDeviceCaches}
       onScroll={onScroll}
       onOpenSettings={openHome}
