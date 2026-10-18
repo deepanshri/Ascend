@@ -6,6 +6,8 @@ import { isUuid } from '../utils/momentum';
 import { isTimeOfDay } from '../utils/timeOfDay';
 import { readJson, writeJson } from './storage';
 import { syncGeneration, trackInFlight } from './syncState';
+import { recordDeadLetters } from './deadLetter';
+import { type InsertOutcome, uploadMomentumEvents } from './momentumUpload';
 import { remapLegacyMomentumIds, remapLegacyMomentumIdsBy } from '../utils/momentumIds';
 
 export const MOMENTUM_EVENTS_STORAGE_KEY = 'ascend_momentum_events';
@@ -183,13 +185,27 @@ export async function pushMomentumEventsRemote(
     return false;
   }
 
-  const ok = await trackInFlight(filtered.length, () => insertMomentumRows(userId, filtered));
-  if (!ok) enqueueSince(gen, userId, filtered);
-  return ok;
+  // Batched, with a per-row fallback: one row the database rejects can't hold back the rest.
+  const { retry, rejected } = await trackInFlight(filtered.length, () =>
+    uploadMomentumEvents(filtered, (batch) => insertMomentumRows(userId, batch))
+  );
+  enqueueSince(gen, userId, retry);
+  if (rejected.length > 0) {
+    // Kept verbatim instead of retried forever; exported with the JSON backup.
+    recordDeadLetters(
+      MOMENTUM_UPLOAD_DEAD_LETTER_SOURCE,
+      rejected.map(({ event, error }) => ({ reason: 'server_rejected', value: { userId, event, error } }))
+    );
+  }
+  // Rejected rows can never be sent, so they don't count as unsynced.
+  return retry.length === 0;
 }
 
-async function insertMomentumRows(userId: string, events: MomentumEvent[]): Promise<boolean> {
-  if (!supabase) return false;
+/** Dead-letter source for momentum events the database refused. */
+export const MOMENTUM_UPLOAD_DEAD_LETTER_SOURCE = 'momentum_events_upload';
+
+async function insertMomentumRows(userId: string, events: MomentumEvent[]): Promise<InsertOutcome> {
+  if (!supabase) return { ok: false };
   const rawRows = events.map((e) => toMomentumEventRow(userId, e));
   const rows = supportsTimeOfDayColumn
     ? rawRows
@@ -205,11 +221,11 @@ async function insertMomentumRows(userId: string, events: MomentumEvent[]): Prom
     }
     if (error) {
       console.warn('Batch momentum events push note:', error.message);
-      return false;
+      return { ok: false, error: { code: error.code, message: error.message } };
     }
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: { message: err instanceof Error ? err.message : String(err) } };
   }
 }
 

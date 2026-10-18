@@ -30,7 +30,8 @@ export const INTERESTS_STORAGE_KEY = 'ascend_personal_interests';
 
 export const DEFAULT_INTERESTS: readonly string[] = ['Movies', 'Books', 'Anime', 'Running'];
 
-export type RejectReason = 'invalid_json' | 'not_a_list' | 'invalid_entry';
+/** Why an entry was set aside: unparseable locally, or (server_rejected) refused by the database on upload. */
+export type RejectReason = 'invalid_json' | 'not_a_list' | 'invalid_entry' | 'server_rejected';
 
 /** Something a parser could not use: the raw string, the payload, or one entry. */
 export interface RejectedEntry {
