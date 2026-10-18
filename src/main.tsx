@@ -2,6 +2,12 @@ import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
+// Space Grotesk ships inside the app: no network request can hold up first paint.
+import '@fontsource/space-grotesk/300.css';
+import '@fontsource/space-grotesk/400.css';
+import '@fontsource/space-grotesk/500.css';
+import '@fontsource/space-grotesk/600.css';
+import '@fontsource/space-grotesk/700.css';
 import './index.css';
 import { applyNativeChrome } from './lib/nativeChrome';
 import { THEME_STORAGE_KEY } from './lib/themeStore';
