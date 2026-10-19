@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#020617">
+  <title>Email confirmed · Ascend</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --canvas: #020617;
+      --surface: #0f172a;
+      --line: #1e293b;
+      --ink: #f8fafc;
+      --ink-muted: #cbd5e1;
+      --ink-faint: #94a3b8;
+      --green: #23c15d;
+      --blue: #3b82f6;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+      background: radial-gradient(ellipse 120% 60% at 50% 0%, rgba(59, 130, 246, 0.18), transparent 70%), var(--canvas);
+      color: var(--ink);
+      font-family: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-align: center;
+    }
+    main { width: 100%; max-width: 380px; }
+    .badge {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 24px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      color: var(--green);
+    }
+    .badge svg { width: 40px; height: 40px; }
+    .badge .warn-icon { display: none; color: var(--warn); }
+    h1 { margin: 0 0 12px; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; }
+    p { margin: 0; font-size: 1rem; line-height: 1.55; color: var(--ink-muted); }
+    .card {
+      margin-top: 28px;
+      padding: 20px;
+      border-radius: 20px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      text-align: left;
+    }
+    ol { margin: 0; padding-left: 1.25rem; color: var(--ink); line-height: 1.6; }
+    li + li { margin-top: 6px; }
+    .button {
+      display: block;
+      margin-top: 20px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: var(--green);
+      color: #04120a;
+      font-weight: 700;
+      font-size: 1rem;
+      text-align: center;
+      text-decoration: none;
+    }
+    .button:active { transform: scale(0.98); }
+    .button:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+    .hint { margin-top: 12px; font-size: 0.85rem; color: var(--ink-faint); text-align: center; }
+    footer { margin-top: 32px; font-size: 0.8rem; color: var(--ink-faint); }
+
+    body.failed .badge { color: var(--warn); }
+    body.failed .ok-icon { display: none; }
+    body.failed .warn-icon { display: block; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="badge" aria-hidden="true">
+      <svg class="ok-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+      <svg class="warn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+    </div>
+
+    <h1 id="title">Your email is confirmed</h1>
+    <p id="lead">Your Ascend account is ready. You can close this page.</p>
+
+    <div class="card">
+      <ol id="steps">
+        <li>Open the Ascend app on your phone.</li>
+        <li>Sign in with your email and password.</li>
+      </ol>
+      <a class="button" href="ascend://app/home">Open Ascend</a>
+      <p class="hint">If the button doesn't open the app, open Ascend from your home screen instead.</p>
+    </div>
+
+    <footer>Ascend</footer>
+  </main>
+
+  <script>
+    (function () {
+      // Supabase appends the result to the URL. Errors mean the link didn't confirm anything.
+      var params = new URLSearchParams(location.hash.slice(1) || location.search.slice(1));
+      if (params.get('error') || params.get('error_code')) {
+        document.body.classList.add('failed');
+        document.title = 'Link expired · Ascend';
+        document.getElementById('title').textContent = 'This link has expired';
+        document.getElementById('lead').textContent =
+          'It may be too old or already used. Your email might already be confirmed.';
+        document.getElementById('steps').innerHTML =
+          '<li>Open the Ascend app and try signing in.</li>' +
+          '<li>If it says your email isn’t confirmed, sign up again to get a new link.</li>';
+      }
+      // Don't leave sign-in tokens sitting in the address bar or history.
+      if (location.hash || location.search) history.replaceState(null, '', location.pathname);
+    })();
+  </script>
+</body>
+</html>
