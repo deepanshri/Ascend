@@ -8,6 +8,12 @@
 
 export const AUTH_CALLBACK_URL = 'ascend://auth/callback';
 
+/**
+ * Sign-up confirmations land here first (site/index.html on GitHub Pages):
+ * it works in any browser and forwards the tokens to AUTH_CALLBACK_URL.
+ */
+export const EMAIL_CONFIRMED_PAGE_URL = 'https://deepanshri.github.io/Ascend/';
+
 /** 'recovery' means the user came from a reset-password email. */
 export type AuthCallbackType = 'signup' | 'recovery' | 'other';
 

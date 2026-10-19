@@ -11,7 +11,7 @@ import {
   withReminderNotificationIds,
 } from './notifications';
 import { DEFAULT_AVATAR_ID, resolveAvatarId } from '../data/avatars';
-import { AUTH_CALLBACK_URL } from './authCallback';
+import { AUTH_CALLBACK_URL, EMAIL_CONFIRMED_PAGE_URL } from './authCallback';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
@@ -340,7 +340,7 @@ export const authService = {
         email,
         password,
         options: {
-          emailRedirectTo: AUTH_CALLBACK_URL,
+          emailRedirectTo: EMAIL_CONFIRMED_PAGE_URL,
           data: {
             full_name: name,
             avatar_url: generateAvatarUrl(name),
