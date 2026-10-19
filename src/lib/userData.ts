@@ -32,6 +32,7 @@ const USER_LEDGER_KEYS = [
   'ascend_offline_profile_queue',
   'ascend_offline_momentum_event_queue',
   'ascend_offline_chronicle_queue',
+  'ascend_offline_feedback_queue',
   'ascend_bowl_cycle_history',
   'ascend_user_feedback_history',
   'ascend_dead_letter',

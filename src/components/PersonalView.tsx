@@ -30,6 +30,14 @@ import { persistUserProfile } from '../lib/profile';
 import { AVATAR_OPTIONS, persistStoredAvatarId, readStoredAvatarId, resolveAvatarId } from '../data/avatars';
 import type { ProtectionModeStatus } from '../lib/protection';
 import { normalizeCategoryKey } from '../utils/quotes';
+import { canSendFeedback, FEEDBACK_MAX_LENGTH, sendFeedback, type FeedbackSendStatus } from '../lib/feedbackSync';
+import { buildFeedbackReport } from '../lib/feedbackContext';
+
+/** Button text once the report is on its way, and how long it shows before the sheet closes. */
+const FEEDBACK_DONE = {
+  sent: { label: 'Feedback sent', closeAfterMs: 1000 },
+  queued: { label: "Saved · sends when you're online", closeAfterMs: 2000 },
+} as const;
 
 const ALL_INTEREST_CATEGORIES: { name: string; icon: string; key: string }[] = [
   { name: 'Fitness & Gym', icon: '💪', key: 'Fitness/Gym' },
@@ -168,7 +176,7 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
 
   // Help & Feedback state
   const [feedbackText, setFeedbackText] = useState('');
-  const [feedbackSent, setFeedbackSent] = useState(false);
+  const [feedbackStatus, setFeedbackStatus] = useState<FeedbackSendStatus | 'sending' | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   /** Unsynced writes that stopped the last sign-out; null when no warning is showing. */
   const [unsyncedOnLogout, setUnsyncedOnLogout] = useState<number | null>(null);
@@ -247,34 +255,34 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
     }
   };
 
-  const handleSendFeedback = (e: React.FormEvent) => {
+  const feedbackUserId = userSession && !userSession.isGuest ? userSession.id : null;
+  const feedbackAllowed = canSendFeedback(feedbackUserId);
+  const feedbackBusy = feedbackStatus === 'sending' || feedbackStatus === 'sent' || feedbackStatus === 'queued';
+
+  const handleSendFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = feedbackText.trim();
-    if (!text) return;
+    if (!text || !feedbackAllowed || feedbackStatus === 'sending') return;
 
+    setFeedbackStatus('sending');
+    let status: FeedbackSendStatus;
     try {
-      const stored = localStorage.getItem('ascend_user_feedback_history');
-      const list = stored ? JSON.parse(stored) : [];
-      const updated = Array.isArray(list) ? list : [];
-      updated.push({
-        id: `fb-${Date.now()}`,
-        feedback: text,
-        timestamp: new Date().toISOString(),
-        email: userSession?.email || null,
-      });
-      localStorage.setItem('ascend_user_feedback_history', JSON.stringify(updated.slice(-50)));
+      status = await sendFeedback(await buildFeedbackReport(text), feedbackUserId);
     } catch {
-      // Local storage full or private mode
+      status = 'rejected';
     }
+    if (!mountedRef.current) return;
+    setFeedbackStatus(status);
+    // Refused: the sheet stays open with the text so it can be edited and resent.
+    if (status !== 'sent' && status !== 'queued') return;
 
-    setFeedbackSent(true);
     if (feedbackTimerRef.current != null) window.clearTimeout(feedbackTimerRef.current);
     feedbackTimerRef.current = window.setTimeout(() => {
       if (!mountedRef.current) return;
-      setFeedbackSent(false);
+      setFeedbackStatus(null);
       setFeedbackText('');
       setIsHelpModalOpen(false);
-    }, 1000);
+    }, FEEDBACK_DONE[status].closeAfterMs);
   };
 
   const handleLogout = async (discardUnsynced = false) => {
@@ -936,26 +944,45 @@ const PersonalViewInner: React.FC<PersonalViewProps> = ({
                 <textarea
                   rows={3}
                   value={feedbackText}
-                  onChange={(e) => setFeedbackText(e.target.value)}
+                  onChange={(e) => {
+                    setFeedbackText(e.target.value);
+                    if (feedbackStatus === 'rejected' || feedbackStatus === 'unavailable') setFeedbackStatus(null);
+                  }}
                   required
-                  placeholder="Tell us what you'd like to improve or see added..."
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-[12px] outline-none focus:border-emerald-500 dark:focus:border-blue-500"
+                  maxLength={FEEDBACK_MAX_LENGTH}
+                  disabled={!feedbackAllowed}
+                  placeholder={
+                    feedbackAllowed
+                      ? "Tell us what you'd like to improve or see added..."
+                      : 'Sign in to send feedback.'
+                  }
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-[12px] outline-none focus:border-emerald-500 dark:focus:border-blue-500 disabled:opacity-60"
                 />
+                {!feedbackAllowed && (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Feedback is sent with your account so we can follow up. Guest mode keeps everything on this phone, so sign in to send it.
+                  </p>
+                )}
+                {(feedbackStatus === 'rejected' || feedbackStatus === 'unavailable') && (
+                  <p role="alert" className="text-[11px] text-rose-600 dark:text-rose-400 leading-relaxed">
+                    Couldn't send this. The server didn't accept it. Your text is still here, so you can edit it and try again.
+                  </p>
+                )}
                 <motion.button
                   type="submit"
-                  whileTap={feedbackSent ? undefined : tapPress}
-                  disabled={feedbackSent}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-bold flex items-center justify-center space-x-2 cursor-pointer"
+                  whileTap={feedbackBusy || !feedbackAllowed ? undefined : tapPress}
+                  disabled={feedbackBusy || !feedbackAllowed}
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-bold flex items-center justify-center space-x-2 cursor-pointer disabled:cursor-default disabled:opacity-80"
                 >
-                  {feedbackSent ? (
+                  {feedbackStatus === 'sent' || feedbackStatus === 'queued' ? (
                     <>
-                      <Check className="w-4 h-4" />
-                      <span>Feedback Sent!</span>
+                      {feedbackStatus === 'sent' && <Check className="w-4 h-4" />}
+                      <span>{FEEDBACK_DONE[feedbackStatus].label}</span>
                     </>
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>Submit Feedback</span>
+                      <span>{feedbackStatus === 'sending' ? 'Sending…' : 'Submit Feedback'}</span>
                     </>
                   )}
                 </motion.button>

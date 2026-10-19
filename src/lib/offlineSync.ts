@@ -3,6 +3,7 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import { isoDateForDayIndex, isIsoDate } from '../utils/dates';
 import { flushMomentumEventQueue, queuedMomentumEventCount } from './momentumEvents';
 import { flushChronicleQueue, queuedChronicleCount } from './chronicleSync';
+import { flushFeedbackQueue, queuedFeedbackCount } from './feedbackSync';
 import { readJson, writeJson } from './storage';
 import { inFlightSyncCount, syncGeneration, trackInFlight } from './syncState';
 
@@ -468,6 +469,12 @@ export async function flushOfflineQueue(): Promise<void> {
     // chronicle_entries may not exist yet on older projects.
   }
 
+  try {
+    await flushFeedbackQueue();
+  } catch {
+    // feedback may not exist yet on older projects.
+  }
+
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('ascend_offline_sync_completed'));
   }
@@ -483,6 +490,7 @@ export function unsyncedItemCount(): number {
     readJson<ProfileQueueItem[]>(PROFILE_QUEUE_KEY, []).length +
     queuedMomentumEventCount() +
     queuedChronicleCount() +
+    queuedFeedbackCount() +
     inFlightSyncCount()
   );
 }
