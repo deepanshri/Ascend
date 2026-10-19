@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { MomentumEvent } from '../types';
-import { isLegacyMomentumId, remapLegacyMomentumIds, remapLegacyMomentumIdsBy } from './momentumIds';
+import {
+  isLegacyMomentumId,
+  momentumOccurrence,
+  occurrenceMomentumEventId,
+  remapLegacyMomentumIds,
+  remapLegacyMomentumIdsBy,
+} from './momentumIds';
+import { isUuid } from './momentumCore';
 import { stableMomentumEventId } from './stableId';
 
 const ev = (id: string, fields: Partial<MomentumEvent> = {}) =>
@@ -59,5 +66,24 @@ describe('remapLegacyMomentumIdsBy', () => {
     expect(remapped).toBe(1);
     expect(items[0].userId).toBe('u1');
     expect(items[0].event.id).toBe(stableMomentumEventId('h1', '2026-10-11', 'full'));
+  });
+});
+
+describe('occurrence ids', () => {
+  it('are deterministic UUIDs the database accepts, one per repeat', () => {
+    const second = occurrenceMomentumEventId('h1', '2026-10-11', 'full', 1);
+    expect(isUuid(second)).toBe(true);
+    expect(occurrenceMomentumEventId('h1', '2026-10-11', 'full', 1)).toBe(second);
+    expect(occurrenceMomentumEventId('h1', '2026-10-11', 'full', 2)).not.toBe(second);
+    expect(occurrenceMomentumEventId('h1', '2026-10-11', 'reversal', 1)).not.toBe(second);
+    expect(second).not.toBe(stableMomentumEventId('h1', '2026-10-11', 'full'));
+  });
+
+  it('read their repeat number back; other ids read as the first', () => {
+    expect(momentumOccurrence(occurrenceMomentumEventId('h1', '2026-10-11', 'full', 1))).toBe(1);
+    expect(momentumOccurrence(occurrenceMomentumEventId('h1', '2026-10-11', 'full', 200))).toBe(200);
+    expect(momentumOccurrence(stableMomentumEventId('h1', '2026-10-11', 'full'))).toBe(0);
+    expect(momentumOccurrence('feedface-0000-4000-8000-000000000001')).toBe(0);
+    expect(momentumOccurrence('evt_h1_2026-10-11_full')).toBe(0);
   });
 });

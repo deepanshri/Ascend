@@ -12,6 +12,8 @@ import {
 } from './ledgerPlans';
 import { stableHabitLogId, stableMomentumEventId } from '../utils/stableId';
 import { MAX_ACTIVE_HABITS } from '../lib/protection';
+import { countIdentityVotes, filterReversedMomentumEvents, mergeMomentumEvents } from '../utils/momentumCore';
+import { selectTodayMomentumEvents } from './ledgerSelectors';
 
 const ORIGIN = new Date(2026, 9, 11); // Sunday 2026-10-11, local midnight
 const TODAY = '2026-10-11';
@@ -122,6 +124,69 @@ describe('planResetToday + TODAY_RESET', () => {
     expect(plan.reversal).toMatchObject({ eventType: 'reversal', weight: 1.5, habitId: 'a' });
     const next = ledgerReducer(state, { type: 'TODAY_RESET', plan, origin: ORIGIN });
     expect(next.momentumEvents.map((e) => e.eventType)).toEqual(['full', 'reversal']);
+  });
+});
+
+describe('complete, undo, complete again after the undo window', () => {
+  // The server inserts with ON CONFLICT (id) DO NOTHING.
+  const serverInsert = (server: Map<string, MomentumEvent>, event: MomentumEvent | null) => {
+    if (event && !server.has(event.id)) server.set(event.id, event);
+  };
+  const activeVotes = (events: MomentumEvent[]) =>
+    filterReversedMomentumEvents(events).filter((e) => e.eventType === 'full' || e.eventType === 'fallback').length;
+
+  const toggle = (steps: Array<'complete' | 'undo'>) => {
+    const server = new Map<string, MomentumEvent>();
+    let state = ledger();
+    steps.forEach((step, i) => {
+      const at = { ...clock, now: NOW + i * 60_000 };
+      if (step === 'complete') {
+        const plan = planCompletion(state, 'a', false, at)!;
+        state = ledgerReducer(state, { type: 'COMPLETED', plan, origin: ORIGIN });
+        serverInsert(server, plan.momentumEvent);
+      } else {
+        const plan = planResetToday(state, 'a', null, at);
+        state = ledgerReducer(state, { type: 'TODAY_RESET', plan, origin: ORIGIN });
+        serverInsert(server, plan.reversal);
+      }
+    });
+    return { state, server: [...server.values()] };
+  };
+
+  it('gives every uploaded event its own id, so none is skipped by the server', () => {
+    const { state, server } = toggle(['complete', 'undo', 'complete', 'undo', 'complete']);
+    expect(server).toHaveLength(5);
+    expect(state.momentumEvents).toHaveLength(5);
+  });
+
+  it('keeps the first event of each type on its original stable id', () => {
+    const { server } = toggle(['complete', 'undo', 'complete']);
+    expect(server[0].id).toBe(stableMomentumEventId('a', TODAY, 'full'));
+    expect(server[1].id).toBe(stableMomentumEventId('a', TODAY, 'reversal'));
+    expect(server[2].id).not.toBe(server[0].id);
+  });
+
+  it('server and device replay to the same vote after each step', () => {
+    for (const [steps, votes] of [
+      [['complete', 'undo', 'complete'], 1],
+      [['complete', 'undo', 'complete', 'undo'], 0],
+      [['complete', 'undo', 'complete', 'undo', 'complete'], 1],
+    ] as const) {
+      const { state, server } = toggle([...steps]);
+      expect(activeVotes(server)).toBe(votes);
+      expect(activeVotes(state.momentumEvents)).toBe(votes);
+      expect(countIdentityVotes(server)).toBe(votes);
+    }
+  });
+
+  it('a reinstall or sign-in merge keeps the day, counted once', () => {
+    const { state, server } = toggle(['complete', 'undo', 'complete']);
+    expect(activeVotes(mergeMomentumEvents([], server))).toBe(1);
+    expect(activeVotes(mergeMomentumEvents(state.momentumEvents, server))).toBe(1);
+    // The completion log also implies today's vote; it must not count twice.
+    const merged = selectTodayMomentumEvents({ ...state, momentumEvents: mergeMomentumEvents([], server) }, ORIGIN);
+    expect(activeVotes(merged)).toBe(1);
+    expect(activeVotes(selectTodayMomentumEvents(state, ORIGIN))).toBe(1);
   });
 });
 

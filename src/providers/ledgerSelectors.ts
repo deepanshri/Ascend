@@ -10,6 +10,8 @@ import {
   mergeMomentumEvents,
   momentumEventsFromCompletionLog,
 } from '../utils/momentumCore';
+import { resolveMomentumEventDate } from '../utils/momentumDates';
+import { momentumOccurrence } from '../utils/momentumIds';
 import type { LedgerState } from './ledgerReducer';
 
 /** Habits with this week's days / microDays replayed from the completion log. */
@@ -21,12 +23,25 @@ export function selectActiveHabits(derivedHabits: Habit[]): Habit[] {
   return derivedHabits.filter((habit) => !habit.archived);
 }
 
-/** The momentum log merged with the votes the completion log implies. */
+/**
+ * The momentum log merged with the votes the completion log implies. A day
+ * re-completed after an undo already has its vote in the log as an occurrence
+ * event, so the implied vote would count it twice.
+ */
 export function selectTodayMomentumEvents(
   state: Pick<LedgerState, 'habits' | 'completionEvents' | 'momentumEvents'>,
   origin: Date
 ): MomentumEvent[] {
-  return mergeMomentumEvents(state.momentumEvents, momentumEventsFromCompletionLog(state.completionEvents, state.habits, origin));
+  const repeated = new Set(
+    state.momentumEvents
+      .filter((event) => momentumOccurrence(event.id) > 0)
+      .map((event) => `${event.habitId}::${resolveMomentumEventDate(event)}`)
+  );
+  const implied = momentumEventsFromCompletionLog(state.completionEvents, state.habits, origin);
+  return mergeMomentumEvents(
+    state.momentumEvents,
+    repeated.size > 0 ? implied.filter((event) => !repeated.has(`${event.habitId}::${event.loggedDate}`)) : implied
+  );
 }
 
 export function selectTodayMomentumScore(

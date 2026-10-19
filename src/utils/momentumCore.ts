@@ -18,6 +18,7 @@ import { isHabitScheduledOnIso } from './schedule';
 import { resolveHabitTimeOfDay } from './timeOfDay';
 import { resolveMomentumEventDate } from './momentumDates';
 import { stableMomentumEventId } from './stableId';
+import { momentumOccurrence, occurrenceMomentumEventId } from './momentumIds';
 
 export const WORK_HABIT_WEIGHT = 1.5;
 export const SELF_IMPROVEMENT_HABIT_WEIGHT = 1.5;
@@ -103,6 +104,28 @@ export function createMomentumEvent(
   };
 }
 
+/**
+ * Id for a new event of this habit, day and type. The first is the stable id;
+ * after an undo the next one gets the next occurrence id, so the server's
+ * insert-if-absent keeps it instead of skipping it as a duplicate.
+ */
+export function nextMomentumEventId(
+  log: MomentumEvent[],
+  habitId: string,
+  loggedDate: string,
+  eventType: MomentumEvent['eventType']
+): string {
+  let last = -1;
+  for (const event of log) {
+    if (event.habitId !== habitId || event.eventType !== eventType) continue;
+    if (resolveMomentumEventDate(event) !== loggedDate) continue;
+    last = Math.max(last, momentumOccurrence(event.id));
+  }
+  return last < 0
+    ? stableMomentumEventId(habitId, loggedDate, eventType)
+    : occurrenceMomentumEventId(habitId, loggedDate, eventType, last + 1);
+}
+
 export function momentumEventsFromCompletionLog(
   events: HabitCompletionEvent[],
   habits: Habit[],
@@ -131,15 +154,20 @@ export function momentumEventsFromCompletionLog(
 }
 
 /**
- * Merge momentum events by (habitId, loggedDate, eventType) / id.
- * If an event with the same habitId, loggedDate, and eventType exists, replace it.
+ * Merge momentum events by (habitId, loggedDate, eventType, occurrence) / id.
+ * If an event with the same key exists, replace it. Repeats after an undo
+ * carry an occurrence id (see nextMomentumEventId) and stay separate.
  */
 export function mergeMomentumEvents(local: MomentumEvent[], incoming: MomentumEvent[]): MomentumEvent[] {
   const byKey = new Map<string, MomentumEvent>();
 
   const put = (event: MomentumEvent) => {
     const iso = resolveMomentumEventDate(event);
-    const key = iso && event.habitId ? `${event.habitId}::${iso}::${event.eventType}` : event.id;
+    const occurrence = momentumOccurrence(event.id);
+    const key =
+      iso && event.habitId
+        ? `${event.habitId}::${iso}::${event.eventType}${occurrence > 0 ? `#${occurrence}` : ''}`
+        : event.id;
     byKey.set(key, event);
   };
 

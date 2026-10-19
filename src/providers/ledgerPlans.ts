@@ -14,7 +14,7 @@ import type {
   IdentityEvidence,
   MomentumEvent,
 } from '../types';
-import { createMomentumEvent, habitWeight } from '../utils/momentumCore';
+import { createMomentumEvent, habitWeight, nextMomentumEventId } from '../utils/momentumCore';
 import {
   dayIndexForIso,
   endOfIsoDate,
@@ -114,9 +114,14 @@ export function planCompletion(
   };
 
   const baseWeight = habitWeight(habit);
+  const eventType = isMicro ? 'fallback' : 'full';
+  // Re-completing after an undo needs a fresh id, or the server skips it as a duplicate.
   const momentumEvent = alreadyVoted
     ? null
-    : createMomentumEvent(habit, isMicro ? 'fallback' : 'full', loggedDate, now, isMicro ? baseWeight * 0.5 : baseWeight);
+    : {
+        ...createMomentumEvent(habit, eventType, loggedDate, now, isMicro ? baseWeight * 0.5 : baseWeight),
+        id: nextMomentumEventId(state.momentumEvents, habitId, loggedDate, eventType),
+      };
 
   const audit: FrictionAudit | null =
     isMicro && !alreadyCompleted
@@ -243,7 +248,10 @@ export function planResetToday(
   if (!pendingMomentumId && habit) {
     const baseWeight = habitWeight(habit);
     const weight = existing?.type === 'fallback_micro' ? baseWeight * 0.5 : baseWeight;
-    reversal = createMomentumEvent(habit, 'reversal', loggedDate, clock.now, weight);
+    reversal = {
+      ...createMomentumEvent(habit, 'reversal', loggedDate, clock.now, weight),
+      id: nextMomentumEventId(state.momentumEvents, habitId, loggedDate, 'reversal'),
+    };
   }
   return { habitId, loggedDate, cancelledMomentumId: pendingMomentumId, reversal };
 }
