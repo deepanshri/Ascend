@@ -2,6 +2,7 @@ import React from 'react';
 import { AccountSyncController } from './AccountSyncController';
 import { BowlProvider } from './BowlProvider';
 import { CalendarProvider } from './CalendarProvider';
+import { ChronicleHydrator } from './ChronicleHydrator';
 import { ChronicleReminderSync } from './ChronicleReminderSync';
 import { HabitLedgerProvider } from './HabitLedgerProvider';
 import { NativeSyncController } from './NativeSyncController';
@@ -28,6 +29,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
                       <NativeSyncController>
                         <BowlProvider>
                           <UIProvider>
+                            <ChronicleHydrator />
                             <ChronicleReminderSync />
                             {children}
                           </UIProvider>

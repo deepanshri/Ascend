@@ -2,6 +2,7 @@ import { HabitCompletionEvent, UserProfile } from '../types';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { isoDateForDayIndex, isIsoDate } from '../utils/dates';
 import { flushMomentumEventQueue, queuedMomentumEventCount } from './momentumEvents';
+import { flushChronicleQueue, queuedChronicleCount } from './chronicleSync';
 import { readJson, writeJson } from './storage';
 import { inFlightSyncCount, syncGeneration, trackInFlight } from './syncState';
 
@@ -461,6 +462,12 @@ export async function flushOfflineQueue(): Promise<void> {
     // momentum_events table may not exist yet on older projects.
   }
 
+  try {
+    await flushChronicleQueue();
+  } catch {
+    // chronicle_entries may not exist yet on older projects.
+  }
+
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('ascend_offline_sync_completed'));
   }
@@ -475,6 +482,7 @@ export function unsyncedItemCount(): number {
     readLogQueue().length +
     readJson<ProfileQueueItem[]>(PROFILE_QUEUE_KEY, []).length +
     queuedMomentumEventCount() +
+    queuedChronicleCount() +
     inFlightSyncCount()
   );
 }

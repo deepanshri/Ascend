@@ -168,6 +168,7 @@ export function ModalHost(props: ModalHostProps) {
             todayIso={props.todayIso}
             onClose={() => closeModal('chronicle')}
             onSave={props.onChronicleSave}
+            userId={props.session && !props.session.isGuest ? props.session.id : null}
           />
         </Suspense>
       )}

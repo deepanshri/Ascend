@@ -3,12 +3,8 @@ import { AnimatePresence, motion, type PanInfo } from 'motion/react';
 import { ChevronLeft, ChevronRight, Check, X } from 'lucide-react';
 import { MotionModal } from './MotionModal';
 import { tapPress } from '../lib/motionPresets';
-import {
-  type ChronicleEntry,
-  getChronicleEntry,
-  getYesterdayPlanForToday,
-  saveChronicleEntry,
-} from '../lib/chronicle';
+import { type ChronicleEntry, getChronicleEntry, getYesterdayPlanForToday } from '../lib/chronicle';
+import { type ChronicleSaveStatus, saveChronicleEntry } from '../lib/chronicleSync';
 import { formatEvidenceDate } from '../utils/dates';
 
 export interface ChronicleModalProps {
@@ -16,13 +12,26 @@ export interface ChronicleModalProps {
   todayIso: string;
   onClose: () => void;
   onSave?: (entry: ChronicleEntry) => void;
+  /** Signed-in account to sync to; null keeps the entry on this phone (guest). */
+  userId?: string | null;
 }
+
+/** Button label after a save: only 'synced' (or a guest's local save) claims "Saved ✓". */
+const SAVE_LABELS: Record<ChronicleSaveStatus, string> = {
+  synced: 'Saved ✓',
+  local: 'Saved ✓',
+  queued: 'Saved · syncs when online',
+  rejected: 'Saved on this phone only',
+};
+/** Long enough to read the message when the save didn't reach the account. */
+const CLOSE_DELAY_MS: Record<ChronicleSaveStatus, number> = { synced: 280, local: 280, queued: 1400, rejected: 1800 };
 
 export const ChronicleModal: React.FC<ChronicleModalProps> = ({
   isOpen,
   todayIso,
   onClose,
   onSave,
+  userId = null,
 }) => {
   const [activePage, setActivePage] = useState<1 | 2 | 3>(1);
   const [direction, setDirection] = useState<1 | -1>(1);
@@ -30,7 +39,9 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
   const [phase2, setPhase2] = useState('');
   const [phase3, setPhase3] = useState('');
   const [yesterdayPlan, setYesterdayPlan] = useState<string | null>(null);
-  const [isSavedRecently, setIsSavedRecently] = useState(false);
+  /** null until saved; then what the save achieved. */
+  const [saveStatus, setSaveStatus] = useState<ChronicleSaveStatus | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Sync state whenever modal opens or todayIso changes
   useEffect(() => {
@@ -40,12 +51,14 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
     setPhase2(existing?.phase2 ?? '');
     setPhase3(existing?.phase3 ?? '');
     setYesterdayPlan(getYesterdayPlanForToday());
-    setIsSavedRecently(false);
+    setSaveStatus(null);
+    setIsSaving(false);
     setActivePage(1);
     setDirection(1);
   }, [isOpen, todayIso]);
 
   const handleSave = async () => {
+    if (isSaving) return;
     const trimmedPhase1 = phase1.trim();
     const trimmedPhase2 = phase2.trim();
     const trimmedPhase3 = phase3.trim();
@@ -56,12 +69,13 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
       phase3: trimmedPhase3,
       updatedAt: new Date().toISOString(),
     };
-    void saveChronicleEntry(todayIso, trimmedPhase1, trimmedPhase2, trimmedPhase3);
+    setIsSaving(true);
+    const status = await saveChronicleEntry(entry, userId);
     onSave?.(entry);
-    setIsSavedRecently(true);
+    setSaveStatus(status);
     setTimeout(() => {
       onClose();
-    }, 280);
+    }, CLOSE_DELAY_MS[status]);
   };
 
   const handleApplyYesterdayPlanToFocus = () => {
@@ -326,6 +340,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
           type="button"
           whileTap={tapPress}
           onClick={activePage === 3 ? handleSave : goNextPage}
+          disabled={activePage === 3 && (isSaving || saveStatus !== null)}
           className={`px-3.5 py-2 rounded-xl text-[12px] font-bold flex items-center gap-1 transition shadow-xs cursor-pointer ${
             activePage === 3
               ? 'bg-[#23C15D] dark:bg-blue-600 text-white hover:bg-emerald-600 dark:hover:bg-blue-500'
@@ -334,7 +349,7 @@ export const ChronicleModal: React.FC<ChronicleModalProps> = ({
         >
           {activePage === 3 ? (
             <>
-              {isSavedRecently ? 'Saved ✓' : 'Save Chronicle'}
+              {saveStatus ? SAVE_LABELS[saveStatus] : isSaving ? 'Saving…' : 'Save Chronicle'}
               <Check className="w-4 h-4 ml-0.5" />
             </>
           ) : (

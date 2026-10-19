@@ -1,5 +1,4 @@
 import { addDaysIso, toISODate } from '../utils/dates';
-import { supabase } from './supabaseClient';
 
 export const CHRONICLE_STORAGE_KEY = 'ascend_chronicle_entries';
 export const EVENING_CHRONICLE_SETTINGS_KEY = 'ascend_chronicle_settings';
@@ -112,79 +111,37 @@ export function loadChronicleEntries(): ChronicleEntriesMap {
   }
 }
 
+/** Entries kept in the 90-day map (the legacy sync cache keeps everything). */
+const CHRONICLE_RETENTION_DAYS = 90;
+
 /**
- * Save or update a single chronicle entry.
- * Syncs directly to Supabase public.chronicle_entries and maintains local cache.
- * Supports both (isoDate, phase1, phase2, phase3) and (entry: ChronicleEntry).
+ * Write entries to both local stores: the 90-day map and the legacy
+ * 'ascend_chronicle' cache that loadChronicleEntries also reads. Local only;
+ * chronicleSync sends entries to Supabase.
  */
-export async function saveChronicleEntry(
-  isoDateOrEntry: string | ChronicleEntry,
-  phase1?: string,
-  phase2?: string,
-  phase3?: string
-): Promise<void> {
-  let isoDate: string;
-  let p1: string;
-  let p2: string;
-  let p3: string;
-
-  if (typeof isoDateOrEntry === 'object' && isoDateOrEntry !== null) {
-    isoDate = isoDateOrEntry.isoDate;
-    p1 = isoDateOrEntry.phase1 ?? '';
-    p2 = isoDateOrEntry.phase2 ?? '';
-    p3 = isoDateOrEntry.phase3 ?? '';
-  } else {
-    isoDate = String(isoDateOrEntry);
-    p1 = phase1 ?? '';
-    p2 = phase2 ?? '';
-    p3 = phase3 ?? '';
-  }
-
-  const { data: authData } = await supabase.auth.getUser();
-
-  const payload: {
-    user_id?: string;
-    iso_date: string;
-    phase1: string;
-    phase2: string;
-    phase3: string;
-    updated_at: string;
-  } = {
-    iso_date: isoDate,
-    phase1: p1,
-    phase2: p2,
-    phase3: p3,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (authData?.user) {
-    payload.user_id = authData.user.id;
-  }
-
-  // Update local cache 'ascend_chronicle'
+export function storeChronicleEntriesLocally(entries: ChronicleEntry[]): void {
+  if (entries.length === 0) return;
   try {
     const cached = JSON.parse(localStorage.getItem('ascend_chronicle') || '{}');
-    cached[isoDate] = payload;
+    for (const entry of entries) {
+      cached[entry.isoDate] = {
+        iso_date: entry.isoDate,
+        phase1: entry.phase1,
+        phase2: entry.phase2,
+        phase3: entry.phase3,
+        updated_at: entry.updatedAt,
+      };
+    }
     localStorage.setItem('ascend_chronicle', JSON.stringify(cached));
   } catch (err) {
     if (import.meta.env.DEV) console.warn('Failed to update ascend_chronicle cache:', err);
   }
 
-  // Update local cache 'ascend_chronicle_entries' (90-day FIFO retention)
   try {
     const all = loadChronicleEntries();
-    all[isoDate] = {
-      isoDate,
-      phase1: p1,
-      phase2: p2,
-      phase3: p3,
-      updatedAt: payload.updated_at,
-    };
-
-    const sortedKeys = Object.keys(all).sort();
-    const trimmedKeys = sortedKeys.slice(-90);
+    for (const entry of entries) all[entry.isoDate] = entry;
     const trimmed: ChronicleEntriesMap = {};
-    for (const key of trimmedKeys) {
+    for (const key of Object.keys(all).sort().slice(-CHRONICLE_RETENTION_DAYS)) {
       const item = all[key];
       if (item) trimmed[key] = item;
     }
@@ -192,17 +149,31 @@ export async function saveChronicleEntry(
   } catch (err) {
     if (import.meta.env.DEV) console.warn('Failed to update ascend_chronicle_entries cache:', err);
   }
+}
 
-  // Remote sync to Supabase
-  if (!authData?.user) return;
+function updatedAtMs(entry: ChronicleEntry): number {
+  const ms = Date.parse(entry.updatedAt);
+  return Number.isNaN(ms) ? 0 : ms;
+}
 
-  const { error } = await supabase
-    .from('chronicle_entries')
-    .upsert(payload, { onConflict: 'user_id,iso_date' });
-
-  if (error) {
-    if (import.meta.env.DEV) console.error('Failed to sync chronicle entry to Supabase:', error);
+/**
+ * Which remote entries should replace or add to the local ones: a date missing
+ * locally, or one the server holds a newer version of. A date with a local edit
+ * still waiting to upload (`pendingDates`) keeps the local version. Equal
+ * timestamps keep local.
+ */
+export function mergeRemoteChronicleEntries(
+  local: ChronicleEntriesMap,
+  remote: ChronicleEntry[],
+  pendingDates: ReadonlySet<string>
+): ChronicleEntry[] {
+  const incoming: ChronicleEntry[] = [];
+  for (const entry of remote) {
+    if (pendingDates.has(entry.isoDate)) continue;
+    const mine = local[entry.isoDate];
+    if (!mine || updatedAtMs(entry) > updatedAtMs(mine)) incoming.push(entry);
   }
+  return incoming;
 }
 
 /**
