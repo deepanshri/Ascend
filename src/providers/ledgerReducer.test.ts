@@ -6,13 +6,21 @@ import {
   planGraceRollover,
   planManualVote,
   planNewHabit,
+  planPastDayTap,
   planResetToday,
   planToggleFallback,
   type LedgerClock,
 } from './ledgerPlans';
 import { stableHabitLogId, stableMomentumEventId } from '../utils/stableId';
 import { MAX_ACTIVE_HABITS } from '../lib/protection';
-import { countIdentityVotes, filterReversedMomentumEvents, mergeMomentumEvents } from '../utils/momentumCore';
+import {
+  calculateMomentumScore,
+  countIdentityVotes,
+  filterReversedMomentumEvents,
+  mergeMomentumEvents,
+} from '../utils/momentumCore';
+import { computeDayRollover, missedMomentumEvents } from '../lib/dayRollover';
+import { hasTodayLedgerEntry } from '../services/ledgerService';
 import { selectTodayMomentumEvents } from './ledgerSelectors';
 
 const ORIGIN = new Date(2026, 9, 11); // Sunday 2026-10-11, local midnight
@@ -187,6 +195,160 @@ describe('complete, undo, complete again after the undo window', () => {
     const merged = selectTodayMomentumEvents({ ...state, momentumEvents: mergeMomentumEvents([], server) }, ORIGIN);
     expect(activeVotes(merged)).toBe(1);
     expect(activeVotes(selectTodayMomentumEvents(state, ORIGIN))).toBe(1);
+  });
+});
+
+describe('widget tap made before midnight, processed the next morning', () => {
+  const YESTERDAY = '2026-10-10';
+  const TAPPED_AT = new Date(2026, 9, 10, 22, 0).getTime(); // Saturday 22:00
+  const tap = (habitId: string, completed = true, dateIso = YESTERDAY, tappedAt: number | undefined = TAPPED_AT) => ({
+    habitId,
+    dateIso,
+    completed,
+    tappedAt,
+  });
+
+  /** The morning open: the day rollover runs (as the provider does) before the queued tap is drained. */
+  const morning = (lastActiveIso: string, state = ledger()) => {
+    const result = computeDayRollover({
+      todayIso: TODAY,
+      lastActiveIso,
+      habits: state.habits,
+      momentumEvents: state.momentumEvents,
+      protectionPaused: false,
+      processMissedDays: true,
+    });
+    return ledgerReducer(state, {
+      type: 'DAY_ROLLOVER',
+      dayChanged: result.dayChanged,
+      clearActiveFallbacks: result.clearActiveFallbacks,
+      graceHabitIds: result.graceHabitIds,
+      missedEvents: missedMomentumEvents(state.habits, result.missed),
+      frictionPrompts: result.frictionPrompts,
+    });
+  };
+
+  const applyTap = (state: LedgerState, t: ReturnType<typeof tap>) => {
+    const plan = planPastDayTap(state, t, TODAY, 'abcd');
+    if (typeof plan === 'string') throw new Error(`expected a plan, got ${plan}`);
+    return ledgerReducer(state, { type: 'PAST_DAY_TAPPED', plan, origin: ORIGIN });
+  };
+
+  const votesOn = (events: MomentumEvent[], habitId: string, iso: string) =>
+    filterReversedMomentumEvents(events).filter(
+      (e) => e.habitId === habitId && e.loggedDate === iso && (e.eventType === 'full' || e.eventType === 'fallback')
+    ).length;
+
+  it('logs the completion on the day it was made, stamped with the tap time, not today', () => {
+    const before = morning(YESTERDAY);
+    const after = applyTap(before, tap('a'));
+
+    expect(hasTodayLedgerEntry(after.completionEvents, 'a', YESTERDAY, ORIGIN)).toBe(true);
+    expect(hasTodayLedgerEntry(after.completionEvents, 'a', TODAY, ORIGIN)).toBe(false);
+    expect(after.completionEvents[0]).toMatchObject({
+      id: stableHabitLogId('a', YESTERDAY),
+      date: YESTERDAY,
+      type: 'full',
+      timestamp: TAPPED_AT,
+      dayIndex: 3, // what completing it in the app that day would have stored (today's slot in the strip)
+    });
+    expect(after.momentumEvents).toEqual([
+      expect.objectContaining({
+        id: stableMomentumEventId('a', YESTERDAY, 'full'),
+        eventType: 'full',
+        loggedDate: YESTERDAY,
+        timestamp: TAPPED_AT,
+      }),
+    ]);
+    expect(after.evidenceList[0]).toMatchObject({ habitId: 'a', loggedDate: YESTERDAY });
+    expect(votesOn(after.momentumEvents, 'a', TODAY)).toBe(0);
+  });
+
+  it('withdraws the grace offer and the "why did you miss it?" prompt for that habit only', () => {
+    const before = morning(YESTERDAY);
+    expect(before.rolledOverHabits).toEqual(['a', 'b']);
+    expect(before.pendingFriction.map((p) => `${p.habitId}|${p.loggedDate}`)).toEqual(['a|2026-10-10', 'b|2026-10-10']);
+
+    const after = applyTap(before, tap('a'));
+    expect(after.rolledOverHabits).toEqual(['b']);
+    expect(after.pendingFriction.map((p) => `${p.habitId}|${p.loggedDate}`)).toEqual(['b|2026-10-10']);
+  });
+
+  it('leaves today alone: fallback mode and today’s log are untouched', () => {
+    const before = { ...morning(YESTERDAY), activeFallbackIds: ['a'] };
+    const after = applyTap(before, tap('a'));
+    expect(after.activeFallbackIds).toEqual(['a']);
+    expect(planCompletion(after, 'a', false, clock)?.newlyCompleted).toBe(true);
+  });
+
+  it('after a longer gap the miss is already recorded; the tap still earns the day', () => {
+    // Opened Sunday, last active Friday: Friday and Saturday were processed as hard misses first.
+    const before = morning('2026-10-09');
+    expect(before.momentumEvents.filter((e) => e.eventType === 'missed')).toHaveLength(4);
+    expect(before.rolledOverHabits).toEqual([]);
+
+    const after = applyTap(before, tap('a'));
+    // Append-only: the miss stays, the completion is added beside it.
+    expect(after.momentumEvents.filter((e) => e.habitId === 'a' && e.loggedDate === YESTERDAY).map((e) => e.eventType))
+      .toEqual(['full', 'missed']);
+    expect(after.pendingFriction.some((p) => p.habitId === 'a' && p.loggedDate === YESTERDAY)).toBe(false);
+
+    const habits = after.habits;
+    const missedOnly = calculateMomentumScore(before.momentumEvents, { habits });
+    const tappedFirst = calculateMomentumScore(
+      before.momentumEvents
+        .filter((e) => !(e.habitId === 'a' && e.loggedDate === YESTERDAY))
+        .concat(after.momentumEvents.filter((e) => e.eventType === 'full')),
+      { habits }
+    );
+    const withTap = calculateMomentumScore(after.momentumEvents, { habits });
+    expect(withTap).toBeGreaterThan(missedOnly);
+    // Same score as if the tap had been processed before the miss was inferred.
+    expect(withTap).toBe(tappedFirst);
+    expect(countIdentityVotes(after.momentumEvents)).toBe(1);
+  });
+
+  it('an untick made yesterday removes that day’s log and appends a reversal on that day', () => {
+    const done = applyTap(morning(YESTERDAY), tap('a'));
+    const untickedAt = TAPPED_AT + 30 * 60_000;
+    const after = applyTap(done, tap('a', false, YESTERDAY, untickedAt));
+
+    expect(hasTodayLedgerEntry(after.completionEvents, 'a', YESTERDAY, ORIGIN)).toBe(false);
+    expect(after.evidenceList.some((e) => e.habitId === 'a' && e.loggedDate === YESTERDAY)).toBe(false);
+    expect(after.momentumEvents.at(-1)).toMatchObject({
+      eventType: 'reversal',
+      loggedDate: YESTERDAY,
+      timestamp: untickedAt,
+      weight: 1.5,
+    });
+    expect(votesOn(after.momentumEvents, 'a', YESTERDAY)).toBe(0);
+  });
+
+  it('a tap with no time (or a clock outside that day) is kept inside that day', () => {
+    const noTime = planPastDayTap(morning(YESTERDAY), tap('a', true, YESTERDAY, undefined), TODAY, 'abcd');
+    const wrongClock = planPastDayTap(morning(YESTERDAY), tap('a', true, YESTERDAY, NOW), TODAY, 'abcd');
+    for (const plan of [noTime, wrongClock]) {
+      if (typeof plan === 'string' || !plan.completed) throw new Error('expected a completion plan');
+      expect(new Date(plan.completionEvent.timestamp).getDate()).toBe(10);
+      expect(plan.momentumEvent?.loggedDate).toBe(YESTERDAY);
+    }
+  });
+
+  it('does nothing when that day already matches the tap', () => {
+    const done = applyTap(morning(YESTERDAY), tap('a'));
+    expect(planPastDayTap(done, tap('a'), TODAY, 'abcd')).toBe('unchanged');
+    expect(planPastDayTap(morning(YESTERDAY), tap('a', false), TODAY, 'abcd')).toBe('unchanged');
+  });
+
+  it('refuses taps it cannot place on their day', () => {
+    const state = ledger({
+      habits: [habit('a'), habit('weekdays', { scheduledDays: [0, 1, 2, 3, 4] }), habit('old', { archived: true })],
+    });
+    expect(planPastDayTap(state, tap('missing'), TODAY, 'abcd')).toBe('rejected');
+    expect(planPastDayTap(state, tap('old'), TODAY, 'abcd')).toBe('rejected');
+    expect(planPastDayTap(state, tap('weekdays'), TODAY, 'abcd')).toBe('rejected'); // Saturday is off
+    expect(planPastDayTap(state, tap('a', true, TODAY), TODAY, 'abcd')).toBe('rejected');
+    expect(planPastDayTap(state, tap('a', true, 'not-a-date'), TODAY, 'abcd')).toBe('rejected');
   });
 });
 

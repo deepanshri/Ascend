@@ -523,9 +523,14 @@ export function calculateMomentumScore(
     const dateEvents = eventsByDate.get(date)!;
 
     if (datesWithMissed.has(date)) {
-      // Deduplicate by habitId: take latest event for each habit on this date
+      // Deduplicate by habitId: take latest event for each habit on this date. A
+      // miss is only inferred when no completion was known yet, so a completion
+      // that arrives later (a widget tap drained the next morning, another
+      // device) beats it whatever the order.
       const habitEvents = new Map<string, MomentumEvent>();
       for (const event of dateEvents) {
+        const current = habitEvents.get(event.habitId);
+        if (event.eventType === 'missed' && current && current.eventType !== 'missed') continue;
         habitEvents.set(event.habitId, event);
       }
 

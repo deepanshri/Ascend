@@ -19,7 +19,7 @@ import {
   mergeFrictionAuditsFromLogs,
   type PendingFrictionPrompt,
 } from '../lib/frictionAuditCore';
-import type { CompletionPlan, FallbackTogglePlan, GraceRolloverPlan, ResetTodayPlan } from './ledgerPlans';
+import type { CompletionPlan, FallbackTogglePlan, GraceRolloverPlan, PastDayTapPlan, ResetTodayPlan } from './ledgerPlans';
 
 export interface LedgerState {
   habits: Habit[];
@@ -102,6 +102,8 @@ export type LedgerAction =
     }
   | { type: 'FALLBACK_TOGGLED'; plan: FallbackTogglePlan; origin: Date }
   | { type: 'TODAY_RESET'; plan: ResetTodayPlan; origin: Date }
+  /** A widget tap from an earlier day, logged on that day. */
+  | { type: 'PAST_DAY_TAPPED'; plan: PastDayTapPlan; origin: Date }
   | { type: 'MANUAL_VOTE'; evidence: IdentityEvidence; momentumEvent: MomentumEvent }
   /** A friction prompt answered (with an audit) or skipped (audit null). */
   | { type: 'FRICTION_RESOLVED'; habitId: string; loggedDate: string; audit: FrictionAudit | null }
@@ -256,6 +258,32 @@ export function ledgerReducer(state: LedgerState, action: LedgerAction): LedgerS
         momentumEvents,
         momentumPulse:
           plan.cancelledMomentumId || plan.reversal ? state.momentumPulse + 1 : state.momentumPulse,
+      };
+    }
+
+    case 'PAST_DAY_TAPPED': {
+      const { plan, origin } = action;
+      if (plan.completed === false) {
+        return {
+          ...state,
+          completionEvents: dropHabitDay(state.completionEvents, plan.habitId, plan.loggedDate, origin),
+          evidenceList: removeTodayEvidence(state.evidenceList, plan.habitId, plan.loggedDate, origin),
+          momentumEvents: plan.reversal ? mergeMomentumEvents(state.momentumEvents, [plan.reversal]) : state.momentumEvents,
+          momentumPulse: plan.reversal ? state.momentumPulse + 1 : state.momentumPulse,
+        };
+      }
+      // Done after all: no "why did you miss it?" prompt and no rollover offer for that day.
+      const key = frictionPromptKey(plan.habitId, plan.loggedDate);
+      return {
+        ...state,
+        completionEvents: replaceTodayCompletion(state.completionEvents, plan.completionEvent, origin),
+        evidenceList: upsertTodayEvidence(state.evidenceList, plan.evidence, plan.loggedDate, origin),
+        momentumEvents: plan.momentumEvent
+          ? mergeMomentumEvents(state.momentumEvents, [plan.momentumEvent])
+          : state.momentumEvents,
+        momentumPulse: plan.momentumEvent ? state.momentumPulse + 1 : state.momentumPulse,
+        pendingFriction: state.pendingFriction.filter((p) => frictionPromptKey(p.habitId, p.loggedDate) !== key),
+        rolledOverHabits: plan.clearsRollover ? without(state.rolledOverHabits, plan.habitId) : state.rolledOverHabits,
       };
     }
 

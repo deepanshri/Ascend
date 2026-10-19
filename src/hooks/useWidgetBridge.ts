@@ -45,7 +45,15 @@ export function useWidgetBridge(completeHabit: CompleteHabit): void {
       if (intent.kind === 'setReminderCompleted') setReminder(intent.reminderId, intent.completed);
       else if (intent.kind === 'completeHabit') complete(intent.habitId, false);
       else if (intent.kind === 'resetHabit') ledger.resetToday(intent.habitId);
-      else if (intent.kind === 'expiredHabitTap') {
+      else if (intent.kind === 'pastDayHabitTap') {
+        const result = ledger.applyPastDayTap({
+          habitId: intent.habitId,
+          dateIso: intent.date,
+          completed: intent.completed,
+          tappedAt: intent.tappedAt,
+        });
+        if (result === 'rejected') recordDeadLetters(WIDGET_TAP_DEAD_LETTER_SOURCE, [{ reason: 'expired', value: action }]);
+      } else if (intent.kind === 'expiredHabitTap') {
         // Kept verbatim (exported with the backup) rather than credited to the wrong day.
         recordDeadLetters(WIDGET_TAP_DEAD_LETTER_SOURCE, [{ reason: 'expired', value: action }]);
       }

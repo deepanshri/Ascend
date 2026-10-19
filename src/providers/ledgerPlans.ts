@@ -16,15 +16,18 @@ import type {
 } from '../types';
 import { createMomentumEvent, habitWeight, nextMomentumEventId } from '../utils/momentumCore';
 import {
+  addDaysIso,
   dayIndexForIso,
   endOfIsoDate,
   formatEvidenceDate,
   formatIsoShort,
   getLocalDateString,
+  isIsoDate,
+  parseIsoDateParts,
   resolveEventIsoDate,
   toISODate,
 } from '../utils/dates';
-import { isHabitScheduledOnDayIndex } from '../utils/schedule';
+import { isHabitScheduledOnDayIndex, isHabitScheduledOnIso } from '../utils/schedule';
 import { resolveHabitTimeOfDay, withHabitTimeOfDay } from '../utils/timeOfDay';
 import { stableHabitLogId } from '../utils/stableId';
 import { hasMomentumVoteOnIso, hasTodayLedgerEntry } from '../services/ledgerService';
@@ -199,6 +202,107 @@ export function planGraceRollover(
     };
   });
   return { dateIso, items };
+}
+
+// ---------------------------------------------------------------------------
+// Widget tap from an earlier day (made before midnight, drained after it)
+
+export type PastDayTapPlan =
+  | {
+      habitId: string;
+      loggedDate: string;
+      completed: true;
+      completionEvent: HabitCompletionEvent;
+      evidence: IdentityEvidence;
+      /** Null when that day already holds a momentum vote for this habit. */
+      momentumEvent: MomentumEvent | null;
+      /** The day was yesterday: the habit leaves today's grace-rollover banner. */
+      clearsRollover: boolean;
+    }
+  | {
+      habitId: string;
+      loggedDate: string;
+      completed: false;
+      /** Week-relative index of loggedDate, for the remote delete. */
+      dayIndex: number;
+      /** Null when that day held no momentum vote to reverse. */
+      reversal: MomentumEvent | null;
+    };
+
+/**
+ * A widget checkbox tap dated `dateIso`, an earlier day than `todayIso`: log it
+ * on that day, stamped with the time of the tap. 'unchanged' when that day
+ * already matches the tap; 'rejected' when it can't be logged there (unknown
+ * or archived habit, not scheduled that day, not an earlier day).
+ */
+export function planPastDayTap(
+  state: LedgerState,
+  tap: { habitId: string; dateIso: string; completed: boolean; tappedAt?: number },
+  todayIso: string,
+  nonce: string
+): PastDayTapPlan | 'unchanged' | 'rejected' {
+  const { habitId, dateIso } = tap;
+  const habit = state.habits.find((h) => h.id === habitId);
+  const parts = isIsoDate(dateIso) ? parseIsoDateParts(dateIso) : null;
+  if (!habit || habit.archived || !parts || dateIso >= todayIso) return 'rejected';
+  if (!isHabitScheduledOnIso(habit, dateIso)) return 'rejected';
+
+  // Noon keeps the reference inside the day across DST changes.
+  const noon = new Date(parts.year, parts.month - 1, parts.day, 12);
+  const dayIndex = dayIndexForIso(dateIso, noon);
+  const startOfDay = new Date(parts.year, parts.month - 1, parts.day).getTime();
+  const endOfDay = endOfIsoDate(dateIso);
+  const tapped = typeof tap.tappedAt === 'number' && Number.isFinite(tap.tappedAt) ? tap.tappedAt : endOfDay - 60_000;
+  // Inside that day even if the device clock was off when the widget queued it.
+  const timestamp = Math.min(Math.max(tapped, startOfDay), endOfDay - 1);
+
+  const existing = state.completionEvents.find((event) => sameHabitDay(event, habitId, dateIso, noon));
+  if (tap.completed === Boolean(existing)) return 'unchanged';
+
+  const baseWeight = habitWeight(habit);
+  const voted = hasMomentumVoteOnIso(state.momentumEvents, habitId, dateIso);
+  if (!tap.completed) {
+    const weight = existing?.type === 'fallback_micro' ? baseWeight * 0.5 : baseWeight;
+    return {
+      habitId,
+      loggedDate: dateIso,
+      completed: false,
+      dayIndex,
+      reversal: voted
+        ? {
+            ...createMomentumEvent(habit, 'reversal', dateIso, timestamp, weight),
+            id: nextMomentumEventId(state.momentumEvents, habitId, dateIso, 'reversal'),
+          }
+        : null,
+    };
+  }
+
+  return {
+    habitId,
+    loggedDate: dateIso,
+    completed: true,
+    completionEvent: withHabitTimeOfDay(
+      { id: stableHabitLogId(habitId, dateIso), habitId, dayIndex, date: dateIso, type: 'full', timestamp },
+      habit
+    ),
+    evidence: {
+      id: `ev-${timestamp}-${nonce}`,
+      habitId,
+      habitName: habit.name,
+      identityStatement: habit.name || 'Consistent and disciplined',
+      category: habit.category || 'work',
+      date: `${formatEvidenceDate(new Date(timestamp))} • Completed (100%)`,
+      dayNumber: dayIndex + 1,
+      loggedDate: dateIso,
+    },
+    momentumEvent: voted
+      ? null
+      : {
+          ...createMomentumEvent(habit, 'full', dateIso, timestamp, baseWeight),
+          id: nextMomentumEventId(state.momentumEvents, habitId, dateIso, 'full'),
+        },
+    clearsRollover: dateIso === addDaysIso(todayIso, -1),
+  };
 }
 
 // ---------------------------------------------------------------------------

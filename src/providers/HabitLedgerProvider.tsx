@@ -60,6 +60,7 @@ import {
   planGraceRollover,
   planManualVote,
   planNewHabit,
+  planPastDayTap,
   planResetToday,
   planToggleFallback,
   type GraceRolloverPlan,
@@ -101,6 +102,16 @@ export interface LedgerActions {
   completeToday: (habitId: string, isFallback?: boolean) => CompletionResult | null;
   toggleFallbackMode: (habitId: string) => void;
   resetToday: (habitId: string) => void;
+  /**
+   * A widget checkbox tap from an earlier day (made before midnight, drained
+   * after it), logged on the day it was made. 'rejected' when it can't be.
+   */
+  applyPastDayTap: (tap: {
+    habitId: string;
+    dateIso: string;
+    completed: boolean;
+    tappedAt?: number;
+  }) => 'applied' | 'unchanged' | 'rejected';
   /** Grace-rollover every habit on today's banner. Returns how many were logged. */
   rolloverAll: () => number;
   /** Answer the current friction prompt with a grace rollover. Returns how many were logged. */
@@ -326,6 +337,23 @@ export function HabitLedgerProvider({ children }: { children: React.ReactNode })
         // Unchecked: today's reminder applies again.
         const habit = before.habits.find((h) => h.id === habitId);
         if (habit?.targetTime && !habit.archived) void scheduleHabitTargetTimeNotification(habit);
+      },
+
+      applyPastDayTap(tap) {
+        const c = clock();
+        const plan = planPastDayTap(stateRef.current, tap, getLocalDateString(), c.nonce);
+        if (plan === 'unchanged' || plan === 'rejected') return plan;
+        commit({ type: 'PAST_DAY_TAPPED', plan, origin: c.origin }, true);
+        // That day is over, so there is no undo window: upload now.
+        const userId = sessionIdRef.current;
+        if (plan.completed === true) {
+          void upsertHabitLog(userId, plan.completionEvent).catch(() => {});
+          if (plan.momentumEvent) void appendMomentumEventRemote(userId, plan.momentumEvent).catch(() => {});
+        } else {
+          if (plan.reversal) void appendMomentumEventRemote(userId, plan.reversal).catch(() => {});
+          void deleteHabitLog(userId, plan.habitId, plan.loggedDate, plan.dayIndex).catch(() => {});
+        }
+        return 'applied';
       },
 
       rolloverAll() {

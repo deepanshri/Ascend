@@ -21,17 +21,34 @@ describe('planWidgetAction', () => {
     expect(planWidgetAction({ type: 'habit', id: '', completed: true }, logged)).toEqual({ kind: 'none' });
   });
 
-  it('sets aside a habit tap made on an earlier day instead of crediting today', () => {
+  it('sends a habit tap made on an earlier day to that day, not today', () => {
     const tap = { type: 'habit' as const, id: 'todo', completed: true, date: '2026-10-17', tappedAt: 1 };
     expect(planWidgetAction(tap, logged, '2026-10-18')).toEqual({
-      kind: 'expiredHabitTap',
+      kind: 'pastDayHabitTap',
       habitId: 'todo',
       date: '2026-10-17',
       completed: true,
+      tappedAt: 1,
+    });
+    // Whether today is logged doesn't matter for a tap from another day.
+    expect(planWidgetAction({ ...tap, id: 'done', completed: false }, logged, '2026-10-18')).toMatchObject({
+      kind: 'pastDayHabitTap',
+      habitId: 'done',
+      completed: false,
     });
     expect(planWidgetAction({ ...tap, date: '2026-10-18' }, logged, '2026-10-18')).toEqual({
       kind: 'completeHabit',
       habitId: 'todo',
+    });
+  });
+
+  it('sets aside a tap dated after today (the clock moved back)', () => {
+    const tap = { type: 'habit' as const, id: 'todo', completed: true, date: '2026-10-19', tappedAt: 1 };
+    expect(planWidgetAction(tap, logged, '2026-10-18')).toEqual({
+      kind: 'expiredHabitTap',
+      habitId: 'todo',
+      date: '2026-10-19',
+      completed: true,
     });
   });
 
