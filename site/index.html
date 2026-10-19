@@ -99,7 +99,7 @@
         <li>Open the Ascend app on your phone.</li>
         <li>Sign in with your email and password.</li>
       </ol>
-      <a class="button" href="ascend://app/home">Open Ascend</a>
+      <a class="button" id="open-app" href="ascend://app/home">Open Ascend</a>
       <p class="hint">If the button doesn't open the app, open Ascend from your home screen instead.</p>
     </div>
 
@@ -119,6 +119,12 @@
         document.getElementById('steps').innerHTML =
           '<li>Open the Ascend app and try signing in.</li>' +
           '<li>If it says your email isn’t confirmed, sign up again to get a new link.</li>';
+      } else if (params.get('access_token') && params.get('refresh_token')) {
+        // Hand the tokens to the app, which signs the user in (src/lib/authCallback.ts).
+        document.getElementById('open-app').href = 'ascend://auth/callback#' + params.toString();
+        document.getElementById('steps').innerHTML =
+          '<li>Tap Open Ascend to sign in automatically.</li>' +
+          '<li>Or open Ascend from your home screen and sign in with your email and password.</li>';
       }
       // Don't leave sign-in tokens sitting in the address bar or history.
       if (location.hash || location.search) history.replaceState(null, '', location.pathname);
