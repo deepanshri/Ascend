@@ -11,6 +11,7 @@ import {
   withReminderNotificationIds,
 } from './notifications';
 import { DEFAULT_AVATAR_ID, resolveAvatarId } from '../data/avatars';
+import { AUTH_CALLBACK_URL } from './authCallback';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
@@ -339,6 +340,7 @@ export const authService = {
         email,
         password,
         options: {
+          emailRedirectTo: AUTH_CALLBACK_URL,
           data: {
             full_name: name,
             avatar_url: generateAvatarUrl(name),
@@ -378,15 +380,34 @@ export const authService = {
     return session;
   },
 
+  /**
+   * Sign in with the tokens from an auth email link (see authCallback.ts).
+   * Throws the raw Supabase message so the caller can tell offline from expired.
+   */
+  async signInFromCallback(
+    accessToken: string,
+    refreshToken: string
+  ): Promise<{ session: UserSession; interests: string[] }> {
+    if (!isSupabaseConfigured || !supabase) throw new Error('Cloud is not configured.');
+    const { data, error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+    if (error) throw new Error(error.message);
+    if (!data.user) throw new Error('Invalid session');
+    const session = sessionFromAuthUser(data.user, data.user.email || '');
+    setStoredSession(session);
+    const rawInterests = data.user.user_metadata?.interests;
+    const interests = Array.isArray(rawInterests) ? rawInterests.filter((i): i is string => typeof i === 'string') : [];
+    return { session, interests };
+  },
+
   async signInAsGuest(): Promise<never> {
     throw new Error('Guest mode has been retired. Please sign in or create an account.');
   },
 
   async resetPasswordForEmail(email: string): Promise<{ success: boolean; message: string }> {
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: AUTH_CALLBACK_URL });
       if (error) throw new Error(mapAuthError(error.message));
-      return { success: true, message: `Password reset instructions sent to ${email}.` };
+      return { success: true, message: `Reset link sent to ${email}. Open it on this phone to set a new password.` };
     }
 
     await new Promise((r) => setTimeout(r, 400));

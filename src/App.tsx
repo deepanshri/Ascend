@@ -1,5 +1,6 @@
 import React, { Suspense } from 'react';
 import { AppShell } from './app/AppShell';
+import { AuthCallbackGate } from './app/AuthCallbackGate';
 import { TabLoadingFallback } from './components/TabLoadingFallback';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
 import { AppProviders } from './providers/AppProviders';
@@ -11,7 +12,6 @@ const OnboardingRoute = React.lazy(() => import('./routes/OnboardingRoute'));
 
 /** Signed out → sign in; signed in but not onboarded → onboarding; otherwise the app shell. */
 function Gates() {
-  useKeyboardInset(true);
   const { session, authLoading } = useSession();
   const { isOnboarded } = useOnboarding();
 
@@ -22,10 +22,20 @@ function Gates() {
   );
 }
 
+/** Links from auth emails take over the screen until they are handled. */
+function Root() {
+  useKeyboardInset(true);
+  return (
+    <AuthCallbackGate>
+      <Gates />
+    </AuthCallbackGate>
+  );
+}
+
 export default function App() {
   return (
     <AppProviders>
-      <Gates />
+      <Root />
     </AppProviders>
   );
 }

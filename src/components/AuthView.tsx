@@ -38,7 +38,7 @@ const ConfirmEmailScreen: React.FC<{ email: string; onBackToSignIn: () => void }
         </p>
         <p className="text-[13px] font-bold text-emerald-700 dark:text-blue-400 break-all">{email}</p>
         <p className="text-[12px] text-slate-400 dark:text-slate-500 leading-relaxed mt-1">
-          Open the link in that email to activate your account. You won't be able to sign in until you confirm.
+          Open the link in that email on this phone to activate your account. It signs you in automatically.
         </p>
       </div>
 
