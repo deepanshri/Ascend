@@ -1,8 +1,12 @@
 import { registerPlugin, WebPlugin } from '@capacitor/core';
 
+/**
+ * A checkbox tap queued by the widget. `date` is the local day the tap was made
+ * on (builds before it was added omit it); `tappedAt` is epoch milliseconds.
+ */
 export type WidgetPendingAction =
-  | { type: 'habit'; id: string; completed: boolean }
-  | { type: 'reminder'; id: string; completed: boolean };
+  | { type: 'habit'; id: string; completed: boolean; date?: string; tappedAt?: number }
+  | { type: 'reminder'; id: string; completed: boolean; date?: string; tappedAt?: number };
 
 export interface WidgetDeepLink {
   url: string;

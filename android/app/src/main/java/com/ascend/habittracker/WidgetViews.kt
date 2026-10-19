@@ -25,6 +25,7 @@ object WidgetViews {
     )
 
     fun updateAll(context: Context) {
+        WidgetMidnight.schedule(context)
         val task = {
             val manager = AppWidgetManager.getInstance(context)
             updateReport(context, manager, ids(context, manager, ReportRingWidget::class.java))
@@ -117,6 +118,7 @@ object WidgetViews {
     fun updateHabits(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val snapshot = WidgetStore.readSnapshot(context)
         val rows = snapshot.optJSONArray("habits") ?: JSONArray()
+        val stale = WidgetStore.isStale(snapshot)
         val count = rows.length()
         val doneCount = snapshot.optInt("habitsCompleted", countCompletedHabits(rows)).coerceIn(0, count)
         val yetToCount = (count - doneCount).coerceAtLeast(0)
@@ -134,6 +136,10 @@ object WidgetViews {
             views.setTextViewText(R.id.widget_habits_yet, yetToCount.toString())
             // Completed habits remain in the list — empty only when there are no habits at all.
             views.setViewVisibility(R.id.widget_habits_empty, if (count == 0) View.VISIBLE else View.GONE)
+            views.setTextViewText(
+                R.id.widget_habits_empty,
+                context.getString(if (stale) R.string.widget_stale else R.string.widget_habits_empty)
+            )
             views.setViewVisibility(R.id.widget_habits_list, if (count == 0) View.GONE else View.VISIBLE)
 
             val serviceIntent = Intent(context, HabitsWidgetService::class.java).apply {
@@ -199,7 +205,8 @@ object WidgetViews {
         val snapshot = WidgetStore.readSnapshot(context)
         val done = snapshot.optInt("habitsCompleted", 0)
         val total = snapshot.optInt("totalHabits", 0)
-        val ratio = "$done/$total"
+        // A past day's count would read as today's: show a dash until the app refreshes.
+        val ratio = if (WidgetStore.isStale(snapshot)) "–" else "$done/$total"
 
         appWidgetIds.forEach { id ->
             val views = RemoteViews(context.packageName, R.layout.widget_today_ledger_1x1)

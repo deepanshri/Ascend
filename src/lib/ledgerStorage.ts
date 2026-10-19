@@ -30,8 +30,11 @@ export const INTERESTS_STORAGE_KEY = 'ascend_personal_interests';
 
 export const DEFAULT_INTERESTS: readonly string[] = ['Movies', 'Books', 'Anime', 'Running'];
 
-/** Why an entry was set aside: unparseable locally, or (server_rejected) refused by the database on upload. */
-export type RejectReason = 'invalid_json' | 'not_a_list' | 'invalid_entry' | 'server_rejected';
+/**
+ * Why an entry was set aside: unparseable locally, refused by the database on
+ * upload (server_rejected), or a widget tap drained after its day ended (expired).
+ */
+export type RejectReason = 'invalid_json' | 'not_a_list' | 'invalid_entry' | 'server_rejected' | 'expired';
 
 /** Something a parser could not use: the raw string, the payload, or one entry. */
 export interface RejectedEntry {

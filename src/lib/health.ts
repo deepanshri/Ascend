@@ -1,7 +1,7 @@
 import { Capacitor, registerPlugin, WebPlugin } from '@capacitor/core';
 import { addDaysIso, toISODate } from '../utils/dates';
 
-export const SLEEP_TARGET_HOURS = 8;
+export { SLEEP_TARGET_HOURS } from './sleepTarget';
 const SLEEP_DENIED_KEY = 'ascend_health_sleep_denied';
 
 export interface SleepHours {

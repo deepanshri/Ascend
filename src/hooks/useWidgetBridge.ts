@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
+import { recordDeadLetters } from '../lib/deadLetter';
 import { hasLogOn } from '../lib/habitLogs';
 import { isAtActiveHabitCap } from '../lib/protection';
 import { WidgetBridge } from '../lib/widgetBridge';
-import { planWidgetAction, planWidgetRoute } from '../lib/widgetIntents';
+import { planWidgetAction, planWidgetRoute, WIDGET_TAP_DEAD_LETTER_SOURCE } from '../lib/widgetIntents';
 import { consumeWidgetActions, parseWidgetRoute, readLaunchWidgetRoute } from '../lib/widgetSync';
 import type { WidgetPendingAction, WidgetRoute } from '../lib/widgetSync';
 import { useLedger, useLedgerActions } from '../providers/HabitLedgerProvider';
@@ -36,12 +37,18 @@ export function useWidgetBridge(completeHabit: CompleteHabit): void {
     const applyAction = (action: WidgetPendingAction) => {
       const { ledgerActions: ledger, setReminderCompleted: setReminder, completeHabit: complete } = latest.current;
       const today = getLocalDateString();
-      const intent = planWidgetAction(action, (habitId) =>
-        hasLogOn(ledger.getSnapshot().completionEvents, habitId, today)
+      const intent = planWidgetAction(
+        action,
+        (habitId) => hasLogOn(ledger.getSnapshot().completionEvents, habitId, today),
+        today
       );
       if (intent.kind === 'setReminderCompleted') setReminder(intent.reminderId, intent.completed);
       else if (intent.kind === 'completeHabit') complete(intent.habitId, false);
       else if (intent.kind === 'resetHabit') ledger.resetToday(intent.habitId);
+      else if (intent.kind === 'expiredHabitTap') {
+        // Kept verbatim (exported with the backup) rather than credited to the wrong day.
+        recordDeadLetters(WIDGET_TAP_DEAD_LETTER_SOURCE, [{ reason: 'expired', value: action }]);
+      }
     };
 
     const applyRoute = (route: WidgetRoute | null) => {

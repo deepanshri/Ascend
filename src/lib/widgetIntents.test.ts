@@ -20,6 +20,30 @@ describe('planWidgetAction', () => {
     expect(planWidgetAction(null, logged)).toEqual({ kind: 'none' });
     expect(planWidgetAction({ type: 'habit', id: '', completed: true }, logged)).toEqual({ kind: 'none' });
   });
+
+  it('sets aside a habit tap made on an earlier day instead of crediting today', () => {
+    const tap = { type: 'habit' as const, id: 'todo', completed: true, date: '2026-10-17', tappedAt: 1 };
+    expect(planWidgetAction(tap, logged, '2026-10-18')).toEqual({
+      kind: 'expiredHabitTap',
+      habitId: 'todo',
+      date: '2026-10-17',
+      completed: true,
+    });
+    expect(planWidgetAction({ ...tap, date: '2026-10-18' }, logged, '2026-10-18')).toEqual({
+      kind: 'completeHabit',
+      habitId: 'todo',
+    });
+  });
+
+  it('applies undated taps (older widget builds) and reminder taps from any day', () => {
+    expect(planWidgetAction({ type: 'habit', id: 'todo', completed: true }, logged, '2026-10-18')).toEqual({
+      kind: 'completeHabit',
+      habitId: 'todo',
+    });
+    expect(
+      planWidgetAction({ type: 'reminder', id: 'r1', completed: true, date: '2026-10-17' }, logged, '2026-10-18')
+    ).toEqual({ kind: 'setReminderCompleted', reminderId: 'r1', completed: true });
+  });
 });
 
 describe('planWidgetRoute', () => {

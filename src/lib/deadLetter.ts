@@ -62,7 +62,7 @@ export function mergeDeadLetters(
   );
 }
 
-const REJECT_REASONS: ReadonlySet<string> = new Set<RejectReason>(['invalid_json', 'not_a_list', 'invalid_entry', 'server_rejected']);
+const REJECT_REASONS: ReadonlySet<string> = new Set<RejectReason>(['invalid_json', 'not_a_list', 'invalid_entry', 'server_rejected', 'expired']);
 
 /** Source recorded for backup content that is not itself a valid dead-letter entry. */
 export const BACKUP_IMPORT_SOURCE = 'backup_import';

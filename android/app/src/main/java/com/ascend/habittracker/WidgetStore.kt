@@ -3,9 +3,26 @@ package com.ascend.habittracker
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.LocalDate
 
 object WidgetStore {
+    /**
+     * The snapshot for today. After midnight the app's precomputed view of the
+     * next day (`next`) is promoted and saved; a snapshot older than that comes
+     * back as [staleSnapshot], so no widget shows a past day as today.
+     */
     fun readSnapshot(context: Context): JSONObject {
+        val stored = readStored(context)
+        val next = stored.optJSONObject("next")
+        return when (WidgetDay.choose(stored.optString("todayIso"), next?.optString("todayIso"), LocalDate.now().toString())) {
+            WidgetDayChoice.CURRENT -> stored
+            WidgetDayChoice.NEXT -> next!!.also { writeSnapshot(context, it) }
+            WidgetDayChoice.STALE -> staleSnapshot(stored)
+            WidgetDayChoice.EMPTY -> emptySnapshot()
+        }
+    }
+
+    private fun readStored(context: Context): JSONObject {
         val raw = prefs(context).getString(WidgetContract.KEY_SNAPSHOT, null)
         return try {
             if (raw.isNullOrBlank()) emptySnapshot() else JSONObject(raw)
@@ -13,6 +30,22 @@ object WidgetStore {
             emptySnapshot()
         }
     }
+
+    /**
+     * What widgets show when the data is from an earlier day: no habits, counts
+     * or votes (they belonged to that day), `stale` set so views can ask the user
+     * to open the app. Reminders, the momentum score and the theme carry over.
+     */
+    fun staleSnapshot(stored: JSONObject): JSONObject {
+        return emptySnapshot()
+            .put("todayIso", stored.optString("todayIso"))
+            .put("dark", stored.optBoolean("dark", false))
+            .put("score", stored.optInt("score", 0))
+            .put("reminders", stored.optJSONArray("reminders") ?: JSONArray())
+            .put("stale", true)
+    }
+
+    fun isStale(snapshot: JSONObject): Boolean = snapshot.optBoolean("stale", false)
 
     fun writeRaw(context: Context, payload: String) {
         // App sync is authoritative — drop any in-flight widget grace timers.
@@ -99,7 +132,13 @@ object WidgetStore {
         val type = if (kind == WidgetCompletionGrace.KIND_HABIT) "habit" else "reminder"
         enqueueAction(
             context,
-            JSONObject().put("type", type).put("id", id).put("completed", completed)
+            JSONObject()
+                .put("type", type)
+                .put("id", id)
+                .put("completed", completed)
+                // The day the tap was made on: a habit tap only counts for that day.
+                .put("date", LocalDate.now().toString())
+                .put("tappedAt", System.currentTimeMillis())
         )
     }
 
