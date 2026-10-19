@@ -28,10 +28,10 @@ Actively developed, in closed beta. See [`docs/PRODUCTION_READINESS_AUDIT.md`](d
 
 ## Run locally
 
-**Prerequisites:** Node.js (or Bun)
+**Prerequisites:** Node.js
 
 1. Install dependencies:
-   `npm install` (or `bun install`)
+   `npm install`
 2. Copy `.env.example` to `.env` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (the anon/publishable key only, never `service_role`)
 3. Run the app:
    `npm run dev`

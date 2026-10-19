@@ -52,7 +52,6 @@ const USER_PROFILE_KEYS = [
   'ascend_vacation_mode',
   'ascend_last_active_date',
   'ascend_vision_reminder_last_date',
-  'ascend_chronicle_last_auto_launch_date',
   'ascend_reminders_last_sync_timestamp',
   'ascend_deleted_habit_ids',
   'ascend_avatar_id',
